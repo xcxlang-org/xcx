@@ -1,0 +1,672 @@
+--- pax.xcx - PAX Package Manager for XCX v4.0
+const s: REGISTRY_HOST = "pax.xcxlang.com";
+const s: TOKEN_FILE    = ".pax_token";
+const s: CONFIG_FILE   = ".pax_config";
+
+func getRegistryUrl(-> s) {
+    s: host = REGISTRY_HOST;
+    if (store.exists(CONFIG_FILE)) then;
+        s: content = store.read(CONFIG_FILE);
+        if (content.startsWith("{")) then;
+            json: cfg = json.parse(content);
+            if (cfg.exists("registry")) then;
+                cfg.bind("registry", host);
+            end;
+        end;
+    end;
+
+    s: url = "";
+    if (host.startsWith("http")) then;
+        url = host;
+    else;
+        if (host.startsWith("localhost") OR host.startsWith("127.0.0.1")) then;
+            url = "http://" + host;
+        else;
+            url = "https://" + host;
+        end;
+    end;
+    
+    if (NOT url.endsWith("/")) then;
+        url = url + "/";
+    end;
+    
+    return url;
+};
+
+func main() {
+    array:s: args = env.args();
+    
+    if (args.size() < 3) then;
+        >! "PAX Package Manager v4.0 (XCX Professional)";
+        >! "Usage: xcx pax <command> [args]";
+        >! "";
+        >! "Core Commands:";
+        >! "  new <n>      Create a new project structure";
+        >! "  install         Install dependencies (minimum library setup)";
+        >! "  clone <n>    Clone package structure (full repository)";
+        >! "  add <n>      Add a package (name, URL, or author/repo)";
+        >! "  remove <n>   Remove a package and update lockfile";
+        >! "  search <q>      Search for packages on the Registry";
+        >! "  run [path]      Execute the project entry point";
+        >! "";
+        >! "Registry Commands:";
+        >! "  login <token>   Store registry authentication token";
+        >! "  logout          Remove stored tokens";
+        >! "  whoami          Verify your registry account";
+        >! "  publish         Publish project and all files to Registry";
+        return;
+    end;
+    
+    s: command = args.get(2);
+    
+    if (command == "new") then;
+        paxNew(args);
+    elif (command == "install") then;
+        paxInstall(args);
+    elif (command == "clone") then;
+        paxClone(args);
+    elif (command == "add") then;
+        paxAdd(args);
+    elif (command == "remove") then;
+        paxRemove(args);
+    elif (command == "search") then;
+        paxSearch(args);
+    elif (command == "run") then;
+        paxRun(args);
+    elif (command == "login") then;
+        paxLogin(args);
+    elif (command == "logout") then;
+        paxLogout();
+    elif (command == "whoami") then;
+        paxWhoAmI();
+    elif (command == "publish") then;
+        paxPublish();
+    else;
+        >! "Error: Unknown command '" + command + "'";
+    end;
+};
+
+---   Authentication Helpers
+
+func saveToken(s: token) {
+    store.write(TOKEN_FILE, token);
+    >! "Authentication success! Token saved.";
+};
+
+func getToken(-> s) {
+    if (store.exists(TOKEN_FILE)) then;
+        return store.read(TOKEN_FILE).trim();
+    end;
+    return "";
+};
+
+func paxLogin(array:s: args) {
+    if (args.size() < 4) then;
+        >! "Usage: xcx pax login <token>";
+        return;
+    end;
+    saveToken(args.get(3));
+};
+
+func paxLogout() {
+    if (store.exists(TOKEN_FILE)) then;
+        store.delete(TOKEN_FILE);
+        >! "Session terminated. Token removed.";
+    else;
+        >! "No active session found.";
+    end;
+};
+
+func paxWhoAmI() {
+    s: token = getToken();
+    if (token == "") then;
+        >! "Error: Not logged in. Use 'xcx pax login <token>'.";
+        return;
+    end;
+    
+    map: authHeaders {
+        schema = [s <-> s]
+        data = ["X-PAX-TOKEN" :: token]
+    };
+    
+    net.request {
+        method  = "GET",
+        url     = getRegistryUrl() + "api?route=api/whoami",
+        headers = authHeaders,
+        timeout = 5000,
+    } as resp;
+    
+    if (resp.ok) then;
+        s: body = s(resp.body);
+        if (body.startsWith("{")) then;
+            json: data = resp.body;
+            if (data.exists("username")) then;
+                s: user; data.bind("username", user);
+                s: role; data.bind("role", role);
+                >! "Account: " + user + " [" + role + "]";
+            else;
+                >! "Error: Registry returned unexpected JSON format.";
+            end;
+        else;
+            >! "Error: Registry returned non-JSON response: " + body;
+        end;
+    else;
+        >! "Auth Error: Status " + s(resp.status);
+        if (resp.exists("error")) then; >! "Details: " + s(resp.get("error")); end;
+    end;
+};
+
+---   Configuration Helpers (PAX/JSON Mapping)
+
+func parsePax(s: content -> json) {
+    array:s: lines = content.split("\n");
+    json: res <<< {"name": "unnamed", "version": "0.1.0", "author": "", "description": "", "main": "", "deps": [], "tags": [], "files": []} >>>;
+    
+    s: cK = "";
+    for line in lines do;
+        s: l = line.split("---").get(0).trim();
+        if (l == "" OR l == "/") then; continue; end;
+
+        if (l HAS "::") then;
+            array:s: kv = l.split("::");
+            if (kv.size() >= 2) then;
+                s: k = kv.get(0).trim().lower();
+                s: v = kv.get(1).trim();
+
+                if (v HAS "\"") then;
+                    array:s: b = v.split("\"");
+                    if (b.size() >= 2) then;
+                        s: val = b.get(1);
+                        if (k == "name") then; res.set("name", val);
+                        elif (k == "version") then; res.set("version", val);
+                        elif (k == "author") then; res.set("author", val);
+                        elif (k == "description") then; res.set("description", val);
+                        elif (k == "main") then; res.set("main", val);
+                        elif (k == "files") then; res.get("files").push(val);
+                        end;
+                    end;
+                end;
+
+                if (v HAS "[") then;
+                    cK = k;
+                    if (v HAS "]") then;
+                        array:s: bits; bits = v.split("\"");
+                        i: idx = 1;
+                        while (idx < bits.size()) do;
+                            if (cK == "deps") then; res.get("deps").push(bits.get(idx));
+                            elif (cK == "tags") then; res.get("tags").push(bits.get(idx));
+                            elif (cK == "files") then; res.get("files").push(bits.get(idx));
+                            end;
+                            idx = idx + 2;
+                        end;
+                        cK = "";
+                    end;
+                end;
+            end;
+        elif (cK != "") then;
+            if (l HAS "\"") then;
+                array:s: bits; bits = l.split("\"");
+                i: idx = 1;
+                while (idx < bits.size()) do;
+                    if (cK == "deps") then; res.get("deps").push(bits.get(idx));
+                    elif (cK == "tags") then; res.get("tags").push(bits.get(idx));
+                    elif (cK == "files") then; res.get("files").push(bits.get(idx));
+                    end;
+                    idx = idx + 2;
+                end;
+            end;
+            if (l HAS "]") then; cK = ""; end;
+        end;
+    end;
+    return res;
+};
+
+func toPax(json: cfg -> s) {
+    s: name; cfg.bind("name", name);
+    s: ver;  cfg.bind("version", ver);
+    s: auth; cfg.bind("author", auth);
+    s: desc; cfg.bind("description", desc);
+    array:s: deps = cfg.get("deps");
+    array:s: tags = cfg.get("tags");
+    array:s: filesX = cfg.get("files");
+    
+    s: res = "---\nPAX Project Configuration\n*---\n/\n";
+    res = res + "    name        :: \"" + name + "\",\n";
+    res = res + "    version     :: \"" + ver + "\",\n";
+    res = res + "    author      :: \"" + auth + "\",\n";
+    res = res + "    description :: \"" + desc + "\",\n";
+    
+    if (cfg.exists("main")) then;
+        s: main_entry; cfg.bind("main", main_entry);
+        if (main_entry != "") then;
+            res = res + "    main        :: \"" + main_entry + "\",\n";
+        end;
+    end;
+    
+    res = res + "    tags  :: " + tags.toStr() + ",\n";
+    res = res + "    files :: " + filesX.toStr() + ",\n";
+    res = res + "    deps  :: [\n";
+    for i in 0 to (deps.size() - 1) do;
+        res = res + "        \"" + deps.get(i) + "\"";
+        if (i < (deps.size() - 1)) then; res = res + ",\n"; end;
+    end;
+    res = res + "\n    ]\n/\n";
+    return res;
+};
+
+---   Project Operations
+
+func paxNew(array:s: args) {
+    if (args.size() < 4) then;
+        >! "Usage: xcx pax new <project_name>";
+        return;
+    end;
+    s: name = args.get(3);
+    >! "Scaffolding project: " + name;
+    
+    store.mkdir(name + "/src");
+    
+    json: cfg <<< {"name": "", "version": "0.1.0", "author": "dev", "description": "PAX project", "deps": [], "tags": [], "files": []} >>>;
+    cfg.set("name", name);
+    
+    store.write(name + "/project.pax", toPax(cfg));
+    store.write(name + "/src/main.xcx", "func main() {\n    >! \"Hello from " + name + "!\";\n};\nmain();\n");
+    store.write(name + "/README.md", "# " + name + "\nProfessional XCX project.");
+    
+    >! "Success! Project created in ./" + name;
+};
+
+func paxRun(array:s: args) {
+    s: target = "src/main.xcx";
+    if (store.exists("project.pax")) then;
+        json: cfg = parsePax(store.read("project.pax"));
+        if (cfg.exists("main")) then;
+            s: customMain; cfg.bind("main", customMain);
+            if (customMain != "" AND store.exists(customMain)) then; target = customMain; end;
+        end;
+    end;
+
+    if (args.size() > 3) then;
+        target = args.get(3);
+        if (store.exists(target + "/src/main.xcx")) then; target = target + "/src/main.xcx"; end;
+    end;
+
+    if (store.exists(target)) then;
+        >! "Booting: " + target;
+        if (NOT .terminal !run target) then;
+            >! "Runtime Error: Execution aborted.";
+        end;
+    else;
+        >! "Error: Target " + target + " not found.";
+    end;
+};
+
+---   Dependency Management
+
+func normalizeUrl(s: input -> s) {
+    if (input.startsWith("http")) then; return input; end;
+    s: name = input;
+    s: ver  = "latest";
+    if (input HAS "@") then;
+        array:s: pts = input.split("@");
+        name = pts.get(0).trim();
+        ver  = pts.get(1).trim();
+    end;
+    return getRegistryUrl() + "api?route=api/packages/" + name + "/download&v=" + ver + "&format=json";
+};
+
+func getPackageName(s: input -> s) {
+    s: name = input;
+    if (input HAS "@") then; name = input.split("@").get(0).trim(); end;
+    if (name HAS "/") then;
+        array:s: pts = name.split("/");
+        name = pts.get(pts.size() - 1);
+    end;
+    return name;
+};
+
+func updateLockfile(s: name, s: ver, s: path) {
+    json: lock <<< {} >>>;
+    if (store.exists("pax.lock")) then; lock = json.parse(store.read("pax.lock")); end;
+    
+    json: entry <<< {"version": "", "file": ""} >>>;
+    entry.set("version", ver);
+    entry.set("file", path);
+    lock.set(name, entry);
+    
+    store.write("pax.lock", lock.toStr());
+};
+
+func fetchPackage(s: input, b: isFull) {
+    s: url = normalizeUrl(input);
+    s: pkg = getPackageName(input);
+    s: token = getToken();
+    
+    map: headers {
+        schema = [s <-> s]
+        data = [EMPTY]
+    };
+    if (token != "") then; headers.insert("X-PAX-TOKEN", token); end;
+
+    net.request {
+        method = "GET",
+        url = url,
+        headers = headers,
+        timeout = 15000,
+    } as resp;
+
+    if (resp.ok) then;
+        s: body = s(resp.body);
+        if (body.startsWith("{")) then;
+            json: m = json.parse(body);
+            json: fl;
+
+            if (m.exists("files_list")) then;
+                json: inner = m.get("files_list");
+                if (inner.exists("files_list")) then;
+                    fl = inner.get("files_list");
+                else;
+                    fl = inner;
+                end;
+            end;
+
+            if (fl.size() == 0) then;
+                >! "  Failed: " + pkg + " has no file manifest.";
+            else;
+                s: lp = "lib/" + pkg + "/";
+                store.mkdir(lp);
+
+                --- For install mode: read the files list from the package's own project.pax
+                array:s: allowedFiles;
+                if (NOT isFull) then;
+                    i: pi = 0;
+                    i: psz = fl.size();
+                    while (pi < psz) do;
+                        json: pObj = fl.get(pi);
+                        s: pp; pObj.bind("path", pp);
+                        s: ppNorm = pp.lower().replace("\\", "/");
+                        if (ppNorm == "project.pax" OR ppNorm == "./project.pax") then;
+                            s: pc; pObj.bind("content", pc);
+                            json: pkgCfg = parsePax(pc);
+                            allowedFiles = pkgCfg.get("files");
+                        end;
+                        pi = pi + 1;
+                    end;
+                end;
+
+                i: k = 0;
+                i: sz = fl.size();
+                while (k < sz) do;
+                    json: fObj = fl.get(k);
+                    s: p; fObj.bind("path", p);
+                    s: c; fObj.bind("content", c);
+
+                    --- Install mode: filter by declared files list
+                    if (NOT isFull) then;
+                        b: allowed = false;
+                        s: pNorm = p.replace("\\", "/");
+
+                        if (allowedFiles.size() == 0) then;
+                            --- Fallback: skip known non-code files when package has no files field
+                            s: pl = pNorm.lower();
+                            b: isJunk = false;
+                            if (pl == "readme.md" OR pl == "license" OR pl == "license.txt") then; isJunk = true; end;
+                            if (pl.startsWith("tests/") OR pl.startsWith("docs/")) then; isJunk = true; end;
+                            if (pl.startsWith(".git") OR pl.startsWith(".github")) then; isJunk = true; end;
+                            if (pl == "project.pax" OR pl == "./project.pax") then; isJunk = true; end;
+                            if (NOT isJunk) then; allowed = true; end;
+                        else;
+                            --- Match path against each entry in files list
+                            i: ai = 0;
+                            i: asz = allowedFiles.size();
+                            while (ai < asz) do;
+                                s: af = allowedFiles.get(ai).replace("\\", "/");
+                                if (pNorm == af OR pNorm.endsWith("/" + af) OR af.endsWith("/" + pNorm)) then;
+                                    allowed = true;
+                                end;
+                                ai = ai + 1;
+                            end;
+                        end;
+
+                        if (NOT allowed) then; k = k + 1; continue; end;
+                    end;
+
+                    --- Directory handling (normalise to forward slashes)
+                    s: pSlash = p.replace("\\", "/");
+                    b: has_dir = pSlash HAS "/";
+                    if (has_dir) then;
+                        array:s: parts = pSlash.split("/");
+                        s: curPath = lp;
+                        for i in 0 to (parts.size() - 2) do;
+                            curPath = curPath + parts.get(i) + "/";
+                            if (NOT store.exists(curPath)) then; store.mkdir(curPath); end;
+                        end;
+                    end;
+
+                    store.write(lp + pSlash, c);
+                    k = k + 1;
+                end;
+
+                updateLockfile(pkg, input, lp);
+
+                s: mode = "Installed";
+                if (isFull) then; mode = "Cloned"; end;
+                >! "  OK: " + mode + " " + pkg + " in " + lp;
+            end;
+        else;
+            s: fn = "pkg_" + pkg + "_" + crypto.token(4) + ".xcx";
+            store.write("lib/" + fn, resp.body);
+            updateLockfile(pkg, input, "lib/" + fn);
+            >! "  OK: Saved as lib/" + fn;
+        end;
+    else;
+        >! "  Failed: Status " + s(resp.status);
+    end;
+};
+
+func paxInstall(array:s: args) {
+    if (NOT store.exists("project.pax")) then;
+        >! "Error: project.pax not found.";
+        return;
+    end;
+    
+    json: cfg = parsePax(store.read("project.pax"));
+    array:s: deps = cfg.get("deps");
+    >! "Resolving " + s(deps.size()) + " dependencies...";
+    
+    array:s: fetched;
+    for d in deps do;
+        s: name = getPackageName(d);
+        if (NOT fetched.contains(name)) then;
+            >! "Fetching " + name + "...";
+            fetchPackage(d, false);
+            fetched.push(name);
+        end;
+    end;
+    >! "Installation complete.";
+};
+
+func paxClone(array:s: args) {
+    if (args.size() < 4) then;
+        >! "Usage: xcx pax clone <package>";
+        return;
+    end;
+    s: target = args.get(3);
+    >! "Cloning package " + target + "...";
+    fetchPackage(target, true);
+};
+
+func paxAdd(array:s: args) {
+    if (args.size() < 4 OR NOT store.exists("project.pax")) then;
+        >! "Usage: xcx pax add <package>";
+        return;
+    end;
+    
+    s: name = args.get(3);
+    json: cfg = parsePax(store.read("project.pax"));
+    cfg.get("deps").push(name);
+    store.write("project.pax", toPax(cfg));
+    >! "Added " + name + " to project.pax. Running install...";
+    paxInstall(args);
+};
+
+func paxRemove(array:s: args) {
+    if (args.size() < 4 OR NOT store.exists("project.pax")) then;
+        >! "Usage: xcx pax remove <n>";
+        return;
+    end;
+    s: target = args.get(3);
+    json: cfg = parsePax(store.read("project.pax"));
+    array:s: deps = cfg.get("deps");
+    i: idx = -1;
+    for i in 0 to (deps.size() - 1) do;
+        if (deps.get(i) HAS target) then; idx = i; end;
+    end;
+    
+    if (idx >= 0) then;
+        deps.delete(idx);
+        store.write("project.pax", toPax(cfg));
+        >! "Removed " + target + ". Note: lib/ folders and pax.lock must be cleaned manually or via install.";
+    end;
+};
+
+---   Registry & Publishing
+
+func paxSearch(array:s: args) {
+    if (args.size() < 4) then; return; end;
+    s: q = args.get(3);
+    >! "Searching Registry: " + q + "...";
+    net.request {
+        method = "GET", 
+        url = getRegistryUrl() + "api?route=api/search&q=" + q,
+        timeout = 10000,
+    } as resp;
+    if (resp.ok) then;
+        s: body = s(resp.body);
+        if (body.startsWith("[")) then;
+            i: sz = resp.body.size();
+            if (sz == 0) then; >! "No matches."; return; end;
+            i: ri = 0;
+            while (ri < sz) do;
+                json: res = resp.body.get(ri);
+                s: n; res.bind("name", n);
+                s: v; res.bind("version", v);
+                s: a; res.bind("author_name", a);
+                >! "- " + n + " (v" + v + ") by " + a;
+                ri = ri + 1;
+            end;
+        else;
+            >! "Error: Registry returned unexpected search response.";
+        end;
+    end;
+};
+
+func scanRecursive(s: dir, array:json: list) {
+    array:s: items = store.list(dir);
+    for item in items do;
+        s: p = dir + item;
+        if (store.isDir(p)) then;
+            scanRecursive(p + "/", list);
+        else;
+            json: f <<< {"path": "", "content": ""} >>>;
+            f.set("path", p);
+            f.set("content", store.read(p));
+            list.push(f);
+        end;
+    end;
+};
+
+func paxPublish() {
+    if (NOT store.exists("project.pax")) then; return; end;
+    s: token = getToken();
+    if (token == "") then; >! "Login required."; return; end;
+    
+    json: cfg = parsePax(store.read("project.pax"));
+    s: name; cfg.bind("name", name);
+    s: ver;  cfg.bind("version", ver);
+    
+    s: zipFile = name + "_" + ver + ".zip";
+    >! "Compressing project into " + zipFile + "...";
+    
+    if (NOT store.zip(".", zipFile)) then;
+        halt.error >! "Failed to create project archive.";
+        return;
+    end;
+
+    array:json: flLine;
+    scanRecursive("./", flLine);
+    array:json: flClean;
+    i: fli = 0;
+    i: flsz = flLine.size();
+    while (fli < flsz) do;
+        json: f = flLine.get(fli);
+        s: fp; f.bind("path", fp);
+        if (NOT fp.endsWith(".zip") AND NOT (fp HAS ".pax_token") AND NOT (fp HAS ".git")) then;
+            flClean.push(f);
+        end;
+        fli = fli + 1;
+    end;
+    
+    s: readme = "";
+    i: q = 0;
+    i: qsz = flClean.size();
+    while (q < qsz) do;
+        json: f = flClean.get(q);
+        s: p; f.bind("path", p);
+        if (p.lower() == "readme.md" OR p.lower() == "./readme.md") then;
+            f.bind("content", readme);
+        end;
+        q = q + 1;
+    end;
+    
+    json: payload <<< {"name": "", "version": "", "description": "", "readme_content": "", "zip_content": "", "contents_json": ""} >>>;
+    payload.set("name", name);
+    payload.set("version", ver);
+    payload.set("description", cfg.get("description"));
+    payload.set("readme_content", readme);
+    payload.set("zip_content", crypto.hash(store.read(zipFile), "base64_encode"));
+    payload.set("contents_json", flClean.toStr());
+    
+    >! "Pushing package archive to Registry...";
+    map: pubHeaders {
+        schema = [s <-> s]
+        data = ["X-PAX-TOKEN" :: token, "Content-Type" :: "application/json"]
+    };
+    net.request {
+        method = "POST",
+        url = getRegistryUrl() + "api?route=api/publish",
+        headers = pubHeaders,
+        body = payload,
+        timeout = 30000,
+    } as resp;
+    
+    --- Cleanup
+    store.delete(zipFile);
+    
+    if (resp.ok) then; 
+        >! "Success! Package published."; 
+    else; 
+        s: errMsg = "";
+        if (resp.exists("text")) then;
+            s: raw = s(resp.get("text")).trim();
+            if (raw.startsWith("{")) then;
+                json: parsed = json.parse(raw);
+                if (parsed.exists("message")) then;
+                    parsed.bind("message", errMsg);
+                elif (parsed.exists("error")) then;
+                    parsed.bind("error", errMsg);
+                end;
+            else;
+                errMsg = raw;
+            end;
+        end;
+        
+        if (errMsg == "") then;
+            resp.bind("error", errMsg);
+        end;
+        
+        >! "Publish Failed (HTTP " + s(resp.get("status")) + "): " + errMsg;
+    end;
+};
+
+main();

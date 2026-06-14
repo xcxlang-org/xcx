@@ -1,0 +1,52 @@
+--- Error registry: code -> {title, series, explanation, example}
+
+func buildRegistry(-> map:s<->s) {
+    map:s<->s: reg {
+        schema = [s <-> s]
+        data = [EMPTY]
+    };
+
+    reg.insert("S101", "S101|Undefined variable|Semantic|The variable was never declared in the current scope. Declare it before use with the appropriate type prefix (i:, s:, b:, f:, etc.).|i: x = counter + 1;  --- S101 if 'counter' was never declared");
+    reg.insert("S102", "S102|Redefined variable|Semantic|A variable with this name already exists in the current scope. XCX does not allow shadowing — use reassignment instead of redeclaration.|i: x = 1;  i: x = 2;  --- S102: x already defined");
+    reg.insert("S103", "S103|Type mismatch|Semantic|The type of the value or expression does not match what is expected. Check that you are not assigning a string to an integer, or passing the wrong type to a function.|i: age = \"twenty\";  --- S103: expected i, got s");
+    reg.insert("S104", "S104|Invalid binary operation|Semantic|The operator cannot be applied to the given pair of types. For example, you cannot add a boolean to an integer, or use % on strings.|b: flag = true + 1;  --- S104: + not valid between b and i");
+    reg.insert("S105", "S105|Const reassignment|Semantic|You are trying to assign a new value to a constant. Constants declared with const cannot be changed after initialization.|const i: MAX = 100;  MAX = 200;  --- S105");
+    reg.insert("S106", "S106|Break outside loop|Semantic|A break statement was found outside any loop body. break can only appear inside for or while blocks.|if (x > 0) then;  break;  end;  --- S106");
+    reg.insert("S107", "S107|Continue outside loop|Semantic|A continue statement was found outside any loop body. continue can only appear inside for or while blocks.|if (x > 0) then;  continue;  end;  --- S107");
+    reg.insert("S108", "S108|Index access not supported|Semantic|The type you are indexing with [] does not support index access. Only arrays and strings support bracket indexing.|i: x = 5;  >! x[0];  --- S108: i does not support indexing");
+    reg.insert("S109", "S109|Property not found|Semantic|You are accessing a field that does not exist on this type. Check the spelling and refer to the type's documentation for available properties.|json: j <<< {\"a\": 1} >>>;  >! j.foo;  --- S109 if .foo is not a json property");
+    reg.insert("S110", "S110|Method not found|Semantic|The method you are calling does not exist on this type. Check the method name and the type's method table.|i: n = 5;  n.push(1);  --- S110: i has no .push()");
+    reg.insert("S111", "S111|Invalid argument count|Semantic|The number of arguments passed to a function or method does not match its signature.|func add(i: a, i: b -> i) { return a + b; };  add(1);  --- S111: expected 2, got 1");
+    reg.insert("S208", "S208|Yield outside fiber|Semantic|yield was used outside a fiber body. yield is only valid inside a fiber declaration.|func bad() { yield 1; };  --- S208: yield in a regular func");
+    reg.insert("S209", "S209|Fiber type mismatch|Semantic|You used yield expr; inside a void fiber (one declared without a return type). Void fibers must use plain yield; without a value.|fiber log(s: msg) { yield \"done\"; };  --- S209: void fiber cannot yield a value");
+    reg.insert("S210", "S210|Return type mismatch in fiber|Semantic|A typed fiber must return a value with return expr;. A plain return; without a value is not allowed in a typed fiber.|fiber:i: gen(-> i) { return; };  --- S210: must return an i value");
+    reg.insert("S211", "S211|Cannot iterate void fiber|Semantic|You are trying to use a for loop over a void fiber. Only typed fibers that yield values can be iterated.|fiber: vf = myVoidFiber();  for x in vf do; end;  --- S211");
+    reg.insert("S212", "S212|Cannot run typed fiber|Semantic|You called .run() on a typed fiber. Typed fibers are iterated with a for loop or .next(), not .run(). .run() is for void fibers only.|fiber:i: g = gen(5);  g.run();  --- S212");
+    reg.insert("S301", "S301|Where predicate name collision|Semantic|A local variable name conflicts with a column name inside a .where() predicate. Column names take precedence — rename the local variable to resolve the conflict.|fiber verify(s: token) { db.sessions.where(token == token); };  --- S301: rename param to avoid clash");
+    reg.insert("S302", "S302|Table row count mismatch|Semantic|A row being inserted has a different number of values than the table schema expects. Count your columns (excluding @auto) and match them exactly.|table: t { columns=[id::i @auto, name::s] rows=[(1, \"a\", \"extra\")] };  --- S302");
+
+    reg.insert("R103", "R103|Input type mismatch|Runtime|The value the user entered at runtime could not be converted to the expected type. For example, typing 'hello' when the program expected an integer.|i: age;  >? age;  --- R103 if user types 'abc'");
+    reg.insert("R303", "R303|Index out of bounds|Runtime|You accessed an array, string, or table at an index that does not exist. Indices are zero-based — check .size() before accessing.|array:i: a {1,2,3};  a.get(10);  --- R303");
+    reg.insert("R304", "R304|Column not found|Runtime|A column name used in a query or operation does not exist in the table schema. Verify column names match the table declaration exactly.|products.where(colour == \"red\");  --- R304 if column is named 'color'");
+    reg.insert("R305", "R305|Invalid JSON|Runtime|json.parse() received a string that is not valid JSON. This causes an immediate VM halt. Validate the string before parsing.|json: x = json.parse(\"not json\");  --- R305: VM exits immediately");
+    reg.insert("R306", "R306|Invalid push or finished fiber|Runtime|Either .push() was called on a JSON object (not an array node), or .next()/.run() was called on a fiber that has already finished.|json: j <<< {} >>>;  j.push(item);  --- R306: j is object, not array");
+    reg.insert("R307", "R307|Empty replace pattern|Runtime|.replace() was called with an empty string as the search pattern. The 'from' argument must be a non-empty string.|\"hello\".replace(\"\", \"x\");  --- R307");
+    reg.insert("R401", "R401|DB table or connection error|Runtime|Either the database file could not be opened, or the table does not exist. Run db.sync(table) before any read or write operations.|yield app.fetch(users);  --- R401 if sync was never called");
+    reg.insert("R403", "R403|DB query error|Runtime|A SQL query failed to execute or prepare. This often means a constraint violation (@unique, @fk) or a malformed raw query string.|yield app.exec(\"SELEKT * FROM users\");  --- R403: typo in SQL");
+    reg.insert("R404", "R404|JSON path not found or DB delete error|Runtime|.bind() was called with a path that does not exist in the JSON object, or a database delete operation failed.|s: name;  req.bind(\"username\", name);  --- R404 if key is 'user_name'");
+    reg.insert("R405", "R405|Sync argument error|Runtime|db.sync() received something other than a table object as its argument. Pass the table variable directly, not a string name.|yield app.sync(\"users\");  --- R405: pass the table, not a string");
+    reg.insert("R406", "R406|Sync failed|Runtime|The table could not be synchronized with the database. Check file permissions, path validity, and that the engine is 'sqlite'.|yield app.sync(users);  --- R406 if db file is read-only");
+    reg.insert("R407", "R407|Method argument error|Runtime|A database method received an unexpected argument type. It expected a table name or table object but got something else.|yield app.fetch(42);  --- R407");
+    reg.insert("R408", "R408|Drop table failed|Runtime|db.drop() could not remove the table from the database. The table may not exist or the connection may be in read-only mode.|yield app.drop(users);  --- R408 if table doesn't exist");
+    reg.insert("R409", "R409|Insert argument error|Runtime|db.insert() did not receive a table as its first argument.|yield app.insert(\"users\", \"Alice\", 25);  --- R409: pass the table object");
+    reg.insert("R410", "R410|Save requires primary key|Runtime|db.save() performs an upsert and requires the table to have a @pk column. Add @pk to the appropriate column in your table schema.|yield app.save(users);  --- R410 if no @pk column defined");
+    reg.insert("R440", "R440|Terminal mode error|Runtime|The VM could not switch the terminal to the requested mode (raw or normal). This can happen if the terminal handle is redirected or unavailable.|.terminal !raw;  --- R440 in non-interactive environments");
+    reg.insert("R441", "R441|Cursor out of bounds|Runtime|.terminal !move was called with coordinates outside the terminal screen dimensions.|.terminal !move 999 999;  --- R441");
+    reg.insert("R442", "R442|input.key() outside raw mode|Runtime|input.key() requires the terminal to be in raw mode. Call .terminal !raw; before using input.key().|s: k = input.key();  --- R442 without prior .terminal !raw");
+    reg.insert("R443", "R443|Failed to read input|Runtime|A low-level read error occurred while waiting for user input. Usually an environment issue.|>? name;  --- R443 if stdin is closed");
+    reg.insert("R501", "R501|Invalid method kind index|Runtime|An internal VM error — an opcode referenced a method index that does not exist. This indicates a compiler bug. Report it with your source file.|--- Internal VM error — report to XCX team");
+
+    reg.insert("D401", "D401|Remove without where|Database|db.remove() was called without a .where() clause. This is a compile error to prevent accidental deletion of all rows. Use db.truncate() to explicitly delete everything.|yield app.remove(users);  --- D401: add .where() or use truncate()");
+
+    return reg;
+};

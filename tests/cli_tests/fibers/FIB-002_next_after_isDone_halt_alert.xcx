@@ -1,0 +1,37 @@
+--- TEST: FIB-002
+--- Area: Fibers
+--- Priority: high
+--- Name: Fiber.next() po isDone() → halt.alert R306
+--- Expect:
+---   Wywołanie .next() gdy isDone() == true → halt.alert.
+---   halt.alert NIE przerywa VM (tylko drukuje do stderr i kontynuuje).
+---   Linia po wywołaniu musi się wykonać.
+
+fiber:i: small_gen(i: max -> i) {
+    for v in 1 to max do;
+        yield v;
+    end;
+    return -1;
+};
+
+fiber:i: fg = small_gen(2);
+
+--- Wyczerpanie fibera
+i: a = fg.next();   --- 1
+i: b = fg.next();   --- 2
+i: c = fg.next();   --- -1 (return value)
+
+if (fg.isDone()) then;
+    >! "[FIB-002] PASS — isDone() = true po wyczerpaniu";
+else;
+    >! "[FIB-002] FAIL — isDone() = false — fiber nie jest zakończony";
+end;
+
+--- ── Wywołanie .next() po isDone() ──────────────────────────────────────
+--- Oczekiwane: halt.alert R306 — ale VM kontynuuje!
+fg.next();
+>! "[FIB-002] PASS — VM kontynuuje po halt.alert R306 (next() po isDone())";
+
+--- Drugi raz dla pewności
+fg.next();
+>! "[FIB-002] PASS — VM kontynuuje po drugim halt.alert R306";

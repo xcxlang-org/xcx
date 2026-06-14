@@ -1,0 +1,72 @@
+--- TEST: SEC-002
+--- Area: Security
+--- Priority: critical
+--- Name: SQL injection — parametryzowane zapytania są bezpieczne
+--- Expect:
+---   Parametryzowane zapytania (?) poprawnie escapują wartości.
+---   Payload SQL injection nie niszczy danych.
+---   Wynik: tylko wiersze pasujące dosłownie do payloadu (0 wierszy dla ataku).
+
+database: app { engine = "sqlite", path = "tests_tmp/sec002.db" };
+
+table: users {
+    columns = [ id :: i @auto @pk, name :: s, role :: s ]
+    rows = [EMPTY]
+};
+
+yield app.sync(users);
+yield app.truncate(users);
+
+yield app.insert(users, "Alice", "admin");
+yield app.insert(users, "Bob", "user");
+
+--- ── Subtest 1: SQL injection payload jako wartość parametru ─────────────
+s: malicious = "' OR '1'='1";
+
+--- Bezpieczne zapytanie z ? — payload traktowany jako dosłowny string
+json: result = yield app.queryRaw(
+    "SELECT * FROM users WHERE name = ?",
+    [malicious]
+);
+
+if (result.size() == 0) then;
+    >! "[SEC-002-1] PASS — SQL injection payload nie zwrócił wierszy (0 matches)";
+else;
+    >! "[SEC-002-1] FAIL — SQL injection zwrócił " + s(result.size()) + " wierszy (oczekiwane 0)";
+end;
+
+--- ── Subtest 2: parametryzowane zapytanie z poprawną wartością ──────────
+json: alice_result = yield app.queryRaw(
+    "SELECT * FROM users WHERE name = ?",
+    ["Alice"]
+);
+
+if (alice_result.size() == 1) then;
+    >! "[SEC-002-2] PASS — parametryzowane zapytanie działa poprawnie dla 'Alice'";
+else;
+    >! "[SEC-002-2] FAIL — zapytanie dla 'Alice' zwróciło " + s(alice_result.size()) + " wierszy";
+end;
+
+--- ── Subtest 3: DROP TABLE payload — nie niszczy danych ─────────────────
+s: drop_payload = "Alice'; DROP TABLE users; --";
+json: drop_result = yield app.queryRaw(
+    "SELECT * FROM users WHERE name = ?",
+    [drop_payload]
+);
+
+if (drop_result.size() == 0) then;
+    >! "[SEC-002-3] PASS — DROP TABLE payload nie wykonał DDL (0 matches)";
+else;
+    >! "[SEC-002-3] FAIL — nieprawidłowy wynik: " + s(drop_result.size()) + " wierszy";
+end;
+
+--- Weryfikacja że tabela nadal istnieje
+b: still_exists;
+still_exists = app.has(users);
+if (still_exists) then;
+    >! "[SEC-002-3] PASS — tabela users nadal istnieje po ataku DROP TABLE";
+else;
+    >! "[SEC-002-3] FAIL — tabela users została zniszczona!";
+end;
+
+app.close();

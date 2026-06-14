@@ -1,14 +1,12 @@
 # Rust
 /target/
-# Cargo.lock is typically kept for applications/binaries to ensure reproducible builds.
-# If you prefer to exclude it, uncomment the line below:
 # Cargo.lock
 
 # XCX Releases
 /XCX_Ecosystem_v*/
 /XCX_Ecosystem_v*.zip
 
-# Subprojects artifacts
+
 /xcx-installer/target/
 /xcx-installer/resources.o
 /xcx-vscode/*.vsix
@@ -26,3 +24,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+/Benchmarks/
+
+# AI/Agent metadata
+.agents/
+.gemini/

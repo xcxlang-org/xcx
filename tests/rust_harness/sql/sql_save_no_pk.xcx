@@ -1,0 +1,33 @@
+database: db {
+    engine = "sqlite",
+    path   = "test_save_no_pk.db"
+};
+
+table: users {
+    columns = [
+        id   :: i,
+        name :: s
+    ]
+    rows = [
+        (1, "Alice")
+    ]
+};
+
+i: sentinel = 42;
+
+fiber run(-> b) {
+    yield db.sync(users);
+    
+    --- This must fail at runtime with a halt error because users table doesn't have a @pk
+    yield db.save(users);
+
+    sentinel = 99;
+    return true;
+};
+
+fiber:b: f = run();
+f.next();
+
+--- If the VM did not halt, sentinel would be 99 and this assert would execute and fail the test.
+--- If the VM halted (correct), this assert is never reached, and the test succeeds.
+assert(sentinel == 42);

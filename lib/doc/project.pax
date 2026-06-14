@@ -1,0 +1,19 @@
+---
+PAX Project Configuration
+*---
+/
+    name        :: "doc",
+    version     :: "1.0.0",
+    author      :: "xcx-official",
+    description :: "XCX compiler error code explainer — xcx doc <CODE>",
+    main        :: "doc.xcx",
+    tags  :: ["tools", "diagnostics", "compiler", "errors"],
+    files :: [
+        "doc.xcx",
+        "src/errors.xcx",
+        "src/lookup.xcx",
+        "src/format.xcx"
+    ],
+    deps  :: [
+    ]
+/

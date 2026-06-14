@@ -1,0 +1,9 @@
+--- Verifies that dividing by zero triggers a halt.error, not a thread panic.
+func trigger_div_zero() {
+    i: num = 10;
+    i: zero = 0;
+    i: res = num / zero;
+    >! res;
+};
+
+trigger_div_zero();

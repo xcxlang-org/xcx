@@ -1,0 +1,49 @@
+--- TEST: DB-003b
+--- Area: Database
+--- Priority: critical
+--- Name: db.remove() z .where() — poprawne użycie
+--- Expect:
+---   remove().where() działa — wiersze spełniające warunek są usuwane.
+---   Wiersze niespełniające warunku zostają.
+
+database: app { engine = "sqlite", path = "tests_tmp/db003b.db" };
+
+table: users {
+    columns = [ id :: i @auto @pk, name :: s, age :: i ]
+    rows = [EMPTY]
+};
+
+fiber run(-> b) {
+    yield app.sync(users);
+    yield app.insert(users, "Alice", 15);
+    yield app.insert(users, "Bob", 30);
+    yield app.insert(users, "Charlie", 12);
+
+    yield app.remove(users).where(age < 18) as res;
+
+    if (res.affected == 2) then;
+        >! "[DB-003b] PASS — affected = 2 (Alice i Charlie usunięci)";
+    else;
+        >! "[DB-003b] FAIL — affected = " + s(res.affected) + " (oczekiwane 2)";
+    end;
+
+    table: remaining = yield app.fetch(users);
+
+    if (remaining.count() == 1) then;
+        >! "[DB-003b] PASS — pozostał 1 wiersz";
+    else;
+        >! "[DB-003b] FAIL — pozostało " + s(remaining.count()) + " wierszy";
+    end;
+
+    if (remaining[0].name == "Bob") then;
+        >! "[DB-003b] PASS — pozostał Bob";
+    else;
+        >! "[DB-003b] FAIL — pozostał: " + remaining[0].name;
+    end;
+
+    app.close();
+    return true;
+};
+
+fiber:b: f = run();
+f.next();

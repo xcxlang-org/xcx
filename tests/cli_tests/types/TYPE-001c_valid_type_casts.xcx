@@ -1,0 +1,62 @@
+--- TEST: TYPE-001c
+--- Area: Types
+--- Priority: high
+--- Name: Poprawne rzutowania typów — f→i, i→f, i→s, f→s
+--- Expect:
+---   f→i: truncate toward zero.
+---   i→f: poprawna konwersja.
+---   i→s, f→s: string representation.
+
+--- ── f → i (truncate toward zero) ──────────────────────────────────────
+f: pos = 3.7;
+i: pos_i = i(pos);
+if (pos_i == 3) then;
+    >! "[TYPE-001c] PASS — i(3.7) = 3 (truncate)";
+else;
+    >! "[TYPE-001c] FAIL — i(3.7) = " + s(pos_i);
+end;
+
+f: neg = -3.7;
+i: neg_i = i(neg);
+if (neg_i == -3) then;
+    >! "[TYPE-001c] PASS — i(-3.7) = -3 (truncate toward zero)";
+else;
+    >! "[TYPE-001c] FAIL — i(-3.7) = " + s(neg_i);
+end;
+
+--- ── i → f ──────────────────────────────────────────────────────────────
+i: whole = 42;
+f: whole_f = f(whole);
+if (whole_f == 42.0) then;
+    >! "[TYPE-001c] PASS — f(42) = 42.0";
+else;
+    >! "[TYPE-001c] FAIL — f(42) = " + s(whole_f);
+end;
+
+--- ── i → s ──────────────────────────────────────────────────────────────
+i: num = 99;
+s: num_s = s(num);
+if (num_s == "99") then;
+    >! "[TYPE-001c] PASS — s(99) = '99'";
+else;
+    >! "[TYPE-001c] FAIL — s(99) = '" + num_s + "'";
+end;
+
+--- ── string concat auto-converts numbers ─────────────────────────────
+s: msg = "Value: " + 42;
+if (msg == "Value: 42") then;
+    >! "[TYPE-001c] PASS — string concat auto-konwertuje liczby";
+else;
+    >! "[TYPE-001c] FAIL — concat = '" + msg + "'";
+end;
+
+--- ── default values ─────────────────────────────────────────────────────
+i: def_i;
+f: def_f;
+s: def_s;
+b: def_b;
+
+if (def_i == 0) then; >! "[TYPE-001c] PASS — default i = 0"; else; >! "[TYPE-001c] FAIL — default i = " + s(def_i); end;
+if (def_f == 0.0) then; >! "[TYPE-001c] PASS — default f = 0.0"; else; >! "[TYPE-001c] FAIL — default f"; end;
+if (def_s == "") then; >! "[TYPE-001c] PASS — default s = ''"; else; >! "[TYPE-001c] FAIL — default s = '" + def_s + "'"; end;
+if (def_b == false) then; >! "[TYPE-001c] PASS — default b = false"; else; >! "[TYPE-001c] FAIL — default b"; end;

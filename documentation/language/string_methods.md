@@ -1,10 +1,24 @@
-# XCX 2.2 String Methods
+# XCX 4.0 String Methods
 
 String objects in XCX are immutable. Methods return a **new string** and do not modify the original.
 
 ## Properties
 
 - `.length`: Returns the number of Unicode code points in the string (e.g., `"zażółć".length` is 6). **Used without parentheses.**
+
+## Escape Sequences
+
+String literals support standard escape sequences:
+
+| Sequence | Effect |
+|----------|--------|
+| `\n`     | Newline |
+| `\t`     | Horizontal Tab |
+| `\r`     | Carriage Return |
+| `\"`     | Double Quote |
+| `\\`     | Backslash |
+| `\xNN`   | Hexadecimal character (e.g., `\x1b`) |
+| `\NNN`   | Octal character (e.g., `\033`) |
 
 ## Methods
 
@@ -21,6 +35,7 @@ String objects in XCX are immutable. Methods return a **new string** and do not 
 | `.endsWith(s)`       | `(s) → b`    | Returns true if string ends with `s`.            |
 | `.toInt()`           | `() → i`     | Parses string to Integer; `halt.error` if fail.  |
 | `.toFloat()`         | `() → f`     | Parses string to Float; `halt.error` if fail.    |
+| `.split(s)`          | `(s) → array:s` | Splits by separator `s`; returns array of strings. |
 
 ## Examples
 
@@ -32,4 +47,5 @@ i: start = "Programming".indexOf("gram");       --- 3
 s: part = "Programming".slice(0, 4);            --- "Prog"
 
 i: age = "25".toInt();
+array:s: parts = "a,b,c".split(",");           --- {"a", "b", "c"}
 ```

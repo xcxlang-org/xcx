@@ -1,0 +1,89 @@
+--- TEST: COL-002
+--- Area: Collections
+--- Priority: high
+--- Name: Set — automatyczna deduplikacja i operacje zbiorowe
+--- Expect:
+---   UNION {1,2,3,4,5,6,7}, INTERSECTION {3,4,5}, DIFFERENCE {1,2}
+---   Dodanie duplikatu nie zmienia rozmiaru.
+---   Picking random.choice from empty → false.
+
+set:N: a {1,,5};
+set:N: b {3,,7};
+
+--- ── Subtest 1: UNION ────────────────────────────────────────────────────
+set:N: u = a UNION b;
+if (u.size() == 7) then;
+    >! "[COL-002-1] PASS — UNION size = 7";
+else;
+    >! "[COL-002-1] FAIL — UNION size = " + s(u.size()) + " (oczekiwane 7)";
+end;
+
+--- ── Subtest 2: INTERSECTION ───────────────────────────────────────────
+set:N: i = a INTERSECTION b;
+if (i.size() == 3) then;
+    >! "[COL-002-2] PASS — INTERSECTION size = 3";
+else;
+    >! "[COL-002-2] FAIL — INTERSECTION size = " + s(i.size()) + " (oczekiwane 3)";
+end;
+if (i.contains(3) AND i.contains(4) AND i.contains(5)) then;
+    >! "[COL-002-2] PASS — INTERSECTION zawiera {3,4,5}";
+else;
+    >! "[COL-002-2] FAIL — INTERSECTION nie zawiera oczekiwanych elementów";
+end;
+
+--- ── Subtest 3: DIFFERENCE ──────────────────────────────────────────────
+set:N: d = a DIFFERENCE b;
+if (d.size() == 2) then;
+    >! "[COL-002-3] PASS — DIFFERENCE size = 2";
+else;
+    >! "[COL-002-3] FAIL — DIFFERENCE size = " + s(d.size()) + " (oczekiwane 2)";
+end;
+if (d.contains(1) AND d.contains(2)) then;
+    >! "[COL-002-3] PASS — DIFFERENCE zawiera {1,2}";
+else;
+    >! "[COL-002-3] FAIL — DIFFERENCE nie zawiera oczekiwanych elementów";
+end;
+
+--- ── Subtest 4: SYMMETRIC_DIFFERENCE ───────────────────────────────────
+set:N: sd = a SYMMETRIC_DIFFERENCE b;
+if (sd.size() == 4) then;
+    >! "[COL-002-4] PASS — SYMMETRIC_DIFFERENCE size = 4";
+else;
+    >! "[COL-002-4] FAIL — SYMMETRIC_DIFFERENCE size = " + s(sd.size()) + " (oczekiwane 4)";
+end;
+
+--- ── Subtest 5: deduplikacja przez add() ────────────────────────────────
+i: size_before = a.size();
+a.add(3);
+i: size_after = a.size();
+if (size_before == size_after) then;
+    >! "[COL-002-5] PASS — add() duplikatu nie zmienia rozmiaru";
+else;
+    >! "[COL-002-5] FAIL — rozmiar zmienił się z " + s(size_before) + " na " + s(size_after);
+end;
+
+--- ── Subtest 6: deduplikacja przy inicjalizacji ────────────────────────
+set:N: dup {1, 2, 2, 3, 3, 3};
+if (dup.size() == 3) then;
+    >! "[COL-002-6] PASS — inicjalizacja deduplicates: size = 3";
+else;
+    >! "[COL-002-6] FAIL — size = " + s(dup.size()) + " (oczekiwane 3)";
+end;
+
+--- ── Subtest 7: random.choice z pustego setu → false ───────────────────
+set:N: empty_set {};
+b: picked = random.choice from empty_set;
+if (picked == false) then;
+    >! "[COL-002-7] PASS — random.choice z pustego = false";
+else;
+    >! "[COL-002-7] FAIL — random.choice z pustego zwróciło inne niż false";
+end;
+
+--- ── Subtest 8: unicode aliasy operatorów ──────────────────────────────
+set:N: u2 = a ∪ b;
+set:N: i2 = a ∩ b;
+if (u2.size() == u.size() AND i2.size() == i.size()) then;
+    >! "[COL-002-8] PASS — unicode operatory ∪ ∩ dają te same wyniki";
+else;
+    >! "[COL-002-8] FAIL — unicode operatory dają różne wyniki niż słowne";
+end;

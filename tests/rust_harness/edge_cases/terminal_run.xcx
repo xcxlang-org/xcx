@@ -1,0 +1,6 @@
+--- tests/edge_cases_suite/terminal_run.xcx
+
+b: res = .terminal !clear;
+assert(res == true);
+
+>! "Terminal run test passed!";

@@ -1,0 +1,45 @@
+--- TEST: CTL-002
+--- Area: Control Flow
+--- Priority: medium
+--- Name: Rekurencja — limit 800 ramek → halt.error
+--- Expect:
+---   Przekroczenie 800 ramek rekurencji → halt.error (nie halt.fatal, nie crash).
+---   VM kontynuuje po powrocie z frame.
+---   Poprawna rekurencja (factorial 10) działa.
+
+--- ── Subtest 1: głęboka rekurencja → halt.error ─────────────────────────
+func deep(i: n -> i) {
+    return deep(n + 1);
+};
+
+func try_deep(-> b) {
+    i: result = deep(0);
+    >! "[CTL-002-1] FAIL — rekurencja nie wywołała halt.error po 800 klatkach";
+    return false;
+};
+
+try_deep();
+>! "[CTL-002-1] PASS — halt.error po przekroczeniu 800 ramek, VM żyje";
+
+--- ── Subtest 2: poprawna rekurencja — factorial ─────────────────────────
+func factorial(i: n -> i) {
+    if (n <= 1) then;
+        return 1;
+    else;
+        return n * factorial(n - 1);
+    end;
+};
+
+i: f5 = factorial(5);
+if (f5 == 120) then;
+    >! "[CTL-002-2] PASS — factorial(5) = 120";
+else;
+    >! "[CTL-002-2] FAIL — factorial(5) = " + s(f5);
+end;
+
+i: f10 = factorial(10);
+if (f10 == 3628800) then;
+    >! "[CTL-002-2] PASS — factorial(10) = 3628800";
+else;
+    >! "[CTL-002-2] FAIL — factorial(10) = " + s(f10);
+end;

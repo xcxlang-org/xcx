@@ -1,0 +1,47 @@
+--- TEST: FIB-003
+--- Area: Fibers
+--- Priority: high
+--- Name: break w for..in fiber → automatyczne .close()
+--- Expect:
+---   break wewnątrz for iterującego fiber wywołuje .close().
+---   Po break: isDone() == true.
+---   Wartości przed break są poprawne.
+
+fiber:i: inf_gen(-> i) {
+    i: n = 0;
+    while (true) do;
+        yield n;
+        n = n + 1;
+    end;
+    return -1;
+};
+
+fiber:i: fg = inf_gen();
+array:i: collected {};
+
+for val in fg do;
+    collected.push(val);
+    if (val == 4) then;
+        break;
+    end;
+end;
+
+--- ── Subtest 1: wartości przed break ───────────────────────────────────
+if (collected.size() == 5) then;
+    >! "[FIB-003-1] PASS — zebrano 5 wartości (0..4)";
+else;
+    >! "[FIB-003-1] FAIL — zebrano " + s(collected.size()) + " wartości (oczekiwane 5)";
+end;
+
+if (collected.get(0) == 0 AND collected.get(4) == 4) then;
+    >! "[FIB-003-1] PASS — wartości: 0..4 poprawne";
+else;
+    >! "[FIB-003-1] FAIL — pierwsza=" + s(collected.get(0)) + " ostatnia=" + s(collected.get(4));
+end;
+
+--- ── Subtest 2: isDone() po break ──────────────────────────────────────
+if (fg.isDone()) then;
+    >! "[FIB-003-2] PASS — isDone() = true po break (auto .close() wywołane)";
+else;
+    >! "[FIB-003-2] FAIL — isDone() = false — .close() nie zostało wywołane";
+end;

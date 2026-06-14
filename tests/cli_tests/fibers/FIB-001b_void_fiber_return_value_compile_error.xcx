@@ -1,0 +1,16 @@
+--- TEST: FIB-001b
+--- Area: Fibers
+--- Priority: critical
+--- Name: Void fiber — return z wartością → compile error
+--- Expect:
+---   Void fiber z return expr → compile error.
+--- .
+--- Runner: expect_compile_error = true
+
+--- LINIA KRYTYCZNA — void fiber z return wartości:
+fiber logger(s: msg) {
+    >! msg;
+    return 99;   --- niedozwolone w void fiber
+};
+
+>! "FAIL — return z wartością w void fiber nie wywołał błędu kompilacji";

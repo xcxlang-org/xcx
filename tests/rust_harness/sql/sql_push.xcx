@@ -1,0 +1,65 @@
+database: db {
+    engine = "sqlite",
+    path   = "test_push.db"
+};
+
+table: users {
+    columns = [
+        id   :: i @auto @pk,
+        name :: s,
+        age  :: i
+    ]
+    rows = [
+        ("Alice", 25),
+        ("Bob", 30),
+        ("Charlie", 35)
+    ]
+};
+
+fiber run(-> b) {
+    yield db.sync(users);
+    yield db.truncate(users);
+
+    --- db.push should bulk insert all rows in the users table
+    yield db.push(users) as res;
+    
+    if (res.affected != 3) then;
+        >! "FAIL: db.push should have affected 3 rows, got " + s(res.affected);
+        return false;
+    end;
+    if (res.insertId != 3) then;
+        >! "FAIL: db.push last insertId should be 3, got " + s(res.insertId);
+        return false;
+    end;
+
+    table: all = yield db.fetch(users);
+    if (all.count() != 3) then;
+        >! "FAIL: expected 3 rows in DB, got " + s(all.count());
+        return false;
+    end;
+
+    if (all[0].name != "Alice" OR all[0].age != 25) then;
+        >! "FAIL: row 0 content mismatch";
+        return false;
+    end;
+    if (all[1].name != "Bob" OR all[1].age != 30) then;
+        >! "FAIL: row 1 content mismatch";
+        return false;
+    end;
+    if (all[2].name != "Charlie" OR all[2].age != 35) then;
+        >! "FAIL: row 2 content mismatch";
+        return false;
+    end;
+
+    >! "PASS: db.push bulk insert verified";
+    return true;
+};
+
+fiber:b: f = run();
+b: ok = f.next();
+if (ok) then;
+    >! "=== sql_push: ALL TESTS PASSED ===";
+els;
+    >! "=== sql_push: ERROR ===";
+    halt.error >! "Test execution failed";
+end;

@@ -1,0 +1,21 @@
+--- TEST: DB-001b
+--- Area: Database
+--- Priority: critical
+--- Name: Połączenie SQLite — absolutna ścieżka → halt.fatal
+--- Expect:
+---   Ten plik musi zakończyć się niezerowym exit code.
+---   "[DB-001b] FAIL" nie może pojawić się w stdout.
+--- Runner: expect_fatal_exit = true
+
+database: bad_abs { engine = "sqlite", path = "/etc/xcx_test.db" };
+
+table: items { columns = [ id :: i @auto @pk ] rows = [EMPTY] };
+
+fiber run(-> b) {
+    yield bad_abs.sync(items);
+    >! "[DB-001b] FAIL — absolutna ścieżka nie wywołała halt.fatal";
+    return false;
+};
+
+fiber:b: f = run();
+f.next();

@@ -1,5 +1,9 @@
-pub mod lexer;
-pub mod parser;
+pub mod intern;
+pub mod error;
+pub mod frontend;
 pub mod sema;
-pub mod diagnostic;
-pub mod backend;
+pub mod compiler;
+pub mod vm;
+pub mod runtime;
+pub mod repl;
+pub mod jit;

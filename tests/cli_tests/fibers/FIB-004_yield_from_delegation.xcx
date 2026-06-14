@@ -1,0 +1,59 @@
+--- TEST: FIB-004
+--- Area: Fibers
+--- Priority: high
+--- Name: yield from — delegacja do sub-fiber
+--- Expect:
+---   yield from przekazuje WSZYSTKIE wartości z sub-fibera w kolejności.
+---   Po wyczerpaniu sub-fibera, delegator kontynuuje własne yieldy.
+---   Sekwencja: 0, 1, 2, 100.
+
+fiber:i: count_sub(i: n -> i) {
+    i: x = 0;
+    while (x < n) do;
+        yield x;
+        x = x + 1;
+    end;
+    return 0;
+};
+
+fiber:i: delegator(-> i) {
+    fiber:i: sub = count_sub(3);
+    yield from sub;   --- yields: 0, 1, 2
+    yield 100;        --- następnie: 100
+    return 0;
+};
+
+fiber:i: fd = delegator();
+array:i: results {};
+
+while (NOT fd.isDone()) do;
+    i: v = fd.next();
+    if (NOT fd.isDone()) then;
+        results.push(v);
+    end;
+end;
+
+--- ── Subtest 1: liczba wyników ─────────────────────────────────────────
+if (results.size() == 4) then;
+    >! "[FIB-004-1] PASS — delegator yielded 4 wartości";
+else;
+    >! "[FIB-004-1] FAIL — delegator yielded " + s(results.size()) + " wartości (oczekiwane 4)";
+end;
+
+--- ── Subtest 2: sekwencja ───────────────────────────────────────────────
+if (results.get(0) == 0 AND results.get(1) == 1 AND results.get(2) == 2 AND results.get(3) == 100) then;
+    >! "[FIB-004-2] PASS — sekwencja: 0, 1, 2, 100";
+else;
+    >! "[FIB-004-2] FAIL — sekwencja: "
+        + s(results.get(0)) + ", "
+        + s(results.get(1)) + ", "
+        + s(results.get(2)) + ", "
+        + s(results.get(3));
+end;
+
+--- ── Subtest 3: delegator isDone po wyczerpaniu ─────────────────────────
+if (fd.isDone()) then;
+    >! "[FIB-004-3] PASS — delegator.isDone() = true";
+else;
+    >! "[FIB-004-3] FAIL — delegator.isDone() = false";
+end;

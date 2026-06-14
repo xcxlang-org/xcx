@@ -1,0 +1,20 @@
+--- TEST: CTL-001
+--- Runner: expect_compile_error = true
+--- Area: Control Flow
+--- Priority: high
+--- Name: Brak variable shadowing — RedefinedVariable → compile error
+--- Expect:
+---   Ten plik NIE POWINIEN się skompilować.
+---   Redeclaracja zmiennej 'x' w zagnieżdżonym scope → compile error RedefinedVariable.
+--- j
+--- Runner: oczekiwany exit code kompilacji niezerowy,
+---         stderr zawiera "RedefinedVariable" lub równoważny komunikat.
+
+i: x = 10;
+
+if (true) then;
+    --- LINIA KRYTYCZNA — shadowing niedozwolony:
+    i: x = 20;
+end;
+
+>! "FAIL — RedefinedVariable nie został wykryty";

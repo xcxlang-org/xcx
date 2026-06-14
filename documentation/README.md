@@ -1,6 +1,6 @@
 # XCX Technical Documentation Suite
 
-Welcome to the official technical documentation for XCX 2.2 and the XCX Compiler.
+Welcome to the official technical documentation for XCX 4.0 and the XCX Compiler.
 
 ## 📖 Language Reference
 Comprehensive guides on the XCX language syntax and features.
@@ -20,13 +20,17 @@ Comprehensive guides on the XCX language syntax and features.
 - [Standard Library](language/library_modules.md): Built-in modules (`crypto`, `store`, `env`).
 
 ## ⚙️ Compiler Internals
-Technical deep-dives into how the XCX compiler and VM work.
+Technical deep-dives into how the XCX compiler, JIT, and VM work.
 
-- [Architecture Overview](compiler/architecture.md): The compilation pipeline.
-- [Lexer](compiler/lexer.md): Tokenization and recursive scanning.
-- [Parser](compiler/parser.md): Pratt parsing and AST generation.
-- [Semantic Analysis](compiler/semantics.md): Type checking and symbol resolution.
-- [Virtual Machine](compiler/vm.md): Stack machine architecture and OpCodes.
+- **[Compiler Architecture Index](compiler/README.md):** Main entry point for the XCX compiler technical documentation.
+  - [Frontend Syntax](compiler/frontend/): Lexing, parsing, and AST specifications.
+  - [Semantic Analysis](compiler/sema/): Type checking and scoping validators.
+  - [Compiler Code Gen](compiler/compiler/): Register mapping and VM bytecode translation.
+  - [JIT Engine](compiler/jit/): Cranelift trace compilation and NaN-boxing.
+  - [Virtual Machine](compiler/vm/): Bytecode execution interpreter loop and heap values.
+  - [Runtime Services](compiler/runtime/): Linked collection APIs and FFI linkages.
+  - [Diagnostics Gutter](compiler/diagnostics/): Spans, Severity types, and formatted errors.
+  - [Interactive Shell](compiler/repl/): Persistent REPL workspace logic.
 
 ## 📦 Tooling
 Guides for the XCX ecosystem tools.
@@ -34,4 +38,4 @@ Guides for the XCX ecosystem tools.
 - [PAX Manual](pax/pax_manual.md): Package management and project structure.
 
 ---
-*Documentation Version: 2.2.0 *
+*Documentation Version: 4.0.0 *

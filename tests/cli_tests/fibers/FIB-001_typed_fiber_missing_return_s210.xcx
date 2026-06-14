@@ -1,0 +1,19 @@
+--- TEST: FIB-001
+--- Runner: expect_compile_error = true
+--- Area: Fibers
+--- Priority: critical
+--- Name: Fiber typed — brak return na końcu → compile error S210
+--- Expect:
+---   Ten plik NIE POWINIEN się skompilować.
+---   Typed fiber bez return na końcu → S210.
+--- .
+--- Runner: oczekiwany exit code kompilacji niezerowy, stderr zawiera "S210".
+
+--- LINIA KRYTYCZNA — typed fiber bez return:
+fiber:i gen(-> i) {
+    yield 1;
+    yield 2;
+    --- brak return — musi być S210
+};
+
+>! "FAIL — S210 nie został wykryty";

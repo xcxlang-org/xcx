@@ -1,0 +1,25 @@
+--- TEST: DB-005b
+--- Runner: expect_compile_error = true
+--- Area: Database
+--- Priority: high
+--- Name: db.fetch().where() — wywołanie metody string → błąd kompilacji
+--- Expect:
+---   Ten plik NIE POWINIEN się skompilować.
+---   Kompilator musi odrzucić użycie metody string (.lower()) w .where() dla db.fetch().
+---   Jeśli plik wykona się w całości — jest to FAIL.
+--- comment
+--- Runner: oczekiwany exit code kompilacji niezerowy.
+
+database: app { engine = "sqlite", path = "tests_tmp/db005b.db" };
+
+table: users {
+    columns = [ id :: i @auto @pk, name :: s, age :: i ]
+    rows = [EMPTY]
+};
+
+yield app.sync(users);
+
+--- LINIA KRYTYCZNA — musi być odrzucona przez kompilator:
+table: bad = yield app.fetch(users).where(name.lower() == "alice");
+
+>! "FAIL — string method w where() nie wywołał błędu kompilacji";

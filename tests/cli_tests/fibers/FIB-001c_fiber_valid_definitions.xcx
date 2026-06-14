@@ -1,0 +1,54 @@
+--- TEST: FIB-001c
+--- Area: Fibers
+--- Priority: critical
+--- Name: Fiber — poprawne definicje typed i void
+--- Expect:
+---   Typed fiber z return → kompiluje się i działa.
+---   Void fiber z bare return → kompiluje się i działa.
+
+--- ── Typed fiber ──────────────────────────────────────────────────────
+fiber:i counter(i: max -> i) {
+    for val in 1 to max do;
+        yield val;
+    end;
+    return 0;
+};
+
+fiber:i: cf = counter(3);
+i: v1 = cf.next();
+i: v2 = cf.next();
+i: v3 = cf.next();
+i: vend = cf.next();
+
+if (v1 == 1 AND v2 == 2 AND v3 == 3) then;
+    >! "[FIB-001c] PASS — typed fiber yielded 1, 2, 3";
+else;
+    >! "[FIB-001c] FAIL — typed fiber yielded " + s(v1) + ", " + s(v2) + ", " + s(v3);
+end;
+
+if (vend == 0) then;
+    >! "[FIB-001c] PASS — typed fiber return value = 0";
+else;
+    >! "[FIB-001c] FAIL — return value = " + s(vend);
+end;
+
+if (cf.isDone()) then;
+    >! "[FIB-001c] PASS — isDone() = true po wyczerpaniu";
+else;
+    >! "[FIB-001c] FAIL — isDone() = false po wyczerpaniu";
+end;
+
+--- ── Void fiber z early return ──────────────────────────────────────
+fiber void_early(s: msg) {
+    if (msg == "") then;
+        return;
+    end;
+    >! "[FIB-001c] PASS — void fiber wydrukował: " + msg;
+};
+
+fiber: vf1 = void_early("hello");
+vf1.run();
+
+fiber: vf2 = void_early("");
+vf2.run();
+>! "[FIB-001c] PASS — void fiber z early return nie wydrukował nic dla pustego msg";

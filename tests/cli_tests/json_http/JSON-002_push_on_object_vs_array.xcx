@@ -1,0 +1,43 @@
+--- TEST: JSON-002
+--- Area: JSON/HTTP
+--- Priority: high
+--- Name: json.push() na obiekcie → halt.error; na tablicy → OK
+--- Expect:
+---   push() na JSON object → halt.error.
+---   push() na JSON array → OK.
+---   VM żyje po halt.error.
+
+json: arr_container <<< {"items": []} >>>;
+json: elem <<< {"id": 1, "val": "test"} >>>;
+
+--- ── Subtest 1: push() na JSON array → OK ───────────────────────────────
+arr_container.get("items").push(elem);
+i: size_after = arr_container.get("items").size();
+
+if (size_after == 1) then;
+    >! "[JSON-002-1] PASS — push() na JSON array działa, size = 1";
+else;
+    >! "[JSON-002-1] FAIL — push() na JSON array, size = " + s(size_after);
+end;
+
+--- ── Subtest 2: push() na JSON object → halt.error ─────────────────────
+func try_push_on_object(-> b) {
+    json: obj <<< {"key": "value"} >>>;
+    json: item <<< {"x": 1} >>>;
+    obj.push(item);   --- musi → halt.error
+    >! "[JSON-002-2] FAIL — push() na JSON object nie wywołał halt.error";
+    return false;
+};
+
+try_push_on_object();
+>! "[JSON-002-2] PASS — push() na JSON object wywołał halt.error, VM żyje";
+
+--- ── Subtest 3: push() na samym kontenerze (object) → halt.error ────────
+func try_push_on_container(-> b) {
+    arr_container.push(elem);
+    >! "[JSON-002-3] FAIL — push() na kontenerze-obiekcie nie wywołał halt.error";
+    return false;
+};
+
+try_push_on_container();
+>! "[JSON-002-3] PASS — push() na obiekcie arr_container wywołał halt.error";

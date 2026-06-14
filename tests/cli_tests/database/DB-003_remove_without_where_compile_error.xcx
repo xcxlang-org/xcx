@@ -1,0 +1,30 @@
+--- TEST: DB-003
+--- Runner: expect_compile_error = true
+--- Area: Database
+--- Priority: critical
+--- Name: db.remove() bez .where() — błąd kompilacji D401
+--- Expect:
+---   Ten plik NIE POWINIEN się skompilować.
+---   Kompilator musi zgłosić błąd D401 przy próbie użycia db.remove() bez .where().
+---   Jeśli ten plik wykona się w całości — jest to FAIL.
+--- ,.
+--- Sposób uruchomienia przez runner:
+---   xcx compile DB-003_remove_without_where.xcx
+---   Oczekiwany exit code: niezerowy (błąd kompilacji)
+---   Oczekiwany stderr: zawiera "D401"
+
+database: app { engine = "sqlite", path = "tests_tmp/db003.db" };
+
+table: users {
+    columns = [ id :: i @auto @pk, name :: s, age :: i ]
+    rows = [EMPTY]
+};
+
+yield app.sync(users);
+yield app.insert(users, "Alice", 25);
+
+--- LINIA KRYTYCZNA — musi być odrzucona przez kompilator (D401):
+yield app.remove(users);
+
+--- Jeśli dotarliśmy tutaj — kompilator nie wykrył błędu
+>! "FAIL — db.remove() bez .where() nie wywołał D401";

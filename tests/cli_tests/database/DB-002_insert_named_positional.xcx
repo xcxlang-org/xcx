@@ -1,0 +1,80 @@
+--- TEST: DB-002
+--- Area: Database
+--- Priority: critical
+--- Name: db.insert() — named args vs positional, wynik insertId i affected
+--- Expect:
+---   r1.insertId = 1, r1.affected = 1
+---   r2.insertId = 2, r2.affected = 1
+---   Zawartość tabeli taka sama dla obu wierszy (imię, wiek)
+
+database: app { engine = "sqlite", path = "tests_tmp/db002.db" };
+
+table: users {
+    columns = [
+        id    :: i @auto @pk,
+        name  :: s @unique,
+        age   :: i
+    ]
+    rows = [EMPTY]
+};
+
+fiber run(-> b) {
+    yield app.sync(users);
+
+    --- ── Positional ─────────────────────────────────────────────
+    yield app.insert(users, "Alice", 30) as r1;
+
+    if (r1.insertId == 1) then;
+        >! "[DB-002] PASS — positional: insertId = 1";
+    else;
+        >! "[DB-002] FAIL — positional: insertId = " + s(r1.insertId) + " (oczekiwane 1)";
+    end;
+
+    if (r1.affected == 1) then;
+        >! "[DB-002] PASS — positional: affected = 1";
+    else;
+        >! "[DB-002] FAIL — positional: affected = " + s(r1.affected);
+    end;
+
+    --- ── Named ──────────────────────────────────────────────────
+    yield app.insert(users, name = "Bob", age = 25) as r2;
+
+    if (r2.insertId == 2) then;
+        >! "[DB-002] PASS — named: insertId = 2";
+    else;
+        >! "[DB-002] FAIL — named: insertId = " + s(r2.insertId) + " (oczekiwane 2)";
+    end;
+
+    if (r2.affected == 1) then;
+        >! "[DB-002] PASS — named: affected = 1";
+    else;
+        >! "[DB-002] FAIL — named: affected = " + s(r2.affected);
+    end;
+
+    --- ── Weryfikacja zawartości ──────────────────────────────────
+    table: all = yield app.fetch(users);
+
+    if (all.count() == 2) then;
+        >! "[DB-002] PASS — tabela ma 2 wiersze";
+    else;
+        >! "[DB-002] FAIL — tabela ma " + s(all.count()) + " wierszy";
+    end;
+
+    if (all[0].name == "Alice" AND all[0].age == 30) then;
+        >! "[DB-002] PASS — wiersz 0: Alice, 30";
+    else;
+        >! "[DB-002] FAIL — wiersz 0: " + all[0].name + ", " + s(all[0].age);
+    end;
+
+    if (all[1].name == "Bob" AND all[1].age == 25) then;
+        >! "[DB-002] PASS — wiersz 1: Bob, 25";
+    else;
+        >! "[DB-002] FAIL — wiersz 1: " + all[1].name + ", " + s(all[1].age);
+    end;
+
+    app.close();
+    return true;
+};
+
+fiber:b: f = run();
+f.next();

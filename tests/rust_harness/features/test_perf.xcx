@@ -1,0 +1,62 @@
+--- test_perf.xcx
+--- Verifies that perf.ms(), perf.us(), and perf.ns() return monotonically
+--- increasing values and correctly measure elapsed time after wait.
+
+>! "Running test_perf.xcx...";
+
+i: t0_ms = perf.ms();
+i: t0_us = perf.us();
+i: t0_ns = perf.ns();
+
+if (t0_ms < 0 OR t0_us < 0 OR t0_ns < 0) then;
+    halt.error >! "perf values cannot be negative";
+end;
+
+@wait 15;
+
+i: t1_ms = perf.ms();
+i: t1_us = perf.us();
+i: t1_ns = perf.ns();
+
+i: diff_ms = t1_ms - t0_ms;
+i: diff_us = t1_us - t0_us;
+i: diff_ns = t1_ns - t0_ns;
+
+--- We expect elapsed time to be at least 10 ms / 10000 us / 10000000 ns.
+if (diff_ms < 10) then;
+    halt.error >! "elapsed ms too low: " + s(diff_ms);
+end;
+
+if (diff_us < 10000) then;
+    halt.error >! "elapsed us too low: " + s(diff_us);
+end;
+
+if (diff_ns < 10000000) then;
+    halt.error >! "elapsed ns too low: " + s(diff_ns);
+end;
+
+--- 3. Hot Test (Busy Loop)
+i: loop_start_ms = perf.ms();
+i: loop_start_us = perf.us();
+i: loop_start_ns = perf.ns();
+
+i: sum = 0;
+i: k = 0;
+while (k < 100000) do;
+    sum = sum + k;
+    k = k + 1;
+end;
+
+i: loop_end_ms = perf.ms();
+i: loop_end_us = perf.us();
+i: loop_end_ns = perf.ns();
+
+i: elapsed_loop_ms = loop_end_ms - loop_start_ms;
+i: elapsed_loop_us = loop_end_us - loop_start_us;
+i: elapsed_loop_ns = loop_end_ns - loop_start_ns;
+
+if (elapsed_loop_ms < 0 OR elapsed_loop_us < 0 OR elapsed_loop_ns < 0) then;
+    halt.error >! "elapsed loop time cannot be negative";
+end;
+
+>! "test_perf.xcx passed.";

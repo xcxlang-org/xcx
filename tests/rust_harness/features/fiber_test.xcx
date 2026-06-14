@@ -1,0 +1,16 @@
+--- fiber_test.xcx
+
+i: counter = 0;
+
+fiber increment_counter(-> b) {
+    counter = counter + 1;
+    yield false;
+    return false;
+};
+
+>! "Initial counter: " + s(counter);
+
+fiber:b: fib = increment_counter();
+fib.next();
+
+>! "After fiber.next(): " + s(counter);

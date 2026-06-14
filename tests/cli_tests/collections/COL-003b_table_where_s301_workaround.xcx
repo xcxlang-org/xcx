@@ -1,0 +1,51 @@
+--- TEST: COL-003b
+--- Area: Collections
+--- Priority: high
+--- Name: Table — .where() S301 poprawny workaround (zmiana nazwy parametru)
+--- Expect:
+---   Zmiana nazwy parametru na 't' eliminuje konflikt S301.
+---   Filtrowanie działa poprawnie.
+
+database: db { engine = "sqlite", path = "tests_tmp/col003b.db" };
+
+table: sessions {
+    columns = [ id :: i @auto @pk, token :: s, user_id :: i ]
+    rows = [EMPTY]
+};
+
+yield db.sync(sessions);
+yield db.insert(sessions, "abc123", 1);
+yield db.insert(sessions, "xyz789", 2);
+
+--- Poprawna wersja — parametr 't' zamiast 'token':
+fiber verify(s: t -> b) {
+    table: sess = db.sessions.where(token == t);
+
+    if (sess.count() == 1) then;
+        >! "[COL-003b] PASS — znaleziono 1 sesję dla tokenu: " + t;
+        return true;
+    else;
+        >! "[COL-003b] FAIL — znaleziono " + s(sess.count()) + " sesji";
+        return false;
+    end;
+    return false;
+};
+
+fiber:b: f1 = verify("abc123");
+b: ok1 = f1.next();
+if (ok1) then;
+    >! "[COL-003b] PASS — verify('abc123') OK";
+else;
+    >! "[COL-003b] FAIL — verify('abc123')";
+end;
+
+fiber:b: f2 = verify("notexist");
+b: ok2 = f2.next();
+if (NOT ok2) then;
+    >! "[COL-003b] PASS — verify('notexist') poprawnie zwróciło false";
+else;
+    >! "[COL-003b] FAIL — verify('notexist') powinno zwrócić false";
+end;
+
+db.close();
+);

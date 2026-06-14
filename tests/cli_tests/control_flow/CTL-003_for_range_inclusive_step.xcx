@@ -1,0 +1,70 @@
+--- TEST: CTL-003
+--- Area: Control Flow
+--- Priority: medium
+--- Name: for..in range — inclusive bounds i @step
+--- Expect:
+---   1 to 3 → [1, 2, 3] (inclusive obustronnie).
+---   0 to 6 @step 2 → [0, 2, 4, 6].
+---   Stepped backward (6 to 0 @step -2) → [6, 4, 2, 0] jeśli wspierane.
+
+--- ── Subtest 1: standardowy range 1 to 3 ────────────────────────────────
+array:i: r1 {};
+for i in 1 to 3 do;
+    r1.push(i);
+end;
+
+if (r1.size() == 3) then;
+    >! "[CTL-003-1] PASS — 1 to 3 daje 3 elementy";
+else;
+    >! "[CTL-003-1] FAIL — 1 to 3 daje " + s(r1.size()) + " elementów (oczekiwane 3)";
+end;
+
+if (r1.get(0) == 1 AND r1.get(2) == 3) then;
+    >! "[CTL-003-1] PASS — range [1, 2, 3] — inclusive obustronne";
+else;
+    >! "[CTL-003-1] FAIL — first=" + s(r1.get(0)) + " last=" + s(r1.get(2));
+end;
+
+--- ── Subtest 2: stepped range 0 to 6 @step 2 ────────────────────────────
+array:i: r2 {};
+for j in 0 to 6 @step 2 do;
+    r2.push(j);
+end;
+
+if (r2.size() == 4) then;
+    >! "[CTL-003-2] PASS — 0 to 6 @step 2 daje 4 elementy";
+else;
+    >! "[CTL-003-2] FAIL — daje " + s(r2.size()) + " elementów (oczekiwane 4)";
+end;
+
+if (r2.get(0) == 0 AND r2.get(1) == 2 AND r2.get(2) == 4 AND r2.get(3) == 6) then;
+    >! "[CTL-003-2] PASS — stepped: 0, 2, 4, 6";
+else;
+    >! "[CTL-003-2] FAIL — stepped: "
+        + s(r2.get(0)) + ", " + s(r2.get(1)) + ", "
+        + s(r2.get(2)) + ", " + s(r2.get(3));
+end;
+
+--- ── Subtest 3: range jednoelementowy ──────────────────────────────────
+array:i: r3 {};
+for k in 5 to 5 do;
+    r3.push(k);
+end;
+
+if (r3.size() == 1 AND r3.get(0) == 5) then;
+    >! "[CTL-003-3] PASS — range 5 to 5 daje [5]";
+else;
+    >! "[CTL-003-3] FAIL — range 5 to 5: size=" + s(r3.size());
+end;
+
+--- ── Subtest 4: while z licznikiem jako reference ───────────────────────
+i: cnt = 0;
+while (cnt < 3) do;
+    cnt = cnt + 1;
+end;
+
+if (cnt == 3) then;
+    >! "[CTL-003-4] PASS — while loop: cnt = 3";
+else;
+    >! "[CTL-003-4] FAIL — cnt = " + s(cnt);
+end;

@@ -1,0 +1,10 @@
+const i: MAX = 100;
+i: result = 0;
+
+if (true) then;
+    i: inner_max = 50;  
+    result = inner_max;   
+end;
+
+>! result;
+>! MAX;

@@ -1,0 +1,83 @@
+database: db {
+    engine = "sqlite",
+    path   = "test_save.db"
+};
+
+table: users {
+    columns = [
+        id   :: i @pk,
+        name :: s,
+        age  :: i
+    ]
+    rows = [EMPTY]
+};
+
+table: initial_data {
+    columns = [
+        id   :: i @pk,
+        name :: s,
+        age  :: i
+    ]
+    rows = [
+        (1, "Alice", 25)
+    ]
+};
+
+table: upsert_data {
+    columns = [
+        id   :: i @pk,
+        name :: s,
+        age  :: i
+    ]
+    rows = [
+        (1, "Alice Upserted", 26),
+        (2, "Bob", 30)
+    ]
+};
+
+fiber run(-> b) {
+    yield db.sync(users);
+    yield db.truncate(users);
+
+    --- Insert initial row using db.save
+    yield db.save(initial_data) as res1;
+    if (res1.affected != 1) then;
+        >! "FAIL: db.save initial should affect 1 row, got " + s(res1.affected);
+        return false;
+    end;
+
+    --- Upsert (one update, one insert)
+    yield db.save(upsert_data) as res2;
+    if (res2.affected != 2) then;
+        >! "FAIL: db.save upsert should affect 2 rows, got " + s(res2.affected);
+        return false;
+    end;
+
+    table: all = yield db.fetch(users);
+    if (all.count() != 2) then;
+        >! "FAIL: expected 2 rows in DB, got " + s(all.count());
+        return false;
+    end;
+
+    if (all[0].id != 1 OR all[0].name != "Alice Upserted" OR all[0].age != 26) then;
+        >! "FAIL: row 1 was not updated correctly";
+        return false;
+    end;
+
+    if (all[1].id != 2 OR all[1].name != "Bob" OR all[1].age != 30) then;
+        >! "FAIL: row 2 was not inserted correctly";
+        return false;
+    end;
+
+    >! "PASS: db.save upsert verified";
+    return true;
+};
+
+fiber:b: f = run();
+b: ok = f.next();
+if (ok) then;
+    >! "=== sql_save: ALL TESTS PASSED ===";
+els;
+    >! "=== sql_save: ERROR ===";
+    halt.error >! "Test execution failed";
+end;

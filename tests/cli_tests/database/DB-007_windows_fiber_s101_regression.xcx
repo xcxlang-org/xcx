@@ -1,0 +1,45 @@
+--- TEST: DB-007
+--- Area: Database
+--- Priority: regression
+--- Name: Windows S101 — bezpośrednie przypisanie DB result w fiber (bez workaroundu)
+--- Expect:
+---   Jeśli S101 nadal istnieje: "FAIL — S101" w stderr, fiber może crashować.
+---   Jeśli naprawione (XCX 3.2+): "[DB-007] PASS" w stdout.
+--- h
+--- Ten test celowo NIE używa workaroundu "declare first, assign later".
+--- Bezpośrednie przypisanie:  b: exists = db.has(logs);
+--- To właśnie powodowało S101 na Windows w XCX 4.0.
+
+database: db { engine = "sqlite", path = "tests_tmp/db007.db" };
+
+table: logs {
+    columns = [ id :: i @auto @pk, msg :: s ]
+    rows = [EMPTY]
+};
+
+yield db.sync(logs);
+
+fiber run_direct(-> b) {
+    --- LINIA KRYTYCZNA — bezpośrednie przypisanie (powodowało S101 na Windows):
+    b: exists = db.has(logs);
+
+    if (exists) then;
+        >! "[DB-007] PASS — bezpośrednie przypisanie działa (S101 naprawiony lub nie-Windows)";
+        return true;
+    else;
+        >! "[DB-007] FAIL — db.has() zwróciło false mimo że sync() przeszedł";
+        return false;
+    end;
+    return false;
+};
+
+fiber:b: f = run_direct();
+b: result = f.next();
+
+if (result) then;
+    >! "[DB-007] PASS — fiber zakończony bez S101";
+else;
+    >! "[DB-007] FAIL lub KNOWN-REGRESSION (S101 nadal obecny)";
+end;
+
+db.close();

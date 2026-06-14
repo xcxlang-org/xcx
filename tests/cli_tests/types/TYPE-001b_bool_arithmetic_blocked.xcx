@@ -1,0 +1,16 @@
+--- TEST: TYPE-001b
+--- Area: Types
+--- Priority: high
+--- Name: bool + int → type error (compile error)
+--- Expect:
+---   Wyrażenie true + 1 → compile error.
+---   flag + 5 → compile error.
+--- .
+--- Runner: expect_compile_error = true
+
+b: flag = true;
+
+--- LINIA KRYTYCZNA:
+i: m = flag + 1;
+
+>! "FAIL — bool + int nie wywołał type error";

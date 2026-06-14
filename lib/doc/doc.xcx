@@ -1,0 +1,32 @@
+include "src/errors.xcx";
+include "src/lookup.xcx";
+include "src/format.xcx";
+
+func main() {
+    array:s: args = env.args();
+
+    if (args.size() < 3) then;
+        >! "doc — XCX Error Code Reference";
+        >! "Usage:  xcx doc <CODE>";
+        >! "        xcx doc list";
+        >! "";
+        >! "Examples:";
+        >! "  xcx doc S103";
+        >! "  xcx doc R305";
+        >! "  xcx doc list";
+        return;
+    end;
+
+    s: cmd = args.get(2).upper().trim();
+    map:s<->s: reg = buildRegistry();
+
+    if (cmd == "LIST") then;
+        printList(reg);
+        return;
+    end;
+
+    json: entry = lookupCode(cmd, reg);
+    printEntry(entry);
+};
+
+main();

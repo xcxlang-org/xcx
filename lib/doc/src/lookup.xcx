@@ -1,0 +1,23 @@
+--- Parses a packed error string into fields.
+--- Format: CODE|TITLE|SERIES|EXPLANATION|EXAMPLE
+
+func parseEntry(s: raw -> json) {
+    array:s: parts = raw.split("|");
+    json: e <<< {"code": "", "title": "", "series": "", "explanation": "", "example": ""} >>>;
+    e.set("code",        parts.get(0));
+    e.set("title",       parts.get(1));
+    e.set("series",      parts.get(2));
+    e.set("explanation", parts.get(3));
+    e.set("example",     parts.get(4));
+    return e;
+};
+
+func lookupCode(s: code, map:s<->s: reg -> json) {
+    s: upper = code.upper().trim();
+    if (reg.contains(upper)) then;
+        return parseEntry(reg.get(upper));
+    end;
+    json: notFound <<< {"code": "", "title": "Not found", "series": "", "explanation": "", "example": ""} >>>;
+    notFound.set("code", upper);
+    return notFound;
+};

@@ -1,0 +1,14 @@
+--- TEST: JSON-001
+--- Area: JSON/HTTP
+--- Priority: critical
+--- Name: json.parse() — halt.fatal przy niepoprawnym JSON (R305)
+--- Expect:
+---   json.parse() z niepoprawnym stringiem → natychmiastowe halt.fatal.
+---   VM terminuje — linia po wywołaniu się NIE wykona.
+--- Runner: expect_fatal_exit = true
+
+s: bad_json = "{invalid: json, no quotes}";
+>! "[JSON-001] Próba parsowania niepoprawnego JSON...";
+json: p = json.parse(bad_json);
+
+>! "[JSON-001] FAIL — json.parse() nie wywołał halt.fatal (R305)";

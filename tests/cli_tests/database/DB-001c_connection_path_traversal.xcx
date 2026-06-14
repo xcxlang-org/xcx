@@ -1,0 +1,21 @@
+--- TEST: DB-001c
+--- Area: Database
+--- Priority: critical
+--- Name: Połączenie SQLite — path traversal (..) → halt.fatal
+--- Expect:
+---   Ten plik musi zakończyć się niezerowym exit code.
+---   "[DB-001c] FAIL" nie może pojawić się w stdout.
+--- Runner: expect_fatal_exit = true
+
+database: bad_trav { engine = "sqlite", path = "../../xcx_test.db" };
+
+table: items { columns = [ id :: i @auto @pk ] rows = [EMPTY] };
+
+fiber run(-> b) {
+    yield bad_trav.sync(items);
+    >! "[DB-001c] FAIL — path traversal nie wywołał halt.fatal";
+    return false;
+};
+
+fiber:b: f = run();
+f.next();

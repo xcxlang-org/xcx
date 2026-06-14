@@ -1,0 +1,48 @@
+--- TEST: HALT-002
+--- Area: Error Handling
+--- Priority: critical
+--- Name: halt.error — przerywa ramkę, VM żyje po powrocie
+--- Expect:
+---   halt.error w funkcji przerywa tę funkcję.
+---   Linia po wywołaniu funkcji (w main scope) MUSI się wykonać — VM żyje.
+---   Brak nonzero exit — halt.error nie kończy VM.
+
+--- ── Subtest 1: halt.error w funkcji — VM żyje ─────────────────────────
+func will_error(i: n -> i) {
+    if (n == 0) then;
+        halt.error >! "HALT-ERROR: podano zero!";
+        return -1;
+    end;
+    return n * 2;
+};
+
+will_error(0);
+>! "[HALT-002-1] PASS — VM żyje po halt.error w funkcji";
+
+i: r2 = will_error(5);
+if (r2 == 10) then;
+    >! "[HALT-002-2] PASS — will_error(5) = 10";
+else;
+    >! "[HALT-002-2] FAIL — will_error(5) = " + s(r2);
+end;
+
+--- ── Subtest 2: halt.error w fiberze — fiber kończy się, VM żyje ────────
+fiber:i err_fiber(-> i) {
+    yield 1;
+    halt.error >! "HALT-ERROR: błąd w fiberze";
+    yield 2;
+    return 0;
+};
+
+fiber:i: fe = err_fiber();
+i: v1 = fe.next();
+
+if (v1 == 1) then;
+    >! "[HALT-002-3] PASS — fiber wyemitował 1 przed błędem";
+else;
+    >! "[HALT-002-3] FAIL — fiber wyemitował " + s(v1);
+end;
+
+fe.next();
+>! "[HALT-002-4] PASS — VM żyje po halt.error w fiberze";
+>! "[HALT-002] Wszystkie subtesty zakończone";

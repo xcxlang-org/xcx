@@ -1,0 +1,62 @@
+--- TEST: COL-001
+--- Area: Collections
+--- Priority: critical
+--- Name: Array — out-of-bounds → halt.error
+--- Expect:
+---   get(), insert(), update(), delete() z indeksem poza zakresem → halt.error.
+---   VM kontynuuje po każdym błędzie (halt.error, nie halt.fatal).
+
+array:i: nums {10, 20, 30};
+
+--- ── Subtest 1: get() out of bounds ─────────────────────────────────────
+func try_get_oob(-> b) {
+    i: val = nums.get(5);
+    >! "[COL-001-1] FAIL — get(5) nie wywołał halt.error";
+    return false;
+};
+try_get_oob();
+>! "[COL-001-1] PASS — get(5) wywołał halt.error, VM żyje";
+
+--- ── Subtest 2: get() negatywny indeks ─────────────────────────────────
+func try_get_neg(-> b) {
+    i: val = nums.get(-1);
+    >! "[COL-001-2] FAIL — get(-1) nie wywołał halt.error";
+    return false;
+};
+try_get_neg();
+>! "[COL-001-2] PASS — get(-1) wywołał halt.error, VM żyje";
+
+--- ── Subtest 3: insert() out of bounds ──────────────────────────────────
+func try_insert_oob(-> b) {
+    nums.insert(10, 99);
+    >! "[COL-001-3] FAIL — insert(10, 99) nie wywołał halt.error";
+    return false;
+};
+try_insert_oob();
+>! "[COL-001-3] PASS — insert(10, 99) wywołał halt.error";
+
+--- ── Subtest 4: update() out of bounds ──────────────────────────────────
+func try_update_oob(-> b) {
+    nums.update(100, 5);
+    >! "[COL-001-4] FAIL — update(100, 5) nie wywołał halt.error";
+    return false;
+};
+try_update_oob();
+>! "[COL-001-4] PASS — update(100, 5) wywołał halt.error";
+
+--- ── Subtest 5: delete() out of bounds ──────────────────────────────────
+func try_delete_oob(-> b) {
+    nums.delete(99);
+    >! "[COL-001-5] FAIL — delete(99) nie wywołał halt.error";
+    return false;
+};
+try_delete_oob();
+>! "[COL-001-5] PASS — delete(99) wywołał halt.error";
+
+--- ── Subtest 6: poprawne operacje dla pewności ──────────────────────────
+i: v = nums.get(0);
+if (v == 10) then;
+    >! "[COL-001-6] PASS — get(0) = 10";
+else;
+    >! "[COL-001-6] FAIL — get(0) = " + s(v);
+end;

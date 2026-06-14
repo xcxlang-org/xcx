@@ -1,0 +1,83 @@
+--- TEST: COL-005
+--- Area: Collections
+--- Priority: medium
+--- Name: Map — .get() bez .contains() → halt.error dla missing key
+--- Expect:
+---   .get() dla nieistniejącego klucza → halt.error.
+---   .contains() przed .get() → bezpieczny wzorzec.
+---   Map.toJson() → poprawny JSON object.
+
+map: ages {
+    schema = [s <-> i]
+    data = [ "alice" :: 30, "bob" :: 25 ]
+};
+
+--- ── Subtest 1: .get() istniejącego klucza ──────────────────────────────
+i: alice_age = ages.get("alice");
+if (alice_age == 30) then;
+    >! "[COL-005-1] PASS — ages.get('alice') = 30";
+else;
+    >! "[COL-005-1] FAIL — ages.get('alice') = " + s(alice_age);
+end;
+
+--- ── Subtest 2: .get() nieistniejącego klucza → halt.error ─────────────
+func try_missing_key(-> b) {
+    i: val = ages.get("charlie");
+    >! "[COL-005-2] FAIL — get('charlie') nie wywołał halt.error";
+    return false;
+};
+try_missing_key();
+>! "[COL-005-2] PASS — get('charlie') wywołał halt.error, VM żyje";
+
+--- ── Subtest 3: .contains() przed .get() — bezpieczny wzorzec ──────────
+if (ages.contains("alice")) then;
+    i: safe = ages.get("alice");
+    >! "[COL-005-3] PASS — contains() + get() = " + s(safe);
+else;
+    >! "[COL-005-3] FAIL — contains('alice') zwróciło false";
+end;
+
+if (NOT ages.contains("charlie")) then;
+    >! "[COL-005-3] PASS — contains('charlie') = false, unikamy get()";
+else;
+    >! "[COL-005-3] FAIL — contains('charlie') powinno być false";
+end;
+
+--- ── Subtest 4: .size() i .keys() ──────────────────────────────────────
+if (ages.size() == 2) then;
+    >! "[COL-005-4] PASS — map.size() = 2";
+else;
+    >! "[COL-005-4] FAIL — map.size() = " + s(ages.size());
+end;
+
+array:s: keys = ages.keys();
+if (keys.size() == 2) then;
+    >! "[COL-005-4] PASS — keys().size() = 2";
+else;
+    >! "[COL-005-4] FAIL — keys().size() = " + s(keys.size());
+end;
+
+--- ── Subtest 5: .insert() i nadpisanie ─────────────────────────────────
+ages.insert("charlie", 40);
+if (ages.contains("charlie")) then;
+    >! "[COL-005-5] PASS — insert('charlie', 40) działa";
+else;
+    >! "[COL-005-5] FAIL — insert nie dodał klucza";
+end;
+
+ages.insert("alice", 31);
+i: updated = ages.get("alice");
+if (updated == 31) then;
+    >! "[COL-005-5] PASS — insert nadpisuje istniejący klucz";
+else;
+    >! "[COL-005-5] FAIL — po nadpisaniu alice = " + s(updated);
+end;
+
+--- ── Subtest 6: .toJson() ───────────────────────────────────────────────
+json: mj = ages.toJson();
+i: bob_age; mj.bind("bob", bob_age);
+if (bob_age == 25) then;
+    >! "[COL-005-6] PASS — map.toJson() poprawnie serializuje bob: 25";
+else;
+    >! "[COL-005-6] FAIL — toJson().bob = " + s(bob_age);
+end;

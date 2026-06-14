@@ -1,0 +1,33 @@
+--- TEST: SEC-001c
+--- Area: Security
+--- Priority: critical
+--- Name: store — poprawna ścieżka względna → OK
+--- Expect:
+---   store.write(), store.read(), store.exists() z ścieżką względną działają.
+---   Treść zapisana = treść odczytana.
+
+s: path = "tests_tmp/sec001c_test.txt";
+s: content = "XCX 4.0 security test\nLine 2";
+
+store.write(path, content);
+
+if (store.exists(path)) then;
+    >! "[SEC-001c] PASS — store.exists() = true po write()";
+else;
+    >! "[SEC-001c] FAIL — store.exists() = false po write()";
+end;
+
+s: read_back = store.read(path);
+if (read_back == content) then;
+    >! "[SEC-001c] PASS — store.read() zwrócił zapisaną treść";
+else;
+    >! "[SEC-001c] FAIL — read_back ≠ content";
+end;
+
+store.delete(path);
+
+if (NOT store.exists(path)) then;
+    >! "[SEC-001c] PASS — store.delete() usunął plik";
+else;
+    >! "[SEC-001c] FAIL — plik nadal istnieje po delete()";
+end;

@@ -1,0 +1,62 @@
+--- TEST: JSON-003b
+--- Area: JSON/HTTP
+--- Priority: high
+--- Name: .bind() — poprawny wzorzec: pre-deklaracja zmiennej
+--- Expect:
+---   Wszystkie bind() z pre-deklarowanymi zmiennymi działają poprawnie.
+---   Typy: s, i, b, f — wszystkie poprawnie extractowane.
+
+json: data <<< {"name": "Alice", "age": 30, "active": true, "score": 98.5} >>>;
+
+s: name;
+i: age;
+b: active;
+f: score;
+
+data.bind("name", name);
+data.bind("age", age);
+data.bind("active", active);
+data.bind("score", score);
+
+if (name == "Alice") then;
+    >! "[JSON-003b] PASS — bind(name) = Alice";
+else;
+    >! "[JSON-003b] FAIL — bind(name) = " + name;
+end;
+
+if (age == 30) then;
+    >! "[JSON-003b] PASS — bind(age) = 30";
+else;
+    >! "[JSON-003b] FAIL — bind(age) = " + s(age);
+end;
+
+if (active == true) then;
+    >! "[JSON-003b] PASS — bind(active) = true";
+else;
+    >! "[JSON-003b] FAIL — bind(active) = " + s(active);
+end;
+
+if (score == 98.5) then;
+    >! "[JSON-003b] PASS — bind(score) = 98.5";
+else;
+    >! "[JSON-003b] FAIL — bind(score) = " + s(score);
+end;
+
+--- ── Nested path ────────────────────────────────────────────────────────
+json: nested <<< {"server": {"host": "localhost", "port": 8080}} >>>;
+s: host;
+i: port;
+nested.bind("server.host", host);
+nested.bind("server.port", port);
+
+if (host == "localhost") then;
+    >! "[JSON-003b] PASS — nested bind host = localhost";
+else;
+    >! "[JSON-003b] FAIL — nested bind host = " + host;
+end;
+
+if (port == 8080) then;
+    >! "[JSON-003b] PASS — nested bind port = 8080";
+else;
+    >! "[JSON-003b] FAIL — nested bind port = " + s(port);
+end;

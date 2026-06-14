@@ -1,4 +1,4 @@
-# XCX 2.2 Standard Library and Modules
+# XCX 4.0 Standard Library and Modules
 
 ## Built-in Modules
 
@@ -8,8 +8,10 @@ Cryptography utilities.
 
 | Method                              | Returns | Description                                    |
 |-------------------------------------|---------|------------------------------------------------|
-| `crypto.hash(password, "bcrypt")`   | `s`     | Hashes password using bcrypt                   |
-| `crypto.hash(password, "argon2")`   | `s`     | Hashes password using argon2 (recommended)     |
+| `crypto.hash(data, "bcrypt")`       | `s`     | Hashes password using bcrypt                   |
+| `crypto.hash(data, "argon2")`       | `s`     | Hashes password using argon2 (recommended)     |
+| `crypto.hash(data, "base64_encode")`| `s`     | Encodes binary data/string to Base64 string    |
+| `crypto.hash(data, "base64_decode")`| `s`     | Decodes Base64 string back to binary/string    |
 | `crypto.verify(password, hash, algo)` | `b`   | Returns `true` if password matches hash        |
 | `crypto.token(length)`              | `s`     | Generates random hex token of given length     |
 
@@ -31,6 +33,13 @@ All paths must be **relative** to the project root. Absolute paths or path trave
 | `store.append(p, c)`| `(s, s) → b`              | `b`     | Appends to file. Creates if missing.         |
 | `store.exists(p)`   | `(s) → b`                 | `b`     | Checks existence. No side effects.           |
 | `store.delete(p)`   | `(s) → b`                 | `b`     | Removes file or directory (recursive).       |
+| `store.list(p)`     | `(s) → array:s`           | `array:s`| Returns list of files and folders.          |
+| `store.isDir(p)`    | `(s) → b`                 | `b`     | `true` if path is a directory.               |
+| `store.size(p)`     | `(s) → i`                 | `i`     | File size in bytes.                          |
+| `store.mkdir(p)`    | `(s) → b`                 | `b`     | Creates directory (recursive).               |
+| `store.glob(pat)`   | `(s) → array:s`           | `array:s`| Returns files matching glob pattern.         |
+| `store.zip(s, t)`   | `(s, s) → b`              | `b`     | Archives source to target zip.               |
+| `store.unzip(z, d)` | `(s, s) → b`              | `b`     | Extracts zip to destination.                 |
 
 ```xcx
 store.write("log.txt", "First line");
@@ -59,17 +68,29 @@ end;
 
 ### random
 
-`random.choice from` picks a random element from a **set**. It works exclusively with set types (`set:N`, `set:Z`, `set:Q`, `set:S`, `set:B`, `set:C`).
+| Method                            | Signature           | Returns | Description                                                                 |
+|-----------------------------------|---------------------|---------|-----------------------------------------------------------------------------|
+| `random.choice from col`          | `(set/array) → T`   | `T`     | Picks a random element from the provided set or array.                      |
+| `random.int(min, max @step num)`  | `(i, i, @i) → i`    | `i`     | Picks a random integer in range `[min, max]`. Default step: `1`.            |
+| `random.float(min, max @step num)`| `(f, f, @f) → f`    | `f`     | Picks a random float in range `[min, max]`. Default step: `0.5`.            |
 
-> [!IMPORTANT]
-> `random.choice from` does **not** work with arrays. Use a set if you need random selection.
 
 ```xcx
 set:N: pool {1,,10};
 i: picked = random.choice from pool;
 
-set:S: names {"Alice", "Bob", "Charlie"};
-s: winner = random.choice from names;
+--- Works on arrays too
+array:s: words {"hello", "world"};
+s: w = random.choice from words;
+
+--- Picks 1, 3, 5, 7, or 9
+i: odd = random.int(1, 10 @step 2);
+
+--- Picks 0.0, 0.5, 1.0, 1.5, or 2.0
+f: weight = random.float(0.0, 2.0);
+
+--- Picks 0.0, 0.25, 0.5, 0.75, 1.0
+f: precision = random.float(0.0, 1.0 @step 0.25);
 ```
 
 ### date (module)
@@ -77,6 +98,33 @@ s: winner = random.choice from names;
 ```xcx
 date: now = date.now();
 ```
+
+### perf
+
+Provides a monotonic, high-resolution timer for performance benchmarking. Unlike `date.now()`, the values returned by `perf` are guaranteed to be monotonic (never go backward) and are not affected by system clock adjustments (NTP/Daylight Saving Time).
+
+| Method      | Signature | Returns | Description                                                        |
+|-------------|-----------|---------|--------------------------------------------------------------------|
+| `perf.ms()` | `() → i`  | `i`     | Elapsed time in milliseconds since the VM started                  |
+| `perf.us()` | `() → i`  | `i`     | Elapsed time in microseconds (10⁻⁶ seconds) since the VM started   |
+| `perf.ns()` | `() → i`  | `i`     | Elapsed time in nanoseconds (10⁻⁹ seconds) since the VM started    |
+
+```xcx
+i: start = perf.ms();
+--- Code to benchmark
+i: elapsed = perf.ms() - start;
+>! "Elapsed: " + s(elapsed) + " ms";
+```
+
+#### Error Handling and Halts
+
+| Scenario | Behavior / Error |
+|---|---|
+| Complete lack of OS monotonic timer support | `halt.fatal` raised on the first method invocation |
+| Calling `perf` methods with arguments (e.g. `perf.ms(10)`) | Compile-time signature mismatch error |
+| Assigning `perf` values directly to `date` variables | Compile-time type mismatch error |
+| Counter overflow (`perf.ns()` after ~292 years) | No `halt.error` (wrap-around to negative value) |
+| Platform lacks native microsecond/nanosecond timer | Auto-fallback to next lower precision, scaled (never fails) |
 
 ---
 

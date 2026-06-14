@@ -1,0 +1,235 @@
+use crate::vm::value::{Value};
+use crate::runtime::builtin::json::access::normalize_json_path;
+use crate::vm::utils::json::value_to_json;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_json_get(out: *mut Value, json_bits: u64, json_tag: u64, path_bits: u64, path_tag: u64) {
+    let json_val = Value { bits: json_bits, tag: json_tag };
+    if !json_val.is_json() { unsafe { *out = Value::from_bool(false); return; } }
+    
+    let path_val = Value { bits: path_bits, tag: path_tag };
+    let path_borrow = unsafe { path_val.as_str_borrow() };
+    let path_temp;
+    let path_str = match path_borrow {
+        Some(s) => s,
+        None => {
+            path_temp = path_val.to_string();
+            &path_temp
+        }
+    };
+    
+    let json_ptr = {
+        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
+            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val)
+        } else {
+            json_val.unpack_ptr::<crate::vm::object::JsonObj>()
+        }
+    };
+    
+    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    
+    let v_opt = if is_simple {
+        match unsafe { &(*json_ptr).root } {
+            crate::vm::object::JsonVal::Array(a) => {
+                if let Ok(idx) = path_str.parse::<usize>() {
+                    let a_read = unsafe { &*(*a).data_ptr() };
+                    if idx < a_read.len() { Some(a_read[idx].clone()) } else { None }
+                } else {
+                    None
+                }
+            }
+            crate::vm::object::JsonVal::Object(o) => {
+                let o_read = unsafe { &*(*o).data_ptr() };
+                o_read.iter().find(|(k, _)| k.as_str() == path_str).map(|(_, v)| v.clone())
+            }
+            _ => None,
+        }
+    } else {
+        let pointer = normalize_json_path(path_str);
+        unsafe { (*json_ptr).root.pointer(&pointer) }
+    };
+    
+    if let Some(v) = v_opt {
+        let res = crate::vm::utils::json::json_val_to_value(&v);
+        if res.is_ptr() { unsafe { res.inc_ref(); } }
+        unsafe { *out = res; }
+    } else {
+        unsafe { *out = Value::from_bool(false); }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_json_set(json_bits: u64, json_tag: u64, path_bits: u64, path_tag: u64, val_bits: u64, val_tag: u64) -> i32 {
+    let json_val = Value { bits: json_bits, tag: json_tag };
+    if !json_val.is_json() { return 0; }
+    
+    let path_val = Value { bits: path_bits, tag: path_tag };
+    let path_borrow = unsafe { path_val.as_str_borrow() };
+    let path_temp;
+    let path_str = match path_borrow {
+        Some(s) => s,
+        None => {
+            path_temp = path_val.to_string();
+            &path_temp
+        }
+    };
+    
+    let json_ptr = {
+        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
+            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
+        } else {
+            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
+        }
+    };
+    
+    let val = Value { bits: val_bits, tag: val_tag };
+    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    
+    unsafe {
+        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        
+        if is_simple {
+            if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
+                let obj = &mut *(*o).data_ptr();
+                if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == path_str) {
+                    obj[pos].1 = value_to_json(&val);
+                } else {
+                    obj.push((std::sync::Arc::new(path_str.to_string()), value_to_json(&val)));
+                }
+                return 1;
+            }
+        }
+        let mut root_copy = (*json_ptr).root.clone();
+        crate::vm::utils::set_json_value_at_path(&mut root_copy, path_str, value_to_json(&val));
+        (*json_ptr).root = root_copy;
+    }
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_json_push(json_bits: u64, json_tag: u64, val_bits: u64, val_tag: u64) -> i32 {
+    let json_val = Value { bits: json_bits, tag: json_tag };
+    if !json_val.is_json() { return 0; }
+
+    let json_ptr = {
+        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
+            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
+        } else {
+            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
+        }
+    };
+
+    let val = Value { bits: val_bits, tag: val_tag };
+
+    unsafe {
+        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        if let crate::vm::object::JsonVal::Array(a) = &(*json_ptr).root {
+            let arr = &mut *(*a).data_ptr();
+            arr.push(value_to_json(&val));
+            1
+        } else {
+            panic!("halt.error: Cannot push to a JSON object (R306)");
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, path_bits: u64, path_tag: u64, val_bits: u64, val_tag: u64) {
+    let json_val = Value { bits: json_bits, tag: json_tag };
+    if !json_val.is_json() { return; }
+    
+    let path_val = Value { bits: path_bits, tag: path_tag };
+    let path_borrow = unsafe { path_val.as_str_borrow() };
+    let path_temp;
+    let path_str = match path_borrow {
+        Some(s) => s,
+        None => {
+            path_temp = path_val.to_string();
+            &path_temp
+        }
+    };
+    
+    let json_ptr = {
+        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
+            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
+        } else {
+            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
+        }
+    };
+    
+    let val = Value { bits: val_bits, tag: val_tag };
+    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    
+    unsafe {
+        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        
+        if is_simple {
+            if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
+                let o_write = &mut *(*o).data_ptr();
+                if let Some(pos) = o_write.iter().position(|(k, _)| k.as_str() == path_str) {
+                    if let crate::vm::object::JsonVal::Array(a) = &mut o_write[pos].1 {
+                        let arr = &mut *(*a).data_ptr();
+                        arr.push(value_to_json(&val));
+                        return;
+                    }
+                }
+            }
+        }
+        
+        let pointer = normalize_json_path(path_str);
+        if let Some(target) = (*json_ptr).root.pointer(&pointer) {
+            if let crate::vm::object::JsonVal::Array(a) = target {
+                let arr = &mut *(*a).data_ptr();
+                arr.push(value_to_json(&val));
+            } else {
+                panic!("halt.error: Cannot push to a non-array JSON object (R306)");
+            }
+        } else {
+            panic!("halt.error: Target array not found in JSON (R306)");
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, json_tag: u64) {
+    let json_val = Value { bits: json_bits, tag: json_tag };
+    if !json_val.is_json() {
+        unsafe { *out = Value::from_bool(false); }
+        return;
+    }
+
+    let json_ptr = if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
+        crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val)
+    } else {
+        json_val.unpack_ptr::<crate::vm::object::JsonObj>()
+    };
+
+    unsafe {
+        if !(*json_ptr).dirty.load(std::sync::atomic::Ordering::Acquire) {
+            if let Some(s) = (*json_ptr).cached_str.lock().as_ref() {
+                let res = Value::from_string(s.clone());
+                if res.is_ptr() { res.inc_ref(); }
+                *out = res;
+                return;
+            }
+        }
+
+        thread_local! {
+            static SERIALIZE_BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(4096));
+        }
+
+        let s = SERIALIZE_BUF.with(|cell| {
+            let mut buf = cell.borrow_mut();
+            buf.clear();
+            (*json_ptr).root.to_string_buf(&mut buf);
+            buf.clone()
+        });
+
+        let string_obj = std::sync::Arc::new(crate::vm::object::StringObj::new(s.into_bytes()));
+        *(*json_ptr).cached_str.lock() = Some(string_obj.clone());
+        (*json_ptr).dirty.store(false, std::sync::atomic::Ordering::Release);
+        let res = Value::from_string(string_obj);
+        if res.is_ptr() { res.inc_ref(); }
+        *out = res;
+    }
+}

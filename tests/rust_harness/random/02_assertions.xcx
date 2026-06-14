@@ -1,0 +1,49 @@
+--- Test random.int and random.float assertions on bounds and step
+
+i: iters = 100;
+i: cnt = 0;
+
+while (cnt < iters) do;
+    --- 1. random.int with normal bounds
+    i: r1 = random.int(5, 15);
+    assert(r1 >= 5 AND r1 <= 15);
+
+    --- 2. random.int with swapped bounds
+    i: r2 = random.int(20, 10);
+    assert(r2 >= 10 AND r2 <= 20);
+
+    --- 3. random.int with step
+    i: r3 = random.int(1, 10 @step 2);
+    assert(r3 >= 1 AND r3 <= 10);
+    i: rem3 = (r3 - 1) % 2;
+    assert(rem3 == 0);
+
+    --- 4. random.int with negative range and step
+    i: r4 = random.int(-10, -2 @step 3);
+    assert(r4 >= -10 AND r4 <= -2);
+    i: rem4 = (r4 - -10) % 3;
+    assert(rem4 == 0);
+
+    --- 5. random.float with normal bounds
+    f: f1 = random.float(1.5, 4.5);
+    assert(f1 >= 1.5 AND f1 <= 4.5);
+
+    --- 6. random.float with swapped bounds
+    f: f2 = random.float(6.2, 2.1);
+    assert(f2 >= 2.1 AND f2 <= 6.2);
+
+    --- 7. random.float with step
+    f: f3 = random.float(0.0, 1.0 @step 0.2);
+    assert(f3 >= 0.0 AND f3 <= 1.0);
+    f: steps_f = (f3 - 0.0) / 0.2;
+    i: steps_i = i(steps_f + 0.1); --- Round to nearest integer to avoid float precision issues
+    f: diff_f = (f3 - 0.0) - f(steps_i) * 0.2;
+    if (diff_f < 0.0) then;
+        diff_f = -diff_f;
+    end;
+    assert(diff_f < 0.0001);
+
+    cnt = cnt + 1;
+end;
+
+>! "=== random.int and random.float: ALL assertions PASSED ===";

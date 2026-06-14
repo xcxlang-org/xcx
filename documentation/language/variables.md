@@ -1,4 +1,4 @@
-# XCX 2.2 Variables and Constants
+# XCX 4.0 Variables and Constants
 
 ## Variable Declarations
 

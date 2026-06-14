@@ -1,0 +1,40 @@
+--- TEST: DB-001
+--- Area: Database
+--- Priority: critical
+--- Name: Połączenie SQLite — lazy open i ścieżka względna
+--- Expect:
+---   1. Połączenie otwiera się dopiero przy pierwszym użyciu (sync), nie przy deklaracji.
+---   2. Poprawna ścieżka względna → OK
+---   3. Absolutna ścieżka → halt.fatal (osobny subtest w DB-001b)
+
+database: app { engine = "sqlite", path = "tests_tmp/db001.db" };
+
+table: items {
+    columns = [ id :: i @auto @pk, label :: s ]
+    rows = [EMPTY]
+};
+
+fiber run(-> b) {
+    yield app.sync(items);
+    >! "[DB-001] PASS — sync() otworzył połączenie i utworzył tabelę";
+
+    yield app.insert(items, label = "hello") as r;
+    if (r.insertId == 1) then;
+        >! "[DB-001] PASS — insert OK, insertId=1";
+    else;
+        >! "[DB-001] FAIL — insertId = " + s(r.insertId) + " (oczekiwane 1)";
+    end;
+
+    table: all = yield app.fetch(items);
+    if (all.count() == 1) then;
+        >! "[DB-001] PASS — fetch zwrócił 1 wiersz";
+    else;
+        >! "[DB-001] FAIL — fetch zwrócił " + s(all.count()) + " wierszy";
+    end;
+
+    app.close();
+    return true;
+};
+
+fiber:b: f = run();
+f.next();

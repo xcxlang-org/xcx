@@ -1,0 +1,26 @@
+--- fiber_input_test.xcx
+
+s: last_key = "";
+
+fiber test_input(-> b) {
+    .terminal !raw;
+    s: k;
+    >? k;
+    .terminal !cooked;
+    
+    last_key = k;
+    yield false;
+    return false;
+};
+
+>! "Press a key (e.g. 'w') to test raw input propagation. You should NOT need to press Enter!";
+
+i: count = 0;
+while (last_key == "" AND count < 100) do;
+    fiber:b: fib = test_input();
+    @wait 100;
+    fib.next();
+    count = count + 1;
+end;
+
+>! "Raw key recorded: '" + last_key + "'";

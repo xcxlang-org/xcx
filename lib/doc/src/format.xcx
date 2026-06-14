@@ -1,0 +1,47 @@
+--- Prints a formatted explanation for one error entry.
+
+func printEntry(json: e) {
+    s: code;        e.bind("code",        code);
+    s: title;       e.bind("title",       title);
+    s: series;      e.bind("series",      series);
+    s: explanation; e.bind("explanation", explanation);
+    s: example;     e.bind("example",     example);
+
+    if (title == "Not found") then;
+        >! "doc: unknown error code '" + code + "'";
+        >! "Run 'xcx doc list' to see all available codes.";
+        return;
+    end;
+
+    >! "";
+    >! "  " + code + "  " + title;
+    >! "  Series : " + series;
+    >! "";
+    >! "  " + explanation;
+    >! "";
+    if (example != "") then;
+        >! "  Example";
+        >! "    " + example;
+        >! "";
+    end;
+};
+
+func printList(map:s<->s: reg) {
+    array:s: codes = reg.keys();
+    codes.sort();
+    >! "";
+    >! "  XCX Error Codes";
+    >! "";
+    s: lastSeries = "";
+    for c in codes do;
+        s: raw = reg.get(c);
+        array:s: parts = raw.split("|");
+        s: series = parts.get(2);
+        if (series != lastSeries) then;
+            >! "  -- " + series + " --";
+            lastSeries = series;
+        end;
+        >! "  " + parts.get(0) + "  " + parts.get(1);
+    end;
+    >! "";
+};

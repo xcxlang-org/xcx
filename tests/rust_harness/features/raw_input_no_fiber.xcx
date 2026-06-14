@@ -1,0 +1,19 @@
+--- raw_input_no_fiber.xcx
+
+.terminal !raw;
+s: k = "";
+
+>! "Press a key (non-blocking). Type 'q' to quit.";
+
+i: count = 0;
+while (k != "q" AND count < 100) do;
+    >? k;
+    if (k != "") then;
+        >! "Key pressed: '" + k + "'";
+    end;
+    @wait 200;
+    count = count + 1;
+end;
+
+.terminal !cooked;
+>! "Done.";

@@ -1,68 +1,106 @@
-mod lexer;
-mod parser;
-mod sema;
-mod diagnostic;
-mod backend;
-
 use std::fs;
 use std::env;
 use std::sync::Arc;
+use std::path::Path;
 
-use crate::parser::pratt::Parser;
-use crate::sema::checker::Checker;
-use crate::sema::symbol_table::SymbolTable;
-use crate::backend::Compiler;
-use crate::backend::vm::VM;
-use crate::diagnostic::Reporter;
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+use xcx_compiler::frontend::parser::Parser;
+use xcx_compiler::frontend::parser::expander::Expander;
+use xcx_compiler::sema::{Checker, SymbolTable};
+use xcx_compiler::compiler::Compiler;
+use xcx_compiler::vm::{VM, SharedContext, SHUTDOWN};
+use xcx_compiler::error::Reporter;
+
+struct TerminalCleanup;
+
+impl Drop for TerminalCleanup {
+    fn drop(&mut self) {
+        if xcx_compiler::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+    }
+}
 
 fn main() {
+    let _cleanup = TerminalCleanup;
     ctrlc::set_handler(move || {
-        crate::backend::vm::SHUTDOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+        SHUTDOWN.store(true, std::sync::atomic::Ordering::SeqCst);
         println!("\n[XCX] Shutdown signal received. Cleaning up...");
+        if xcx_compiler::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
+        std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
 
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
+    let mut disable_jit = false;
+    
+    if let Some(pos) = args.iter().position(|r| r == "--no-jit") {
+        disable_jit = true;
+        args.remove(pos);
+    }
+
     if args.len() < 2 {
-        crate::backend::repl::run_repl();
+        let mut repl = xcx_compiler::repl::Repl::new(disable_jit);
+        repl.run();
         return;
     }
 
     let first_arg = &args[1];
     if first_arg == "--version" || first_arg == "version" {
-        println!("XCX Compiler v2.2");
-        println!("Language Version: XCX 2.2");
-        println!("Author: Heisenberg");
+        let mut version = env!("CARGO_PKG_VERSION");
+        if version.ends_with(".0") {
+            version = &version[..version.len() - 2];
+        }
+        println!("xcx {} ({}/{})", version, env::consts::OS, env::consts::ARCH);
         return;
     }
 
-    if first_arg == "pax" {
-        let mut pax_path = "lib/pax.xcx".to_string();
+    if first_arg == "--help" || first_arg == "help" || first_arg == "-h" {
+        println!("Usage:");
+        println!("  xcx                     Start REPL");
+        println!("  xcx <file.xcx>          Run file");
+        println!("  xcx --version           Show version");
+        println!("  xcx --help              Show help");
+        println!("  xcx --no-jit <file.xcx> Run file with JIT compiler disabled");
+        println!("\nInside REPL:");
+        println!("  !help                   Show REPL commands");
+        return;
+    }
+
+    if first_arg == "pax" || first_arg == "doc" {
+        let rel_path = if first_arg == "pax" { "lib/pax.xcx" } else { "lib/doc/doc.xcx" };
+        let mut resolved_path = rel_path.to_string();
         
-        if !std::path::Path::new(&pax_path).exists() {
-             if let Ok(exe_path) = env::current_exe() {
-                 let mut current = exe_path.parent();
-                 while let Some(dir) = current {
-                     let alt_path = dir.join("lib/pax.xcx");
-                     if alt_path.exists() {
-                         pax_path = alt_path.to_string_lossy().to_string();
-                         break;
-                     }
-                     current = dir.parent();
-                 }
-             }
+        if !Path::new(&resolved_path).exists() {
+            if let Ok(exe_path) = env::current_exe() {
+                let mut current = exe_path.parent();
+                while let Some(dir) = current {
+                    let alt_path = dir.join(rel_path);
+                    if alt_path.exists() {
+                        resolved_path = alt_path.to_string_lossy().to_string();
+                        break;
+                    }
+                    current = dir.parent();
+                }
+            }
         }
 
-        if !std::path::Path::new(&pax_path).exists() {
-            eprintln!("PAX manager not found at {}. Please ensure it is installed in the lib directory.", pax_path);
+        if !Path::new(&resolved_path).exists() {
+            let tool_name = if first_arg == "pax" { "PAX manager" } else { "DOC tool" };
+            let install_dir = if first_arg == "pax" { "lib directory" } else { "lib/doc directory" };
+            eprintln!("{} not found at {}. Please ensure it is installed in the {}.", tool_name, resolved_path, install_dir);
             return;
         }
-        run_file(&pax_path);
+        run_file(&resolved_path, disable_jit);
     } else {
-        run_file(first_arg);
+        run_file(first_arg, disable_jit);
     }
 }
 
-fn run_file(filename: &str) {
+fn run_file(filename: &str, disable_jit: bool) {
     let source = match fs::read_to_string(filename) {
         Ok(s) => s,
         Err(e) => {
@@ -71,15 +109,18 @@ fn run_file(filename: &str) {
         }
     };
 
-    let current_dir = std::path::Path::new(filename)
+    let current_dir = Path::new(filename)
         .parent()
-        .unwrap_or(std::path::Path::new("."));
+        .unwrap_or(Path::new("."));
 
     let mut parser = Parser::new(&source);
     let program_raw = parser.parse_program();
+    if parser.has_error {
+        std::process::exit(1);
+    }
     let mut interner = parser.into_interner();
 
-    let mut expander = crate::parser::expander::Expander::new(&mut interner);
+    let mut expander = Expander::new(&mut interner);
 
     if let Ok(cwd) = std::env::current_dir() {
         let lib_path = cwd.join("lib");
@@ -101,52 +142,46 @@ fn run_file(filename: &str) {
     let errors = checker.check(&mut program, &mut symbols);
 
     if !errors.is_empty() {
-        let reporter = Reporter::new(&source);
+        let mut reporter = Reporter::new(&source);
         for err in &errors {
-            let msg = match &err.kind {
-                crate::sema::checker::TypeErrorKind::UndefinedVariable(name) =>
-                    format!("Undefined variable: {}", name),
-                crate::sema::checker::TypeErrorKind::RedefinedVariable(name) =>
-                    format!("Redefined variable: {}", name),
-                crate::sema::checker::TypeErrorKind::TypeMismatch { expected, actual } =>
-                    format!("Type mismatch: expected {:?}, got {:?} [line={} col={}]",
-                        expected, actual, err.span.line, err.span.col),
-                crate::sema::checker::TypeErrorKind::InvalidBinaryOp { op, left, right } =>
-                    format!("Invalid operation {:?} between {:?} and {:?}", op, left, right),
-                crate::sema::checker::TypeErrorKind::BreakOutsideLoop =>
-                    "Break statement outside of loop".to_string(),
-                crate::sema::checker::TypeErrorKind::ContinueOutsideLoop =>
-                    "Continue statement outside of loop".to_string(),
-                crate::sema::checker::TypeErrorKind::ConstReassignment(name) =>
-                    format!("Cannot reassign to constant variable: {}", name),
-                crate::sema::checker::TypeErrorKind::YieldOutsideFiber =>
-                    "[S208] 'yield' used outside a fiber body".to_string(),
-                crate::sema::checker::TypeErrorKind::FiberTypeMismatch =>
-                    "[S209] Cannot use 'yield expr;' inside a void fiber — use 'yield;' instead".to_string(),
-                crate::sema::checker::TypeErrorKind::ReturnTypeMismatchInFiber =>
-                    "[S210] Typed fiber requires 'return expr;' not plain 'return;'".to_string(),
-                crate::sema::checker::TypeErrorKind::WherePredicateNameCollision { var_name, column_name } =>
-                    format!("S301: variable name '{}' conflicts with column '{}' in .where() predicate — rename the local variable",
-                        var_name, column_name),
-                crate::sema::checker::TypeErrorKind::Other(msg) => msg.clone(),
-            };
-            reporter.error(err.span.line, err.span.col, err.span.len, &msg);
+            reporter.error(err.span.line, err.span.col, err.span.len, &err.kind.to_diagnostic_message());
         }
-        return;
+        std::process::exit(1);
     }
 
     let mut compiler = Compiler::new();
     let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
 
-    let ctx = crate::backend::vm::SharedContext {
+
+    let ctx = SharedContext {
         constants,
         functions,
+        http_req: None,
     };
 
-    let vm = Arc::new(VM::new());
+    let mut vm_inner = VM::new();
+    vm_inner.disable_jit = disable_jit;
+    let vm = Arc::new(vm_inner);
     let vm2 = vm.clone();
-    vm.run(main_chunk, ctx);
-    if vm2.error_count.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+    
+    // Use a larger stack size for the VM thread to accommodate deep native recursion in JIT.
+    let handle = std::thread::Builder::new()
+        .name("xcx-executor".to_string())
+        .stack_size(64 * 1024 * 1024) // 64MB
+        .spawn(move || {
+            vm2.run(Arc::new(main_chunk), ctx, &[]);
+        })
+        .expect("Failed to spawn VM thread");
+
+    handle.join().expect("VM thread panicked");
+    
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+
+    let error_count = vm.error_count.load(std::sync::atomic::Ordering::SeqCst);
+    if error_count > 0 {
+        eprintln!("[XCX] Process failed with {} errors.", error_count);
         std::process::exit(1);
     }
 }

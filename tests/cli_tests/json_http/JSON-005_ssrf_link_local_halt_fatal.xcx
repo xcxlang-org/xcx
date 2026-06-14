@@ -1,0 +1,13 @@
+--- TEST: JSON-005
+--- Area: JSON/HTTP
+--- Priority: high
+--- Name: SSRF — blokowanie link-local (169.254.x.x) → halt.fatal
+--- Expect:
+---   Żądanie do 169.254.x.x → halt.fatal, VM terminuje.
+---   Linia po wywołaniu się NIE wykona.
+--- Runner: expect_fatal_exit = true
+
+>! "[JSON-005] Próba połączenia z link-local SSRF address...";
+json: r = net.get("http://169.254.169.254/latest/meta-data/");
+
+>! "[JSON-005] FAIL — net.get() do link-local nie wywołał halt.fatal";

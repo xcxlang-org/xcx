@@ -1,0 +1,45 @@
+--- TEST: HALT-003
+--- Area: Error Handling
+--- Priority: high
+--- Name: Dzielenie przez zero — automatyczny panic
+--- Expect:
+---   x / 0 triggeruje halt (halt.error lub halt.fatal).
+---   Modulo przez 0 triggeruje halt.
+---   Float / 0.0 triggeruje halt.
+---   UWAGA: modulo przez 0 może zwracać false (bug XCX) — test to rejestruje.
+
+--- ── Subtest 1: integer / 0 ─────────────────────────────────────────────
+func try_div_zero(-> b) {
+    i: x = 10;
+    i: y = 0;
+    i: z = x / y;
+    >! "[HALT-003-1] FAIL — int/0 nie wywołało halt (wynik=" + s(z) + ")";
+    return false;
+};
+try_div_zero();
+>! "[HALT-003-1] PASS — int/0 wywołało halt, VM żyje";
+
+--- ── Subtest 2: modulo przez 0 ─────────────────────────────────────────
+--- ZNANY BUG: XCX 4.0 może zwracać false zamiast haltu dla modulo/0
+func try_mod_zero(-> b) {
+    i: a = 7;
+    i: b = 0;
+    i: r = a % b;
+    >! "[HALT-003-2] FAIL — modulo/0 nie wywołało halt (wynik=" + s(r) + ") [BUG XCX-3.1]";
+    return false;
+};
+try_mod_zero();
+>! "[HALT-003-2] PASS — modulo/0 wywołało halt";
+
+--- ── Subtest 3: float / 0.0 ────────────────────────────────────────────
+func try_float_zero(-> b) {
+    f: x = 10.0;
+    f: y = 0.0;
+    f: z = x / y;
+    >! "[HALT-003-3] FAIL — float/0 nie wywołało halt (wynik=" + s(z) + ")";
+    return false;
+};
+try_float_zero();
+>! "[HALT-003-3] PASS — float/0 wywołało halt";
+
+>! "[HALT-003] Wszystkie subtesty zakończone";

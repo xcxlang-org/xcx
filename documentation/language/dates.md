@@ -1,4 +1,4 @@
-# XCX 2.2 Date and Time
+# XCX 4.0 Date and Time
 
 ## Creation
 
@@ -20,6 +20,7 @@ Date objects expose read-only integer fields:
 - `.hour` (0-23)
 - `.minute` (0-59)
 - `.second` (0-59)
+- `.ms` (0-999)
 
 ## Arithmetic and Comparison
 

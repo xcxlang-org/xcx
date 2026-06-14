@@ -1,0 +1,100 @@
+--- TEST: TYPE-002
+--- Area: Types
+--- Priority: medium
+--- Name: String — immutability, metody zwracają nowy string
+--- Expect:
+---   Metody string nie modyfikują oryginału.
+---   Każda metoda zwraca nowy string.
+---   Łańcuchowanie metod działa.
+
+--- ── Subtest 1: trim() nie zmienia oryginału ────────────────────────────
+s: raw = "  XCX Language  ";
+s: trimmed = raw.trim();
+
+if (raw == "  XCX Language  ") then;
+    >! "[TYPE-002-1] PASS — raw niezmieniony po trim()";
+else;
+    >! "[TYPE-002-1] FAIL — raw = '" + raw + "'";
+end;
+
+if (trimmed == "XCX Language") then;
+    >! "[TYPE-002-1] PASS — trimmed = 'XCX Language'";
+else;
+    >! "[TYPE-002-1] FAIL — trimmed = '" + trimmed + "'";
+end;
+
+--- ── Subtest 2: lower() nie zmienia oryginału ───────────────────────────
+s: original = "HELLO WORLD";
+s: lowered = original.lower();
+
+if (original == "HELLO WORLD") then;
+    >! "[TYPE-002-2] PASS — original niezmieniony po lower()";
+else;
+    >! "[TYPE-002-2] FAIL — original = '" + original + "'";
+end;
+
+if (lowered == "hello world") then;
+    >! "[TYPE-002-2] PASS — lowered = 'hello world'";
+else;
+    >! "[TYPE-002-2] FAIL — lowered = '" + lowered + "'";
+end;
+
+--- ── Subtest 3: łańcuchowanie trim().lower().replace() ─────────────────
+s: chained = "  XCX-Language  ".trim().lower().replace("-", "_");
+if (chained == "xcx_language") then;
+    >! "[TYPE-002-3] PASS — trim().lower().replace() = 'xcx_language'";
+else;
+    >! "[TYPE-002-3] FAIL — chain result = '" + chained + "'";
+end;
+
+--- ── Subtest 4: replace() nie zmienia źródła ───────────────────────────
+s: src = "aabbcc";
+s: replaced = src.replace("bb", "XX");
+if (src == "aabbcc") then;
+    >! "[TYPE-002-4] PASS — src niezmieniony po replace()";
+else;
+    >! "[TYPE-002-4] FAIL — src = '" + src + "'";
+end;
+if (replaced == "aaXXcc") then;
+    >! "[TYPE-002-4] PASS — replaced = 'aaXXcc'";
+else;
+    >! "[TYPE-002-4] FAIL — replaced = '" + replaced + "'";
+end;
+
+--- ── Subtest 5: .length (bez nawiasów) ─────────────────────────────────
+s: word = "hello";
+i: len = word.length;
+if (len == 5) then;
+    >! "[TYPE-002-5] PASS — 'hello'.length = 5";
+else;
+    >! "[TYPE-002-5] FAIL — .length = " + s(len);
+end;
+
+--- ── Subtest 6: split() ─────────────────────────────────────────────────
+array:s: parts = "a,b,c".split(",");
+if (parts.size() == 3) then;
+    >! "[TYPE-002-6] PASS — split() daje 3 części";
+else;
+    >! "[TYPE-002-6] FAIL — split() daje " + s(parts.size()) + " części";
+end;
+if (parts.get(0) == "a" AND parts.get(1) == "b" AND parts.get(2) == "c") then;
+    >! "[TYPE-002-6] PASS — split() = ['a','b','c']";
+else;
+    >! "[TYPE-002-6] FAIL — split() części niepoprawne";
+end;
+
+--- ── Subtest 7: indexOf / slice ────────────────────────────────────────
+s: prog = "Programming";
+i: idx = prog.indexOf("gram");
+if (idx == 3) then;
+    >! "[TYPE-002-7] PASS — indexOf('gram') = 3";
+else;
+    >! "[TYPE-002-7] FAIL — indexOf('gram') = " + s(idx);
+end;
+
+s: sliced = prog.slice(0, 4);
+if (sliced == "Prog") then;
+    >! "[TYPE-002-7] PASS — slice(0,4) = 'Prog'";
+else;
+    >! "[TYPE-002-7] FAIL — slice(0,4) = '" + sliced + "'";
+end;

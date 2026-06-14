@@ -1,4 +1,4 @@
-# XCX 2.2 Functions and Fibers
+# XCX 4.0 Functions and Fibers
 
 > [!IMPORTANT]
 > **Global Scope Rule**: Functions and fibers must be declared at the **top level** of a file. They cannot be nested inside `if`/`while`/`for` blocks or other functions/fibers in a way that affects scoping — all function and fiber names are registered globally during compilation.
@@ -111,7 +111,7 @@ yield;
 
 ### return in Fibers
 
-1. **Typed fiber** (`fiber ... -> T`): Requires `return expr;` with a value of type `T`. A bare `return;` without a value is a compile error (S210).
+1. **Typed fiber** (`fiber ... -> T`): Typed fiber requires `return expr;` not plain `return;`. Returning without a value throws a compile error (S210).
 2. **Void fiber**: Uses `return;` to exit early.
 
 ```xcx

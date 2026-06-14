@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::parser::pratt::Parser;
-    use crate::sema::checker::{Checker, TypeErrorKind};
-    use crate::sema::symbol_table::SymbolTable;
-    use crate::parser::ast::Type;
+    use crate::frontend::parser::Parser;
+    use crate::sema::Checker;
+    use crate::sema::error::error_kind::TypeErrorKind;
+    use crate::sema::SymbolTable;
+    use crate::frontend::ast::Type;
 
     #[test]
     fn test_type_mismatch() {
