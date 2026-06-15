@@ -107,7 +107,7 @@ impl Executor {
             MethodKind::Show     => { 
                 drop(set_data);
                 let set_val = Value::from_set(set_rc.clone());
-                // println!("{}", set_val.to_string()); 
+                println!("{}", set_val.to_string()); 
                 unsafe { set_val.dec_ref(); }
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }
