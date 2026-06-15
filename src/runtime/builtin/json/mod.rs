@@ -100,7 +100,9 @@ impl Executor {
             }
             MethodKind::Show => {
                 if !json_rc.dirty.load(std::sync::atomic::Ordering::Acquire) {
-                    if json_rc.cached_str.lock().is_some() {
+                    let cached_opt = json_rc.cached_str.lock().clone();
+                    if let Some(s_obj) = cached_opt {
+                        println!("{}", String::from_utf8_lossy(&s_obj.data));
                         let res = Value::from_bool(true);
                         unsafe { locals[dst as usize].dec_ref(); }
                         locals[dst as usize] = res;
@@ -110,6 +112,7 @@ impl Executor {
                 let mut buf = String::with_capacity(4096);
                 json_rc.root.to_string_buf(&mut buf);
                 let s = buf;
+                println!("{}", s);
                 let string_obj = Arc::new(StringObj::new(s.into_bytes()));
                 *json_rc.cached_str.lock() = Some(string_obj);
                 json_rc.dirty.store(false, std::sync::atomic::Ordering::Release);
