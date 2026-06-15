@@ -90,7 +90,7 @@ impl Executor {
                 locals[dst as usize] = res;
             }
             MethodKind::Show => {
-                // println!("{}", t.to_formatted_grid());
+                println!("{}", t.to_formatted_grid());
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
