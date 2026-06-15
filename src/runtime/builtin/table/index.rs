@@ -123,7 +123,7 @@ impl Executor {
                 for (i, col) in t.columns.iter().enumerate() {
                     s.push_str(&format!("{}: {}, ", col.name, t.rows[r.row_idx as usize][i].to_string()));
                 }
-                // println!("{}", s);
+                println!("{}", s);
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
