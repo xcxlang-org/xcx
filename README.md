@@ -2,7 +2,7 @@
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
-![Version](https://img.shields.io/badge/version-4.0.1-brightgreen)
+![version](https://img.shields.io/github/v/release/xcxlang-org/xcx)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/xcxlang-org/xcx?style=flat)
 ![GitHub Issues](https://img.shields.io/github/issues/xcxlang-org/xcx)
