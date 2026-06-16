@@ -305,7 +305,7 @@ code --install-extension xcx-vscode-1.0.0.vsix
 
 Full docs at **[xcxlang.com](https://xcxlang.com)**
 
-Translated versions of the documentation (Polish, French, Russian, Chinese, Japanese, and more) are available at [github.com/xcxlang-org/xcx-docs](https://github.com/xcxlang-org/xcx-docs). Note that translations were generated with AI assistance and may contain inaccuracies; the English docs in this repository are always the canonical, up-to-date reference. The compiler internals documentation translated into other languages, available at [xcx-docs](https://github.com/xcxlang-org/xcx-docs), currently lags behind the XCX 4.0 architecture in some languages. The English compiler documentation linked below is fully aligned with 4.0. We are working on bringing the translations up to date, if you'd like to help, please open an issue and let us know which language you want to translate.
+Translated versions of the documentation (Polish, French, Russian, Chinese, Japanese, and more) are available at [github.com/xcxlang-org/xcx-docs](https://github.com/xcxlang-org/xcx-docs). Note that translations were generated with AI assistance and may contain inaccuracies; the English docs in this repository are always the canonical, up-to-date reference. The compiler internals documentation translated into other languages, available at [xcx-docs](https://github.com/xcxlang-org/xcx-docs), currently lags behind the XCX 4.0 architecture in some languages. The English compiler documentation linked below is fully aligned with 4.0. We are working on bringing the translations up to date. If you'd like to help, please open an issue and let us know which language you want to translate.
 
 ### Language
 
