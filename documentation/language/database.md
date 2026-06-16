@@ -1,6 +1,6 @@
-# XCX 4.0 Database
+# XCX 4.1 Database
 Delta:
-XCX 4.0 introduces native relational database support via the `database:` type and a set of built-in methods. Version 4.0 supports **SQLite** only.
+XCX 4.1 introduces native relational database support via the `database:` type and a set of built-in methods. Version 4.1 supports **SQLite** only.
 
 ---
 
@@ -10,8 +10,7 @@ XCX 4.0 introduces native relational database support via the `database:` type a
 2. [Table Column Attributes](#2-table-column-attributes)
 3. [Named Arguments](#3-named-arguments)
 4. [Result Capture (`as`)](#4-result-capture-as)
-5. [Fiber Scoping Limitations (Windows)](#5-fiber-scoping-limitations-windows)
-6. [API Reference](#6-api-reference)
+5. [API Reference](#5-api-reference)
    - 5.1 [DDL](#51-ddl)
    - 5.2 [Write Operations](#52-write-operations)
    - 5.3 [Read Operations](#53-read-operations)
@@ -297,31 +296,7 @@ yield app.save(users);
 
 ---
 
-## 5. Fiber Scoping Limitations (Windows)
-
-In XCX 4.0, specifically on Windows environments, initializing a fiber-local variable directly with a database result can occasionally lead to an `Undefined variable` [S101] error in subsequent lines.
-
-### Recommended Workaround
-
-To ensure absolute visibility across conditional blocks within a fiber, it is recommended to **declare the variable type first** and then assign the database result in a separate statement.
-
-```xcx
-fiber run(-> b) {
-    --- Recommended pattern
-    b: exists_before;
-    exists_before = db.has(logs);
-    
-    if (exists_before) then;
-        >! "Table exists";
-    end;
-}
-```
-
-This pattern ensures that the variable is correctly registered in the symbol table before it is accessed by the analyzer. This limitation is planned for a native architectural resolution in XCX 4.0.
-
----
-
-## 6. API Reference
+## 5. API Reference
 
 ### 5.1 DDL
 
