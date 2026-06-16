@@ -1,15 +1,15 @@
-![XCX Banner](https://raw.githubusercontent.com/xcx-lang/xcx-vscode/main/images/banner.png)
+![XCX Banner](https://raw.githubusercontent.com/xcxlang-org/xcx-vscode/main/images/banner.png)
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
-![Version](https://img.shields.io/badge/version-4.0-brightgreen)
+![Version](https://img.shields.io/badge/version-4.0.1-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
-![GitHub Stars](https://img.shields.io/github/stars/xcx-lang/xcx-compiler?style=flat)
-![GitHub Issues](https://img.shields.io/github/issues/xcx-lang/xcx-compiler)
-![Last Commit](https://img.shields.io/github/last-commit/xcx-lang/xcx-compiler)
-![Repo Size](https://img.shields.io/github/repo-size/xcx-lang/xcx-compiler)
+![GitHub Stars](https://img.shields.io/github/stars/xcxlang-org/xcx?style=flat)
+![GitHub Issues](https://img.shields.io/github/issues/xcxlang-org/xcx)
+![Last Commit](https://img.shields.io/github/last-commit/xcxlang-org/xcx)
+![Repo Size](https://img.shields.io/github/repo-size/xcxlang-org/xcx)
 
-> XCX 4.0 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcx-lang/xcx-compiler/issues).
+> XCX 4.0 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 ---
 
@@ -182,7 +182,7 @@ XCX 4.0 is best treated as an experimental platform. It is not production-ready,
 
 **Known rough edges:** String operation performance (no JIT coverage), and some known internal architectural issues being addressed in the 4.x line. Fibonacci, Sieve, and JSON performance are targeted for improvement.
 
-**Linux**: XCX 4.0 compiles and passes the full test suite on Linux. Primary development happens on Windows, so Linux-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcx-lang/xcx-compiler/issues).
+**Linux**: XCX 4.0 compiles and passes the full test suite on Linux. Primary development happens on Windows, so Linux-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -280,8 +280,8 @@ xcx server.xcx
 Requires **Rust 1.75+**.
 
 ```bash
-git clone https://github.com/xcx-lang/xcx-compiler
-cd xcx-compiler
+git clone https://github.com/xcxlang-org/xcx
+cd xcx
 cargo build --release
 ```
 
@@ -291,12 +291,12 @@ Binary: `target/release/xcx`
 
 ## Editor support
 
-VS Code extension: [xcx-lang/xcx-vscode](https://github.com/xcxlang-org/xcx-vscode)
+VS Code extension: [xcxlang-org/xcx-vscode](https://github.com/xcxlang-org/xcx-vscode)
 
 Syntax highlighting, snippets, `.xcx` and `.pax` support.
 
 ```bash
-code --install-extension xcx-vscode/xcx-vscode-1.0.0.vsix
+code --install-extension xcx-vscode-1.0.0.vsix
 ```
 
 ---
