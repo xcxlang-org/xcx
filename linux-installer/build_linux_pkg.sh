@@ -29,6 +29,7 @@ mkdir -p "$DIST_DIR/lib"
 cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/mathlib" "$DIST_DIR/lib/" 2>/dev/null || true
 cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/pax" "$DIST_DIR/lib/" 2>/dev/null || true
 cp -r "$PROJECT_ROOT/lib/doc" "$DIST_DIR/lib/"
+cp "$PROJECT_ROOT/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || cp "$PROJECT_ROOT/xcx-installer-pkg/lib/VERSION" "$DIST_DIR/lib/" || true
 
 mkdir -p "$DIST_DIR/resources"
 cp -r "$PROJECT_ROOT/xcx-installer-pkg/resources/icons" "$DIST_DIR/resources/"
