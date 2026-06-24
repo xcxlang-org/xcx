@@ -182,7 +182,6 @@ fn run_file(filename: &str, disable_jit: bool, jit_threshold: u32) {
     let mut compiler = Compiler::new();
     let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
 
-
     let ctx = SharedContext {
         constants,
         functions,
