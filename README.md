@@ -14,6 +14,8 @@
 ---
 
 ## Why XCX exists
+> [!WARNING]
+> **`pax publish` is broken in XCX 4.1.** Authentication errors (401/403) appear on publish — this slipped through before release and is being investigated. A patch is coming. Everything else works.
 
 Most backend languages make you choose between two bad options: high-level languages that are productive but drag in frameworks, ORMs, and config files you didn't ask for, or low-level languages that give you control but make a simple HTTP endpoint feel like work.
 
