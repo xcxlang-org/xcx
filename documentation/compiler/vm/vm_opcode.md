@@ -42,7 +42,7 @@ Each function and the top-level program are compiled into a `Chunk`. Key fields:
 - `is_fiber` — true for fiber (coroutine) chunks, which have different call/return semantics.
 - `max_locals` — number of local register slots required. The executor allocates exactly this many slots per call frame.
 - `has_loops` — computed by `calculate_has_loops`; used by the JIT to decide whether to record a trace.
-- `call_count` — incremented on each call. When it crosses `JIT_WARMUP_THRESHOLD` (5), the JIT compiles the chunk.
+- `call_count` — incremented on each call. When it crosses the dynamic threshold `vm.jit_threshold` (default 50), the JIT compiles the chunk.
 - `jit_ptr` — atomic pointer to the JIT-compiled native function; `null` if not yet compiled.
 - `jit_segments` — maps bytecode IP ranges to JIT-compiled segment offsets, for partial compilation.
 - `used_locals` — bitmask of which local slots are actually referenced, produced by `jit::analysis::analyze_chunk_locals`. Used by the JIT to skip zeroing unused slots.

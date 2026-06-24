@@ -29,6 +29,7 @@ Iterates over the statement kind and dispatches compilation:
 - **I/O (`Print`, `Input`, `TerminalWrite`)**: Compiles the source expression, emits the I/O opcode, and pops the source register.
 - **Halt (`Alert`, `Error`, `Fatal`)**: Emits the respective halt opcode and stops further block compilation if fatal.
 - **Assignment**: Differentiates between local and global variables, emitting `Move` and `SetVar` respectively. Handles `+= 1` / `-= 1` inline optimizations (`IncLocal`, `IncVar`, `DecLocal`, `DecVar`).
+- **Multiple Variable Declarations (`MultiVarDecl`)**: Recursively compiles each nested variable declaration statement in sequence, preserving their stack ordering.
 - **Serve & Net**: Compiles `net.method` into `HttpRequest` and `serve:` into `HttpServe`, passing HTTP arguments as a pre-constructed `MapLiteral`.
 - **JSON**: Resolves `json:bind` and `json:inject` into optimized `JsonBindLocal`/`JsonBindGlobal` or fast injection pipelined equivalents.
 

@@ -1,0 +1,29 @@
+--- TEST: DB-001
+--- Area: Database
+--- Priority: high
+--- Name: Błędy Semantyczne Bazy Danych
+--- Expect:
+---   Fail logiki .where() z kolizją nazw lub błędna ilość argumentów.
+--- Runner: expect_compile_error = true
+
+database: app { engine = "sqlite", path = "dummy.db" };
+
+table: users {
+    columns = [ id :: i @auto @pk, name :: s, age :: i ]
+    rows = [EMPTY]
+};
+
+--- S301
+func verify(s: name) {
+    db_users = users.where(name == name); --- Konflikt nazwy zmiennej i kolumny
+};
+
+--- D401
+func wrong_remove() {
+    yield app.remove(users); --- Brak .where() -> D401
+};
+
+--- S302
+users.insert("Bob"); --- Schema wymaga 2 (name, age), dostaje 1 -> S302
+
+>! "Jeśli to się kompiluje, to test oblał!";

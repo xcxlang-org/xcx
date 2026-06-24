@@ -125,7 +125,7 @@ One `Executor` instance per running call stack (including fibers). Fibers get th
 
 `stack` is the locals array for the current call frame. The executor uses a flat frame layout: `stack[0..max_locals]` are the locals for the innermost call; on a function call, the new frame is pushed at `stack_ptr`.
 
-`JIT_WARMUP_THRESHOLD = 5` — a chunk must be called at least 5 times before JIT compilation is attempted.
+**JIT Hotspot Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted.
 
 ### Main Dispatch Loop
 

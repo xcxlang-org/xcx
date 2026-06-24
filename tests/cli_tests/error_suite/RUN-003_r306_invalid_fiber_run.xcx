@@ -1,0 +1,13 @@
+--- TEST: RUN-003
+--- Area: Error Handling
+--- Priority: high
+--- Name: R306 Invalid Fiber Run
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+
+fiber f() { yield; };
+fiber: task = f();
+task.run();
+task.run();
+task.run(); --- Trzeci run na zakończonym fiberze -> Halt (R306)

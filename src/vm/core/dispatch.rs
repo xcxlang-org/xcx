@@ -71,7 +71,6 @@ impl Executor {
         ip: usize,
         locals: &mut [Value],
         vm_arc: &Arc<VM>,
-        _base: u8
     ) -> OpResult {
         if !receiver.is_ptr() {
             self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -82,7 +81,7 @@ impl Executor {
         let n_bytes = method_name.as_bytes();
         match tag {
             TAG_ROW  => self.handle_row_custom(dst, receiver.as_row(), n_bytes, ip, locals, vm_arc),
-            TAG_JSON => self.handle_json_custom(dst, receiver.as_json(), n_bytes, args, ip, locals, vm_arc, _base),
+            TAG_JSON => self.handle_json_custom(dst, receiver.as_json(), n_bytes, args, ip, locals, vm_arc),
             TAG_DB   => {
                 let res = crate::vm::core::runtime_ops::RuntimeOps::get_member(receiver, method_name);
                 unsafe { locals[dst as usize].dec_ref(); }

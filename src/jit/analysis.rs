@@ -1,9 +1,7 @@
 use crate::vm::opcode::OpCode;
 use std::collections::HashSet;
 
-/// Returns the set of local register indices that are exclusively used as bool-typed arrays.
-/// Detected when ArrayInit is followed only by MethodCall::Push with a bool constant, or using
-/// array_set_bool — meaning the array stores only booleans.
+
 pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::value::Value]) -> HashSet<u8> {
     let mut bool_array: HashSet<u8> = HashSet::new();
     let mut non_bool_array: HashSet<u8> = HashSet::new();
@@ -660,13 +658,31 @@ pub fn analyze_trace_non_ptr_regs(ops: &[crate::vm::trace::TraceOp], global_ints
 
 /// Propagates potential pointer-containing states for all registers across all control-flow paths.
 /// Used to precisely identify which registers do not hold pointer values at any given instruction.
+#[inline(always)]
+fn get_ptr_bit(st: &[u64; 4], reg: u8) -> bool {
+    (st[(reg / 64) as usize] & (1u64 << (reg % 64))) != 0
+}
+
+#[inline(always)]
+fn set_ptr_bit(st: &mut [u64; 4], reg: u8, val: bool) {
+    let word = &mut st[(reg / 64) as usize];
+    let mask = 1u64 << (reg % 64);
+    if val {
+        *word |= mask;
+    } else {
+        *word &= !mask;
+    }
+}
+
+/// Propagates potential pointer-containing states for all registers across all control-flow paths.
+/// Used to precisely identify which registers do not hold pointer values at any given instruction.
 pub fn analyze_maybe_ptr_regs(
     bytecode: &[OpCode],
     global_ints: &HashSet<u32>,
     constants: &[crate::vm::value::Value],
-) -> Vec<[bool; 256]> {
+) -> Vec<[u64; 4]> {
     let n = bytecode.len();
-    let mut state = vec![[false; 256]; n];
+    let mut state = vec![[0u64; 4]; n];
     let mut in_queue = vec![false; n];
     let mut queue = std::collections::VecDeque::new();
 
@@ -682,7 +698,8 @@ pub fn analyze_maybe_ptr_regs(
 
         match op {
             OpCode::Move { dst, src } => {
-                next_state[dst as usize] = next_state[src as usize];
+                let val = get_ptr_bit(&next_state, src);
+                set_ptr_bit(&mut next_state, dst, val);
             }
             OpCode::LoadConst { dst, idx } => {
                 let is_ptr = if let Some(val) = constants.get(idx as usize) {
@@ -690,11 +707,11 @@ pub fn analyze_maybe_ptr_regs(
                 } else {
                     true
                 };
-                next_state[dst as usize] = is_ptr;
+                set_ptr_bit(&mut next_state, dst, is_ptr);
             }
             OpCode::GetVar { dst, idx } => {
                 let is_ptr = !global_ints.contains(&idx);
-                next_state[dst as usize] = is_ptr;
+                set_ptr_bit(&mut next_state, dst, is_ptr);
             }
             OpCode::Add { dst, .. } | OpCode::Sub { dst, .. } |
             OpCode::Mul { dst, .. } | OpCode::Div { dst, .. } |
@@ -707,22 +724,22 @@ pub fn analyze_maybe_ptr_regs(
             OpCode::Neg { dst, .. } | OpCode::CastInt { dst, .. } |
             OpCode::CastFloat { dst, .. } | OpCode::CastBool { dst, .. } |
             OpCode::RandomInt { dst, .. } => {
-                next_state[dst as usize] = false;
+                set_ptr_bit(&mut next_state, dst, false);
             }
             OpCode::IncLocal { reg } | OpCode::DecLocal { reg } |
             OpCode::IncLocalLoopNext { inc_reg: reg, .. } |
             OpCode::DecLocalLoopPrev { dec_reg: reg, .. } => {
-                next_state[reg as usize] = false;
+                set_ptr_bit(&mut next_state, reg, false);
             }
             OpCode::LoopNext { reg, .. } | OpCode::LoopPrev { reg, .. } => {
-                next_state[reg as usize] = false;
+                set_ptr_bit(&mut next_state, reg, false);
             }
             OpCode::IncVar { .. } | OpCode::DecVar { .. } => {}
             OpCode::IncVarLoopNext { reg, .. } | OpCode::DecVarLoopPrev { reg, .. } => {
-                next_state[reg as usize] = false;
+                set_ptr_bit(&mut next_state, reg, false);
             }
             OpCode::ArrayLoopNext { idx_reg, .. } => {
-                next_state[idx_reg as usize] = false;
+                set_ptr_bit(&mut next_state, idx_reg, false);
             }
             OpCode::Input { dst, .. } |
             OpCode::TerminalExit { dst } | OpCode::TerminalRun { dst, .. } |
@@ -761,11 +778,11 @@ pub fn analyze_maybe_ptr_regs(
             OpCode::GetMember { dst, .. } |
             OpCode::RowGet { dst, .. } |
             OpCode::TableCloneSkeleton { dst, .. } => {
-                next_state[dst as usize] = true;
+                set_ptr_bit(&mut next_state, dst, true);
             }
             OpCode::TableIter { idx_reg, row_reg, .. } => {
-                next_state[idx_reg as usize] = false;
-                next_state[row_reg as usize] = true;
+                set_ptr_bit(&mut next_state, idx_reg, false);
+                set_ptr_bit(&mut next_state, row_reg, true);
             }
             _ => {}
         }
@@ -795,11 +812,18 @@ pub fn analyze_maybe_ptr_regs(
         for succ in successors {
             if succ < n {
                 let mut changed = false;
-                for reg in 0..256 {
-                    if next_state[reg] && !state[succ][reg] {
-                        state[succ][reg] = true;
-                        changed = true;
-                    }
+                let next_u64 = next_state;
+                let succ_state = &mut state[succ];
+                let diff0 = next_u64[0] & !succ_state[0];
+                let diff1 = next_u64[1] & !succ_state[1];
+                let diff2 = next_u64[2] & !succ_state[2];
+                let diff3 = next_u64[3] & !succ_state[3];
+                if (diff0 | diff1 | diff2 | diff3) != 0 {
+                    succ_state[0] |= next_u64[0];
+                    succ_state[1] |= next_u64[1];
+                    succ_state[2] |= next_u64[2];
+                    succ_state[3] |= next_u64[3];
+                    changed = true;
                 }
                 if changed && !in_queue[succ] {
                     queue.push_back(succ);

@@ -11,6 +11,7 @@
 /xcx-installer/resources.o
 /xcx-vscode/*.vsix
 /xcx-vscode/node_modules/
+/xcx-installer-pkg/Output/
 
 # IDEs and OS
 .vscode/
@@ -29,3 +30,9 @@ Thumbs.db
 # AI/Agent metadata
 .agents/
 .gemini/
+
+# Database files
+*.db
+
+#other
+TODO.md

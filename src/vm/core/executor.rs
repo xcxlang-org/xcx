@@ -5,7 +5,7 @@ use crate::vm::{VM, SharedContext, OpResult, Chunk, Value, OpCode, MethodKind};
 use crate::vm::trace::Trace;
 
 pub static SHUTDOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-const JIT_WARMUP_THRESHOLD: usize = 5;
+pub const RECURSION_LIMIT: usize = 800;
 
 pub struct Executor {
     pub vm: Arc<VM>,
@@ -26,12 +26,14 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(vm: Arc<VM>, ctx: Arc<SharedContext>) -> Self {
+        let mut hotspot = crate::vm::trace::Hotspot::new();
+        hotspot.threshold = vm.jit_threshold;
         Self {
             vm,
             ctx,
             current_spans: None,
             fiber_yielded: false,
-            hotspot: crate::vm::trace::Hotspot::new(),
+            hotspot,
             recorder: crate::vm::trace::Recorder::new(),
             trace_cache: Vec::new(),
             terminal_raw_enabled: false,
@@ -53,6 +55,7 @@ impl Executor {
         old_spans: Option<Arc<Vec<crate::error::Span>>>,
         old_stack_ptr: usize,
     ) -> OpResult {
+        let _guard = crate::vm::core::vm::ActiveVmGuard::new(Arc::as_ptr(vm_arc) as *const crate::vm::VM);
         let jit_fn: crate::jit::abi::MethodJitFunction = unsafe { std::mem::transmute(jit_ptr) };
 
         let globals_ptr = { vm_arc.globals.read().as_ptr() as *mut Value };
@@ -136,11 +139,11 @@ impl Executor {
         let mut jit_ptr = chunk.jit_ptr.load(Ordering::Acquire);
         if !vm_arc.disable_jit && jit_ptr.is_null() {
             let count = chunk.call_count.fetch_add(1, Ordering::Relaxed) + 1;
-            if count == JIT_WARMUP_THRESHOLD {
+            if count == vm_arc.jit_threshold as usize {
                 let mut jit = vm_arc.jit.lock();
                 let func_id_idx = chunk.bytecode.as_ptr() as usize;
                 let func_name = chunk.name.clone();
-                match jit.compile_method(func_id_idx, func_idx, chunk, &self.ctx.constants, &func_name) {
+                match jit.compile_method(func_id_idx, func_idx, chunk, &self.ctx.constants, &self.ctx.functions, &func_name) {
                     Ok(ptr) => {
                         jit_ptr = ptr as *mut std::ffi::c_void;
                         chunk.jit_ptr.store(jit_ptr, Ordering::Release);
@@ -172,9 +175,9 @@ impl Executor {
         &mut self,
         chunk: Arc<Chunk>,
         params: &[Value],
-        vm_arc: &Arc<VM>,
-        _func_id: usize
+        vm_arc: &Arc<VM>
     ) -> Option<Value> {
+        let _guard = crate::vm::core::vm::ActiveVmGuard::new(Arc::as_ptr(vm_arc) as *const crate::vm::VM);
         let (locals_start, old_spans, old_stack_ptr) = match self.prepare_frame(&chunk, params, vm_arc, "") {
             Ok(res) => res,
             Err(()) => return Some(Value::from_bool(false)),
@@ -218,8 +221,10 @@ impl Executor {
         args: &[Value],
         vm_arc: &Arc<VM>,
     ) -> OpResult {
-        if self.call_depth >= 800 {
-            crate::runtime::builtin::io::eprint_buffered("ERROR halt: Recursion limit exceeded (800 frames)\n");
+        let _guard = crate::vm::core::vm::ActiveVmGuard::new(Arc::as_ptr(vm_arc) as *const crate::vm::VM);
+        if self.call_depth >= RECURSION_LIMIT {
+            let err = format!("ERROR halt: Recursion limit exceeded ({} frames)\n", RECURSION_LIMIT);
+            crate::runtime::builtin::io::eprint_buffered(&err);
             return OpResult::Halt;
         }
         self.call_depth += 1;
@@ -265,7 +270,7 @@ impl Executor {
             let current_ip = *ip;
             let op = bytecode[current_ip];
             *ip += 1;
-
+ 
             match self.execute_step(op, locals, vm_arc, ip) {
                 Some(OpResult::Continue) => {}
                 Some(res) => return res,
@@ -281,14 +286,14 @@ impl Executor {
 
     pub fn handle_call(
         &mut self,
-        _dst: u8,
         func_idx: u32,
         chunk: Arc<Chunk>,
         args: &[Value],
         vm_arc: &Arc<VM>,
     ) -> OpResult {
-        if self.call_depth >= 800 {
-            crate::runtime::builtin::io::eprint_buffered("ERROR halt: Recursion limit exceeded (800 frames)\n");
+        if self.call_depth >= RECURSION_LIMIT {
+            let err = format!("ERROR halt: Recursion limit exceeded ({} frames)\n", RECURSION_LIMIT);
+            crate::runtime::builtin::io::eprint_buffered(&err);
             return OpResult::Halt;
         }
         self.call_depth += 1;
@@ -327,7 +332,7 @@ impl Executor {
         }
     }
 
-    unsafe fn dispatch_method_inner(&mut self, receiver: Value, kind: u8, args: &[Value], names: Option<&[String]>) -> Result<Value, ()> {
+    pub unsafe fn dispatch_method(&mut self, receiver: Value, kind: u8, args: &[Value], names: Option<&[String]>) -> Result<Value, ()> {
         let kind_enum = match MethodKind::from_u8(kind) {
             Some(k) => k,
             None => {
@@ -346,14 +351,6 @@ impl Executor {
             OpResult::Continue => Ok(locals[0]),
             _ => Err(()),
         }
-    }
-
-    pub unsafe fn dispatch_method(&mut self, receiver: Value, kind: u8, args: &[Value]) -> Result<Value, ()> {
-        unsafe { self.dispatch_method_inner(receiver, kind, args, None) }
-    }
-
-    pub unsafe fn dispatch_method_named(&mut self, receiver: Value, kind: u8, args: &[Value], names: Option<&[String]>) -> Result<Value, ()> {
-        unsafe { self.dispatch_method_inner(receiver, kind, args, names) }
     }
 
     pub fn native_inject_table(&mut self, table_val: &Value, source_val: Value, mapping_val: &Value) -> OpResult {

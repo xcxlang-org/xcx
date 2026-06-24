@@ -31,7 +31,9 @@ impl Executor {
             }
             Err(e) => {
                 eprintln!("R401: Failed to open database {}: {}{}", path, e, self.current_span_info(ip));
-                OpResult::Halt
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = Value::from_bool(false);
+                OpResult::Continue
             }
         }
     }

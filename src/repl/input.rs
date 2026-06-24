@@ -2,7 +2,7 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyModifiers},
     terminal::{self, ClearType},
-    ExecutableCommand, QueueableCommand,
+    QueueableCommand,
 };
 use std::io::{stdout, Write};
 
@@ -30,9 +30,9 @@ impl InputReader {
         let prompt = "xcx> ";
         let cont_prompt = "...  ";
 
-        let redraw = |out: &mut std::io::Stdout, lines: &[String], r: usize, c: usize| {
-            if r > 0 {
-                let _ = out.queue(cursor::MoveUp(r as u16));
+        let redraw = |out: &mut std::io::Stdout, lines: &[String], physical_r: usize, new_r: usize, new_c: usize| {
+            if physical_r > 0 {
+                let _ = out.queue(cursor::MoveUp(physical_r as u16));
             }
             let _ = out.queue(cursor::MoveToColumn(0));
             let _ = out.queue(terminal::Clear(ClearType::FromCursorDown));
@@ -40,18 +40,18 @@ impl InputReader {
             for (i, line) in lines.iter().enumerate() {
                 let p = if i == 0 { prompt } else { cont_prompt };
                 let _ = out.queue(crossterm::style::Print(p));
-                let _ = out.queue(crossterm::style::Print(line));
+                let _ = crate::repl::highlighter::Highlighter::highlight(out, line);
                 if i < lines.len() - 1 {
                     let _ = out.queue(crossterm::style::Print("\r\n"));
                 }
             }
 
-            let moves_up = (lines.len() - 1).saturating_sub(r);
+            let moves_up = (lines.len() - 1).saturating_sub(new_r);
             if moves_up > 0 {
                 let _ = out.queue(cursor::MoveUp(moves_up as u16));
             }
-            let p_len = if r == 0 { prompt.len() } else { cont_prompt.len() };
-            let _ = out.queue(cursor::MoveToColumn((p_len + c) as u16));
+            let p_len = if new_r == 0 { prompt.len() } else { cont_prompt.len() };
+            let _ = out.queue(cursor::MoveToColumn((p_len + new_c) as u16));
             let _ = out.flush();
         };
 
@@ -59,7 +59,7 @@ impl InputReader {
 
         loop {
             if init_draw {
-                redraw(&mut out, &lines, row, col);
+                redraw(&mut out, &lines, row, row, col);
                 init_draw = false;
             }
 
@@ -67,6 +67,7 @@ impl InputReader {
                 if key.kind == event::KeyEventKind::Release {
                     continue;
                 }
+                let old_row = row;
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         let _ = terminal::disable_raw_mode();
@@ -82,13 +83,23 @@ impl InputReader {
                             return None;
                         }
                     }
+                    KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        col = 0;
+                    }
+                    KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        col = lines[row].len();
+                    }
+                    KeyCode::Tab => {
+                        lines[row].insert_str(col, "    ");
+                        col += 4;
+                    }
                     KeyCode::Char(ch) => {
                         lines[row].insert(col, ch);
                         col += 1;
                     }
                     KeyCode::Enter => {
                         let trimmed = lines[row].trim();
-                        if trimmed == "!exec" || trimmed == "!exit" || trimmed == "!clear" || trimmed == "!help" {
+                        if trimmed.starts_with('!') {
                             if trimmed == "!exec" {
                                 lines[row] = "".to_string(); 
                             }
@@ -99,9 +110,6 @@ impl InputReader {
                         lines.insert(row + 1, remaining);
                         row += 1;
                         col = 0;
-                        
-                        let _ = out.queue(cursor::MoveToNextLine(1));
-                        let _ = out.queue(terminal::Clear(ClearType::CurrentLine));
                     }
                     KeyCode::Backspace => {
                         if col > 0 {
@@ -112,7 +120,6 @@ impl InputReader {
                             row -= 1;
                             col = lines[row].len();
                             lines[row].push_str(&curr);
-                            let _ = out.queue(cursor::MoveUp(1));
                         }
                     }
                     KeyCode::Delete => {
@@ -155,7 +162,7 @@ impl InputReader {
                     KeyCode::End => col = lines[row].len(),
                     _ => {}
                 }
-                redraw(&mut out, &lines, row, col);
+                redraw(&mut out, &lines, old_row, row, col);
             }
         }
 

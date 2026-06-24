@@ -1,4 +1,4 @@
---- pax.xcx - PAX Package Manager for XCX v3.1
+--- pax.xcx - PAX Package Manager for XCX v4.1
 const s: REGISTRY_HOST = "pax.xcxlang.com";
 const s: TOKEN_FILE    = ".pax_token";
 const s: CONFIG_FILE   = ".pax_config";
@@ -37,7 +37,7 @@ func main() {
     array:s: args = env.args();
     
     if (args.size() < 3) then;
-        >! "PAX Package Manager v3.1 (XCX Professional)";
+        >! "PAX Package Manager v4.1 (XCX Professional)";
         >! "Usage: xcx pax <command> [args]";
         >! "";
         >! "Core Commands:";
@@ -54,6 +54,7 @@ func main() {
         >! "  logout          Remove stored tokens";
         >! "  whoami          Verify your registry account";
         >! "  publish         Publish project and all files to Registry";
+        >! "  upgrade <t>     Upgrade target (xcx, tools, all) [--check]";
         return;
     end;
     
@@ -81,6 +82,8 @@ func main() {
         paxWhoAmI();
     elif (command == "publish") then;
         paxPublish();
+    elif (command == "upgrade") then;
+        paxUpgrade(args);
     else;
         >! "Error: Unknown command '" + command + "'";
     end;
@@ -677,6 +680,250 @@ func paxPublish() {
         
         >! "Publish Failed (HTTP " + s(resp.get("status")) + "): " + errMsg;
     end;
+};
+
+--- ================================================================
+---   Upgrade Management
+--- ================================================================
+
+func detectOS(-> s) {
+    array:s: args = env.args();
+    if (args.size() > 0) then;
+        s: exe = args.get(0);
+        if (exe HAS "\\" OR exe HAS ".exe") then;
+            return "windows";
+        end;
+    end;
+    return "linux";
+};
+
+func getInstallDir(-> s) {
+    array:s: args = env.args();
+    if (args.size() == 0) then; return ""; end;
+    s: exe = args.get(0).replace("\\", "/");
+    array:s: parts = exe.split("/");
+    s: result = "";
+    i: stop = parts.size() - 2;
+    if (stop <= 0) then; return ""; end;
+    for i in 0 to (stop - 1) do;
+        if (result != "") then; result = result + "/"; end;
+        result = result + parts.get(i);
+    end;
+    return result;
+};
+
+func getLatestGitHubTag(-> s) {
+    map: headers {
+        schema = [s <-> s]
+        data = ["User-Agent" :: "xcx-pax"]
+    };
+    net.request {
+        method = "GET",
+        url = "https://api.github.com/repos/xcxlang-org/xcx/releases/latest",
+        headers = headers,
+        timeout = 10000,
+    } as resp;
+    if (resp.ok) then;
+        s: body = s(resp.body);
+        if (body.startsWith("{")) then;
+            json: data = resp.body;
+            if (data.exists("tag_name")) then;
+                s: tag;
+                data.bind("tag_name", tag);
+                return tag;
+            end;
+        end;
+    end;
+    return "";
+};
+
+func getLocalXcxVersion(-> s) {
+    s: installDir = getInstallDir();
+    s: vfile = installDir + "/lib/VERSION";
+    if (store.exists(vfile)) then;
+        return store.read(vfile).trim();
+    end;
+    if (store.exists("lib/VERSION")) then;
+        return store.read("lib/VERSION").trim();
+    end;
+    return "unknown";
+};
+
+func upgradeXcxBinary(s: installDir, s: os) {
+    s: tag = getLatestGitHubTag();
+    if (tag == "") then;
+        >! "Error: Could not fetch latest release info from GitHub.";
+        return;
+    end;
+    s: base = "https://github.com/xcxlang-org/xcx/releases/download/" + tag + "/";
+    s: assetName = "xcx";
+    if (os == "windows") then; assetName = "xcx.exe"; end;
+    s: url = base + assetName;
+    >! "Downloading " + assetName + " version " + tag + "...";
+    map: headers {
+        schema = [s <-> s]
+        data = ["User-Agent" :: "xcx-pax"]
+    };
+    net.request {
+        method = "GET",
+        url = url,
+        headers = headers,
+        timeout = 60000,
+    } as resp;
+    if (resp.ok) then;
+        s: destBinDir = installDir + "/bin";
+        if (NOT store.exists(destBinDir)) then;
+            store.mkdir(destBinDir);
+        end;
+        s: dest = destBinDir + "/" + assetName;
+        s: body = s(resp.body);
+        if (store.write(dest, body)) then;
+            >! "OK: xcx binary updated at " + dest;
+        else;
+            >! "Error: Permission denied. Could not write to " + dest;
+            if (os == "windows") then;
+                >! "Please run PowerShell/CMD as Administrator and try again.";
+            else;
+                >! "Please check your write permissions or run with sudo and try again.";
+            end;
+        end;
+    else;
+        >! "Error: Download failed (HTTP " + s(resp.status) + ").";
+    end;
+};
+
+func fetchToolPackage(s: pkgName, s: destLibDir) {
+    s: os = detectOS();
+    s: url = getRegistryUrl() + "api?route=api/packages/" + pkgName + "/download&v=latest&format=json";
+    s: token = getToken();
+    map: headers {
+        schema = [s <-> s]
+        data = [EMPTY]
+    };
+    if (token != "") then; headers.insert("X-PAX-TOKEN", token); end;
+    net.request {
+        method = "GET",
+        url = url,
+        headers = headers,
+        timeout = 15000,
+    } as resp;
+    if (resp.ok) then;
+        s: body = s(resp.body);
+        if (body.startsWith("{")) then;
+            json: m = json.parse(body);
+            json: fl;
+            if (m.exists("files_list")) then;
+                json: inner = m.get("files_list");
+                if (inner.exists("files_list")) then;
+                    fl = inner.get("files_list");
+                else;
+                    fl = inner;
+                end;
+            end;
+            if (fl.size() == 0) then;
+                >! "  Failed: " + pkgName + " has no file manifest.";
+            else;
+                s: lp = destLibDir + "/";
+                i: k = 0;
+                i: sz = fl.size();
+                while (k < sz) do;
+                    json: fObj = fl.get(k);
+                    s: p; fObj.bind("path", p);
+                    s: c; fObj.bind("content", c);
+                    s: pSlash = p.replace("\\", "/");
+                    b: has_dir = pSlash HAS "/";
+                    if (has_dir) then;
+                        array:s: parts = pSlash.split("/");
+                        s: curPath = lp;
+                        for i in 0 to (parts.size() - 2) do;
+                            curPath = curPath + parts.get(i) + "/";
+                            if (NOT store.exists(curPath)) then; store.mkdir(curPath); end;
+                        end;
+                    end;
+                    if (NOT store.write(lp + pSlash, c)) then;
+                        >! "Error: Permission denied writing package file: " + lp + pSlash;
+                        if (os == "windows") then;
+                            >! "Please run PowerShell/CMD as Administrator and try again.";
+                        else;
+                            >! "Please check your write permissions or run with sudo and try again.";
+                        end;
+                        return;
+                    end;
+                    if (pSlash.endsWith("/math.xcx") OR pSlash == "math.xcx") then;
+                        if (NOT store.write(lp + "math.xcx", c)) then;
+                            >! "Error: Permission denied writing math.xcx file.";
+                            return;
+                        end;
+                    end;
+                    k = k + 1;
+                end;
+                >! "  OK: Updated " + pkgName;
+            end;
+        else;
+            >! "  Failed: Registry returned non-JSON structure for " + pkgName;
+        end;
+    else;
+        >! "  Failed: Status " + s(resp.status) + " for " + pkgName;
+    end;
+};
+
+func upgradeTools(s: installDir) {
+    s: libDir = installDir + "/lib";
+    >! "Upgrading tools to latest from PAX registry...";
+    fetchToolPackage("pax", libDir);
+    fetchToolPackage("mathlib", libDir);
+    fetchToolPackage("doc", libDir);
+};
+
+func paxUpgrade(array:s: args) {
+    if (args.size() < 4) then;
+        >! "Error: specify what to upgrade: xcx, tools, all";
+        return;
+    end;
+    s: target = args.get(3);
+    b: checkOnly = false;
+    if (target == "--check") then;
+        target = "all";
+        checkOnly = true;
+    end;
+    if (args.size() >= 5) then;
+        if (args.get(4) == "--check") then;
+            checkOnly = true;
+        end;
+    end;
+    if (target != "xcx" AND target != "tools" AND target != "all") then;
+        >! "Error: unknown target '" + target + "'. Use: xcx, tools, all";
+        return;
+    end;
+    s: os = detectOS();
+    s: installDir = getInstallDir();
+    if (installDir == "") then;
+        >! "Error: Could not determine install directory.";
+        return;
+    end;
+    if (checkOnly) then;
+        s: local = getLocalXcxVersion();
+        s: remote = getLatestGitHubTag();
+        if (remote == "") then;
+            >! "Error: Could not retrieve remote version from GitHub.";
+            return;
+        end;
+        >! "Local version:  " + local;
+        >! "Latest release: " + remote;
+        if (local == remote OR "v" + local == remote) then;
+            >! "Already up to date.";
+        else;
+            >! "Update available: " + remote;
+        end;
+        return;
+    end;
+    if (target == "xcx" OR target == "all") then;
+        upgradeXcxBinary(installDir, os);
+    end;
+    if (target == "tools" OR target == "all") then;
+        upgradeTools(installDir);
+    end;
+    >! "Upgrade complete.";
 };
 
 main();

@@ -132,4 +132,5 @@ pub enum StmtKind {
         routes: Box<Expr>,
     },
     Wait(Box<Expr>),
+    MultiVarDecl(Vec<Stmt>),
 }

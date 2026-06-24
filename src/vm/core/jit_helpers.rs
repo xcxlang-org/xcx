@@ -24,8 +24,11 @@ pub unsafe extern "C" fn xcx_jit_dec_ref(bits: u64, tag: u64) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_check_recursion(exec_ptr: *mut Executor) -> u32 {
     let executor = unsafe { &mut *exec_ptr };
-    if executor.call_depth >= 800 {
-        crate::runtime::builtin::io::eprint_buffered("ERROR halt: Recursion limit exceeded (800 frames)\n");
+    if executor.call_depth >= crate::vm::core::executor::RECURSION_LIMIT {
+        crate::runtime::builtin::io::eprint_buffered(&format!(
+            "ERROR halt: Recursion limit exceeded ({} frames)\n",
+            crate::vm::core::executor::RECURSION_LIMIT
+        ));
         executor.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         return 1;
     }
@@ -45,9 +48,7 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
     func_idx: u64,
     args_ptr: *const Value,
     arg_count: u8,
-    _vm_ptr: *const VM,
     exec_ptr: *mut Executor,
-    _glbs_ptr: *mut Value,
 ) -> u32 {
     let executor = unsafe { &mut *exec_ptr };
 
@@ -61,7 +62,7 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
                 let mut jit = executor.vm.jit.lock();
                 let func_id_idx = f.bytecode.as_ptr() as usize;
                 let name = f.name.clone();
-                match jit.compile_method(func_id_idx, func_idx as u32, f, &executor.ctx.constants, &name) {
+                match jit.compile_method(func_id_idx, func_idx as u32, f, &executor.ctx.constants, &executor.ctx.functions, &name) {
                     Ok(ptr) => {
                         jp = ptr as *mut std::ffi::c_void;
                         f.jit_ptr.store(jp, Ordering::Release);
@@ -77,8 +78,11 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
     let locals_start = executor.stack_ptr;
     executor.stack_ptr += chunk_max_locals;
 
-    if executor.call_depth >= 800 {
-        crate::runtime::builtin::io::eprint_buffered("ERROR halt: Recursion limit exceeded (800 frames)\n");
+    if executor.call_depth >= crate::vm::core::executor::RECURSION_LIMIT {
+        crate::runtime::builtin::io::eprint_buffered(&format!(
+            "ERROR halt: Recursion limit exceeded ({} frames)\n",
+            crate::vm::core::executor::RECURSION_LIMIT
+        ));
         executor.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         executor.stack_ptr = old_stack_ptr;
         unsafe { *out = Value::from_i64(0); }
@@ -108,7 +112,7 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
             }
         }
 
-        let globals_ptr = _glbs_ptr as *mut Value;
+        let globals_ptr = executor.vm.globals.read().as_ptr() as *mut Value;
         let consts_ptr = executor.ctx.constants.as_ptr() as *const Value;
         let vm_ptr = Arc::as_ptr(&executor.vm) as *mut VM;
         let shutdown_ptr = &crate::vm::core::executor::SHUTDOWN as *const std::sync::atomic::AtomicBool as *const bool;
@@ -307,8 +311,15 @@ pub unsafe extern "C" fn xcx_jit_le(out: *mut Value, a_bits: u64, a_tag: u64, b_
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_cast_string(out: *mut Value, val_bits: u64, val_tag: u64) {
     let v = Value { bits: val_bits, tag: val_tag };
-    let s = v.as_string_lossy();
-    unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(s.into_bytes()))); }
+    if v.is_string() {
+        unsafe {
+            v.inc_ref();
+            *out = v;
+        }
+    } else {
+        let s = v.as_string_lossy();
+        unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(s.into_bytes()))); }
+    }
 }
 
 #[unsafe(no_mangle)]

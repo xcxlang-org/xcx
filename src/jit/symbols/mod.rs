@@ -300,9 +300,7 @@ impl SymbolRegistry {
         sig_call_rec.params.push(AbiParam::new(types::I64)); // func_idx
         sig_call_rec.params.push(AbiParam::new(ptr_type)); // args_ptr
         sig_call_rec.params.push(AbiParam::new(types::I8)); // arg_count
-        sig_call_rec.params.push(AbiParam::new(ptr_type)); // vm_ptr
         sig_call_rec.params.push(AbiParam::new(ptr_type)); // executor_ptr
-        sig_call_rec.params.push(AbiParam::new(ptr_type)); // globals_ptr
         sig_call_rec.returns.push(AbiParam::new(types::I32)); // status
 
         let mut sig_method = module.make_signature();
@@ -310,8 +308,6 @@ impl SymbolRegistry {
         add_val_param(&mut sig_method); // receiver
         sig_method.params.push(AbiParam::new(types::I8));  // kind
         sig_method.params.push(AbiParam::new(ptr_type)); // args_ptr
-        sig_method.params.push(AbiParam::new(ptr_type)); // locals_ptr
-        sig_method.params.push(AbiParam::new(types::I8));  // dst
         sig_method.params.push(AbiParam::new(types::I8));  // arg_count
         sig_method.params.push(AbiParam::new(ptr_type)); // executor_ptr
 
@@ -320,8 +316,6 @@ impl SymbolRegistry {
         add_val_param(&mut sig_method_named); // receiver
         sig_method_named.params.push(AbiParam::new(types::I8));  // kind
         sig_method_named.params.push(AbiParam::new(ptr_type)); // args_ptr
-        sig_method_named.params.push(AbiParam::new(ptr_type)); // locals_ptr
-        sig_method_named.params.push(AbiParam::new(types::I8));  // dst
         sig_method_named.params.push(AbiParam::new(types::I8));  // arg_count
         add_val_param(&mut sig_method_named); // names (bits, tag)
         sig_method_named.params.push(AbiParam::new(ptr_type)); // executor_ptr

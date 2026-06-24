@@ -14,6 +14,7 @@ impl Executor {
         match kind {
             crate::vm::opcode::MethodKind::Insert => {
                 if !args[0].is_table() {
+                    self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     eprintln!("R409: Insert expects a table as first argument{}", self.current_span_info(ip));
                     return OpResult::Halt;
                 }
@@ -24,7 +25,6 @@ impl Executor {
                 let mut placeholders = Vec::new();
                 let mut params = Vec::new();
                 
-                // Handle positional args (skip @auto)
                 let mut col_idx = 0;
                 let mut arg_idx = 1;
                 while arg_idx < args.len() && col_idx < table.columns.len() {
@@ -88,6 +88,7 @@ impl Executor {
                 
                 let pk_col = table.columns.iter().find(|c| c.is_pk);
                 if pk_col.is_none() {
+                    self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     eprintln!("R410: Save (upsert) requires a primary key in table schema{}", self.current_span_info(ip));
                     return OpResult::Halt;
                 }

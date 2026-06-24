@@ -1,4 +1,4 @@
-# XCX 4.0 Variables and Constants
+# XCX 4.1 Variables and Constants
 
 ## Variable Declarations
 
@@ -12,6 +12,17 @@ b: is_ready = true;
 ```
 
 Variables can also be declared without an initial value, in which case they take the default value for their type (e.g., `0` for `i`, `""` for `s`).
+
+### Multiple Variable Declarations
+
+Basic types support declaring multiple variables of the same type in a single statement, separated by commas. Each variable can optionally have its own initializer:
+
+```xcx
+i: x, y, z;          --- Declares x, y, z as integers (default 0)
+f: a = 1.0, b, c;    --- Declares a (1.0), b (0.0), and c (0.0)
+s: first, middle, last = "Doe";
+```
+
 
 ## Reassignment
 

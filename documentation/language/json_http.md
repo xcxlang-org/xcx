@@ -1,8 +1,8 @@
-# XCX 4.0 JSON and HTTP
+# XCX 4.1 JSON and HTTP
 
 ## JSON
 
-JSON objects in XCX 4.0 are **mutable**.
+JSON objects in XCX 4.1 are **mutable**.
 
 ### Creation
 
@@ -52,6 +52,7 @@ yield net.respond(200, resp);
 | `.set(path, val)`         | `(s, T) → b`          | `b`     | Sets value at path; creates key if missing                     |
 | `.push(val)`              | `(json) → b`          | `b`     | Appends element to a JSON array node                           |
 | `.size()` / `.count()`    | `() → i`              | `i`     | Number of keys (object) or elements (array)                    |
+| `.keys()`                 | `() → array:s`        | `array:s`| Returns an array of keys for a JSON object                     |
 | `.toStr()`                | `() → s`              | `s`     | Serializes to JSON string                                      |
 | `.inject(path, map, tbl)` | `(s, map, table) → b` | `b`     | Bulk import of JSON array into XCX table                       |
 | `.first()`                | `() → json`           | `json`  | Returns the first element of a JSON array; halt.error if empty |

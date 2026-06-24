@@ -1,13 +1,13 @@
 --- TEST: DB-005
 --- Area: Database
 --- Priority: high
---- Name: db.fetch().where() — kompilacja do SQL WHERE
+--- Name: db.fetch().where() - compilation to SQL WHERE
 --- Expect:
----   1. Poprawne wyrażenia (==, !=, <, >, <=, >=, AND, OR) → OK
----   2. Chaining .where() łączy warunki przez AND
----   3. Lokalne zmienne jako prawa strona → OK
----   Ten plik testuje tylko pozytwyne przypadki.
----   Negatywny (string method w where) jest w DB-005b.
+---   1. Correct expressions (==, !=, <, >, <=, >=, AND, OR) -> OK
+---   2. Chaining .where() combines conditions with AND
+---   3. Local variables as right-hand side -> OK
+---   This file tests positive cases only.
+---   Negative (string method in where) is in DB-005b.
 
 database: app { engine = "sqlite", path = "tests_tmp/db005.db" };
 
@@ -22,52 +22,47 @@ yield app.insert(users, "Bob", 17, "user");
 yield app.insert(users, "Charlie", 35, "admin");
 yield app.insert(users, "Dana", 14, "user");
 
---- ── Subtest 1: prosty filtr > ──────────────────────────────────────────
 table: adults = yield app.fetch(users).where(age > 18);
 
 if (adults.count() == 2) then;
-    >! "[DB-005-1] PASS — adults.count() = 2";
+    >! "[DB-005-1] PASS - adults.count() = 2";
 else;
-    >! "[DB-005-1] FAIL — adults.count() = " + s(adults.count()) + " (oczekiwane 2)";
+    >! "[DB-005-1] FAIL - adults.count() = " + s(adults.count()) + " (expected 2)";
 end;
 
---- ── Subtest 2: złożony filtr AND ───────────────────────────────────────
 table: admins = yield app.fetch(users).where(age > 18 AND role == "admin");
 
 if (admins.count() == 2) then;
-    >! "[DB-005-2] PASS — admins.count() = 2";
+    >! "[DB-005-2] PASS - admins.count() = 2";
 else;
-    >! "[DB-005-2] FAIL — admins.count() = " + s(admins.count()) + " (oczekiwane 2)";
+    >! "[DB-005-2] FAIL - admins.count() = " + s(admins.count()) + " (expected 2)";
 end;
 
---- ── Subtest 3: chaining .where() → AND ────────────────────────────────
 table: chained = yield app.fetch(users)
     .where(age > 18)
     .where(role == "admin");
 
 if (chained.count() == 2) then;
-    >! "[DB-005-3] PASS — chained.count() = 2 (identyczny wynik jak AND)";
+    >! "[DB-005-3] PASS - chained.count() = 2 (identical result to AND)";
 else;
-    >! "[DB-005-3] FAIL — chained.count() = " + s(chained.count());
+    >! "[DB-005-3] FAIL - chained.count() = " + s(chained.count());
 end;
 
---- ── Subtest 4: lokalna zmienna po prawej stronie ───────────────────────
 i: min_age = 18;
 table: using_var = yield app.fetch(users).where(age > min_age);
 
 if (using_var.count() == 2) then;
-    >! "[DB-005-4] PASS — lokalna zmienna w where() działa";
+    >! "[DB-005-4] PASS - local variable in where() works";
 else;
-    >! "[DB-005-4] FAIL — using_var.count() = " + s(using_var.count());
+    >! "[DB-005-4] FAIL - using_var.count() = " + s(using_var.count());
 end;
 
---- ── Subtest 5: OR ──────────────────────────────────────────────────────
 table: or_result = yield app.fetch(users).where(age < 16 OR role == "admin");
 
 if (or_result.count() == 3) then;
-    >! "[DB-005-5] PASS — OR filter: count = 3";
+    >! "[DB-005-5] PASS - OR filter: count = 3";
 else;
-    >! "[DB-005-5] FAIL — OR filter: count = " + s(or_result.count()) + " (oczekiwane 3)";
+    >! "[DB-005-5] FAIL - OR filter: count = " + s(or_result.count()) + " (expected 3)";
 end;
 
 app.close();

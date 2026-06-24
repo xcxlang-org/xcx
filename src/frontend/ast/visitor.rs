@@ -92,6 +92,9 @@ pub trait AstVisitor {
                 self.visit_expr(e);
             }
             StmtKind::DatabaseDecl { .. } => {}
+            StmtKind::MultiVarDecl(stmts) => {
+                for s in stmts { self.visit_stmt(s); }
+            }
         }
     }
 

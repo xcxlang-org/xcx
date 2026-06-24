@@ -125,7 +125,7 @@ mod tests {
         let name_id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let global_idx = compiler.get_global_idx(name_id);
+        let global_idx = *compiler.globals.get(&name_id).expect("Global not found");
 
 
         let vm = Arc::new(VM::new());
@@ -154,7 +154,7 @@ mod tests {
         let name_id = interner.intern("sentinel");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let global_idx = compiler.get_global_idx(name_id);
+        let global_idx = *compiler.globals.get(&name_id).expect("Global not found");
 
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
@@ -219,7 +219,7 @@ mod tests {
         let success_id = interner.intern("success");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let success_idx = compiler.get_global_idx(success_id);
+        let success_idx = *compiler.globals.get(&success_id).expect("Global not found");
 
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
@@ -249,7 +249,7 @@ mod tests {
         let err_id = interner.intern("err");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let err_idx = compiler.get_global_idx(err_id);
+        let err_idx = *compiler.globals.get(&err_id).expect("Global not found");
 
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
@@ -281,7 +281,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -304,7 +304,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -327,7 +327,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -350,7 +350,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -373,7 +373,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -396,7 +396,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -425,8 +425,8 @@ mod tests {
         let last_id  = interner.intern("last");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let first_idx = compiler.get_global_idx(first_id);
-        let last_idx  = compiler.get_global_idx(last_id);
+        let first_idx = *compiler.globals.get(&first_id).expect("Global not found");
+        let last_idx  = *compiler.globals.get(&last_id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -453,7 +453,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -482,8 +482,8 @@ mod tests {
         let fail_id = interner.intern("fail");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let ok_idx = compiler.get_global_idx(ok_id);
-        let fail_idx = compiler.get_global_idx(fail_id);
+        let ok_idx = *compiler.globals.get(&ok_id).expect("Global not found");
+        let fail_idx = *compiler.globals.get(&fail_id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -513,7 +513,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -546,7 +546,7 @@ mod tests {
         let id = interner.intern("count");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -583,7 +583,7 @@ mod tests {
         let id = interner.intern("result");
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&mut program, &mut interner);
-        let idx = compiler.get_global_idx(id);
+        let idx = *compiler.globals.get(&id).expect("Global not found");
         let vm = Arc::new(VM::new());
         let ctx = SharedContext { 
             constants, 
@@ -690,7 +690,7 @@ mod tests {
         let result_id = interner_c.intern("result");
         let mut compiler_c = XCXCompiler::new();
         let (main_chunk_c, constants_c, functions_c) = compiler_c.compile(&program_c, &mut interner_c);
-        let result_idx = compiler_c.get_global_idx(result_id);
+        let result_idx = *compiler_c.globals.get(&result_id).expect("Global not found");
 
         let vm_c = Arc::new(VM::new());
         let ctx_c = SharedContext { 
@@ -734,9 +734,9 @@ mod tests {
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
         
-        let cnt_idx = compiler.get_global_idx(cnt_id);
-        let uid0_idx = compiler.get_global_idx(uid0_id);
-        let name1_idx = compiler.get_global_idx(name1_id);
+        let cnt_idx = *compiler.globals.get(&cnt_id).expect("Global not found");
+        let uid0_idx = *compiler.globals.get(&uid0_id).expect("Global not found");
+        let name1_idx = *compiler.globals.get(&name1_id).expect("Global not found");
 
         println!("[TEST BYTECODE] bytecode length = {}", main_chunk.bytecode.len());
         for (i, op) in main_chunk.bytecode.iter().enumerate() {
@@ -765,4 +765,74 @@ mod tests {
         assert!(n1_val.is_string(), "Expected String, got {:?}", n1_val);
         assert!(n1_val.matches_str("Bob"), "users[1].name mismatch");
     }
+
+    #[test]
+    fn test_array_slice_and_json_keys() {
+        let source = r#"
+            array:i: nums {1, 2, 3, 4, 5};
+            array:i: part = nums.slice(1, 4);
+            i: part_len = part.size();
+            i: p0 = part[0];
+            i: p2 = part[2];
+
+            json: obj <<< {"a": 1, "b": 2} >>>;
+            array:s: kk = obj.keys();
+            i: keys_len = kk.size();
+            s: k0 = kk[0];
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let part_len_id = interner.intern("part_len");
+        let p0_id = interner.intern("p0");
+        let p2_id = interner.intern("p2");
+        let keys_len_id = interner.intern("keys_len");
+        let k0_id = interner.intern("k0");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        let part_len_idx = *compiler.globals.get(&part_len_id).expect("Global not found");
+        let p0_idx = *compiler.globals.get(&p0_id).expect("Global not found");
+        let p2_idx = *compiler.globals.get(&p2_id).expect("Global not found");
+        let keys_len_idx = *compiler.globals.get(&keys_len_id).expect("Global not found");
+        let k0_idx = *compiler.globals.get(&k0_id).expect("Global not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        assert_int(&vm, part_len_idx, 3, "part.size() should be 3");
+        assert_int(&vm, p0_idx, 2, "part[0] should be 2");
+        assert_int(&vm, p2_idx, 4, "part[2] should be 4");
+        assert_int(&vm, keys_len_idx, 2, "keys.size() should be 2");
+
+        let k0_val = vm.get_global(k0_idx);
+        assert!(k0_val.is_string(), "Expected String key, got {:?}", k0_val);
+    }
+
+    #[test]
+    fn test_rwlock_array_offsets() {
+        use parking_lot::RwLock;
+        use crate::vm::object::ArrayObj;
+
+        let lock = RwLock::new(ArrayObj::new(vec![Value::from_i64(10), Value::from_i64(20)]));
+        let lock_ptr = &lock as *const RwLock<ArrayObj> as *const usize;
+
+        // offset 0: RwLock state (8 bytes)
+        // offset 8: Vec ptr (8 bytes)
+        // offset 16: Vec cap (8 bytes)
+        // offset 24: Vec len (8 bytes) -> index 3 of usize array
+        let len_val = unsafe { *lock_ptr.add(3) };
+        assert_eq!(len_val, 2);
+    }
 }
+

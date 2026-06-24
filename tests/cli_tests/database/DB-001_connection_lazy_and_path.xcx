@@ -1,11 +1,11 @@
 --- TEST: DB-001
 --- Area: Database
 --- Priority: critical
---- Name: Połączenie SQLite — lazy open i ścieżka względna
+--- Name: SQLite Connection - lazy open and relative path
 --- Expect:
----   1. Połączenie otwiera się dopiero przy pierwszym użyciu (sync), nie przy deklaracji.
----   2. Poprawna ścieżka względna → OK
----   3. Absolutna ścieżka → halt.fatal (osobny subtest w DB-001b)
+---   1. Connection opens only on first use (sync), not at declaration.
+---   2. Correct relative path -> OK
+---   3. Absolute path -> halt.fatal (separate subtest in DB-001b)
 
 database: app { engine = "sqlite", path = "tests_tmp/db001.db" };
 
@@ -16,20 +16,20 @@ table: items {
 
 fiber run(-> b) {
     yield app.sync(items);
-    >! "[DB-001] PASS — sync() otworzył połączenie i utworzył tabelę";
+    >! "[DB-001] PASS - sync() opened connection and created table";
 
     yield app.insert(items, label = "hello") as r;
     if (r.insertId == 1) then;
-        >! "[DB-001] PASS — insert OK, insertId=1";
+        >! "[DB-001] PASS - insert OK, insertId=1";
     else;
-        >! "[DB-001] FAIL — insertId = " + s(r.insertId) + " (oczekiwane 1)";
+        >! "[DB-001] FAIL - insertId = " + s(r.insertId) + " (expected 1)";
     end;
 
     table: all = yield app.fetch(items);
     if (all.count() == 1) then;
-        >! "[DB-001] PASS — fetch zwrócił 1 wiersz";
+        >! "[DB-001] PASS - fetch returned 1 row";
     else;
-        >! "[DB-001] FAIL — fetch zwrócił " + s(all.count()) + " wierszy";
+        >! "[DB-001] FAIL - fetch returned " + s(all.count()) + " rows";
     end;
 
     app.close();

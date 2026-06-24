@@ -1,11 +1,11 @@
 --- TEST: DB-006
 --- Area: Database
 --- Priority: high
---- Name: queryRaw().first() — halt.error gdy brak wyników
+--- Name: queryRaw().first() - halt.error when no results
 --- Expect:
----   .first() na pustym wyniku triggeruje halt.error.
----   .first() na niepustym wyniku zwraca poprawny obiekt.
----   COUNT(*) działa przez queryRaw().first().
+---   .first() on empty result triggers halt.error.
+---   .first() on non-empty result returns correct object.
+---   COUNT(*) works via queryRaw().first().
 
 database: app { engine = "sqlite", path = "tests_tmp/db006.db" };
 
@@ -18,10 +18,9 @@ fiber run(-> b) {
     yield app.sync(users);
     yield app.truncate(users);
 
-    --- ── Subtest 1: .first() na pustym wyniku → halt.error ─────
     fiber test_empty(-> b) {
         json: row = yield app.queryRaw("SELECT * FROM users WHERE age > ?", [999]).first();
-        >! "[DB-006-1] FAIL — .first() na pustym wyniku nie wywołało halt.error";
+        >! "[DB-006-1] FAIL - .first() on empty result did not trigger halt.error";
         return false;
     };
 
@@ -29,10 +28,9 @@ fiber run(-> b) {
     f1.next();
 
     if (f1.isDone()) then;
-        >! "[DB-006-1] PASS — fiber zakończony po halt.error w .first()";
+        >! "[DB-006-1] PASS - fiber completed after halt.error in .first()";
     end;
 
-    --- ── Subtest 2: .first() na niepustym → poprawny wynik ─────
     yield app.insert(users, "Alice", 25);
     yield app.insert(users, "Bob", 30);
 
@@ -41,18 +39,17 @@ fiber run(-> b) {
     count_row.bind("n", n);
 
     if (n == 2) then;
-        >! "[DB-006-2] PASS — COUNT(*) = 2";
+        >! "[DB-006-2] PASS - COUNT(*) = 2";
     else;
-        >! "[DB-006-2] FAIL — COUNT(*) = " + s(n) + " (oczekiwane 2)";
+        >! "[DB-006-2] FAIL - COUNT(*) = " + s(n) + " (expected 2)";
     end;
 
-    --- ── Subtest 3: sprawdzenie size() przed first() ────────────
     json: results = yield app.queryRaw("SELECT * FROM users WHERE age > ?", [100]);
 
     if (results.size() == 0) then;
-        >! "[DB-006-3] PASS — size() = 0, poprawnie unikamy .first()";
+        >! "[DB-006-3] PASS - size() = 0, correctly avoiding .first()";
     else;
-        >! "[DB-006-3] FAIL — size() = " + s(results.size());
+        >! "[DB-006-3] FAIL - size() = " + s(results.size());
     end;
 
     app.close();

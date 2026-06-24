@@ -1,8 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-// String object representation.
-// In XCX 4.0, runtime strings can be either interned (via StringId)
-// or dynamic (via Vec<u8>).
 #[derive(Debug, Clone, Eq, Hash)]
 pub struct StringObj {
     pub data: Vec<u8>,

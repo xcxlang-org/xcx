@@ -29,6 +29,7 @@ pub struct VM {
     pub traces: Arc<RwLock<HashMap<(usize, usize), Arc<RwLock<Trace>>>>>,
     pub jit: Mutex<crate::jit::JIT>,
     pub disable_jit: bool,
+    pub jit_threshold: u32,
     pub start_instant: std::time::Instant,
 }
 
@@ -42,6 +43,7 @@ impl VM {
             traces: Arc::new(RwLock::new(HashMap::new())),
             jit: Mutex::new(crate::jit::JIT::new()),
             disable_jit: false,
+            jit_threshold: 50,
             start_instant: std::time::Instant::now(),
         }
     }
@@ -50,14 +52,14 @@ impl VM {
         if !self.disable_jit && chunk.jit_ptr.load(Ordering::Acquire).is_null() {
             let mut jit = self.jit.lock();
             let func_id_idx = chunk.bytecode.as_ptr() as usize;
-            match jit.compile_method(func_id_idx, u32::MAX, &chunk, &ctx.constants, "main") {
+            match jit.compile_method(func_id_idx, u32::MAX, &chunk, &ctx.constants, &ctx.functions, "main") {
                 Ok(ptr) => { chunk.jit_ptr.store(ptr as *mut _, Ordering::Release); }
                 Err(_e) => {}
             }
         }
         let ctx = Arc::new(ctx);
         let mut executor = crate::vm::core::executor::Executor::new(self.clone(), ctx);
-        executor.run_frame(chunk, params, self, 0)
+        executor.run_frame(chunk, params, self)
     }
 
     pub fn get_global(&self, idx: usize) -> Value {
@@ -84,3 +86,40 @@ impl Drop for VM {
         }
     }
 }
+
+thread_local! {
+    pub static ACTIVE_VM: std::cell::Cell<*const VM> = std::cell::Cell::new(std::ptr::null());
+}
+
+pub struct ActiveVmGuard {
+    old: *const VM,
+}
+
+impl ActiveVmGuard {
+    pub fn new(vm: *const VM) -> Self {
+        let old = ACTIVE_VM.with(|cell| {
+            let old = cell.get();
+            cell.set(vm);
+            old
+        });
+        Self { old }
+    }
+}
+
+impl Drop for ActiveVmGuard {
+    fn drop(&mut self) {
+        ACTIVE_VM.with(|cell| cell.set(self.old));
+    }
+}
+
+pub fn increment_error_count() {
+    ACTIVE_VM.with(|cell| {
+        let ptr = cell.get();
+        if !ptr.is_null() {
+            unsafe {
+                (*ptr).error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    });
+}
+

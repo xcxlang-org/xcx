@@ -18,11 +18,11 @@ pub fn raw_mode(executor: &mut Executor) -> OpResult {
     if !OS_RAW_ACTIVE.load(Ordering::Acquire) {
         if let Err(_) = enable_raw_mode() {
             eprintln!("R440: Error: Failed to set terminal mode");
+            crate::vm::core::vm::increment_error_count();
             return OpResult::Halt;
         }
         OS_RAW_ACTIVE.store(true, Ordering::Release);
         
-        // Purge any pending event queue immediately after physically enabling raw mode
         while crossterm::event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
             let _ = crossterm::event::read();
         }
@@ -61,6 +61,7 @@ pub fn move_cursor(x_src: u8, y_src: u8, locals: &[Value]) -> OpResult {
     
     if x < 0 || y < 0 || x > 32767 || y > 32767 {
          eprintln!("R441: Error: Cursor position out of bounds (x:{}, y:{})", x, y);
+         crate::vm::core::vm::increment_error_count();
          return OpResult::Halt;
     }
 
@@ -70,6 +71,7 @@ pub fn move_cursor(x_src: u8, y_src: u8, locals: &[Value]) -> OpResult {
     });
     if res.is_err() {
          eprintln!("R441: Error: Cursor position out of bounds");
+         crate::vm::core::vm::increment_error_count();
          return OpResult::Halt;
     }
     OpResult::Continue

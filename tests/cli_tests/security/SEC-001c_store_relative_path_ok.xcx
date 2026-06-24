@@ -7,7 +7,7 @@
 ---   Treść zapisana = treść odczytana.
 
 s: path = "tests_tmp/sec001c_test.txt";
-s: content = "XCX 4.0 security test\nLine 2";
+s: content = "XCX 4.1 security test\nLine 2";
 
 store.write(path, content);
 

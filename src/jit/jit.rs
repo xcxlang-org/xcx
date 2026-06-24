@@ -27,6 +27,7 @@ pub struct JIT {
     pub(crate) ctx: codegen::Context,
     pub(crate) ptr_type: types::Type,
     pub(crate) symbols: SymbolRegistry,
+    pub(crate) in_progress: std::collections::HashSet<usize>,
 }
 
 impl JIT {
@@ -42,6 +43,7 @@ impl JIT {
             ctx,
             ptr_type,
             symbols,
+            in_progress: std::collections::HashSet::new(),
         }
     }
 
@@ -90,14 +92,9 @@ impl JIT {
 
             let start_ip = trace_read.start_ip;
             
-            let call_depth_offset = {
-                let dummy = std::mem::MaybeUninit::<crate::vm::core::executor::Executor>::uninit();
-                let base_ptr = dummy.as_ptr() as usize;
-                let depth_ptr = unsafe { &(*dummy.as_ptr()).call_depth as *const _ as usize };
-                (depth_ptr - base_ptr) as u32
-            };
+            let (call_depth_offset, stack_ptr_offset) = super::codegen_ctx::executor_field_offsets();
 
-            let mut ctx = CodegenCtx::new(&mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, vm_ptr, exec_ptr, shutdown_ptr, start_ip, trace_read.min_locals, HashMap::new(), u32::MAX, None, call_depth_offset);
+            let mut ctx = CodegenCtx::new(&mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, vm_ptr, exec_ptr, shutdown_ptr, start_ip, trace_read.min_locals, HashMap::new(), u32::MAX, None, call_depth_offset, stack_ptr_offset);
             
             // Phase 4: Analyze used locals and preload them
             let used_locals = analyze_trace_locals(&trace_read.ops);

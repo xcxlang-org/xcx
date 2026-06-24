@@ -238,9 +238,13 @@ Notable disambiguation rules:
 
 ```
 [const] Type : name [= expr] ;
+[const] Type : name1, name2, ... [= expr] ;
 ```
 
 Type is parsed with `parse_type`. The initializer is optional. When the initializer opens with `{` and a set type was declared, the parser attempts to parse a set literal; otherwise it parses an array literal or a plain expression.
+
+**Multiple Variable Declarations (Desugaring):**
+If a type annotation is followed by a comma-separated list of names (e.g. `i: a, b, c = 10;`), the parser desugars this into a `StmtKind::MultiVarDecl` holding individual `VarDecl` statements in sequence. Initializers are applied to each declared variable.
 
 ### Assignment (`parse_assignment`)
 

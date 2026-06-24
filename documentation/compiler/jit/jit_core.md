@@ -54,37 +54,35 @@ sig.params.push(AbiParam::new(ptr_type)); // shutdown_ptr
 sig.returns.push(AbiParam::new(types::I32)); // execution status (0: ok, 1: error)
 ```
 
-### JIT-to-JIT Local Calls Optimization (Wrapper vs. Inner)
-To minimize stack reads/writes on recursive or internal method calls, standard functions with matching target signatures compile as two nested Cranelift functions:
+### JIT-to-JIT Direct Call & Local Call Optimizations
+
+To minimize interpreter re-entry and FFI overhead on function calls, the JIT implements two optimization routes:
+
+#### 1. Local Recursive Calls (Wrapper vs. Inner Model)
+For internal self-recursive or local segment calls, the compiler generates two nested Cranelift functions:
+- **Inner Function (`Linkage::Local`):** Receives parameters directly via register-based CPU ABIs (pairs of `(bits_reg, tag_reg)`) instead of reading them from the `locals_ptr` stack frame.
+- **Outer Wrapper (`Linkage::Export`):** Serves as the FFI bridge for the interpreter. It unpacks arguments from `locals_ptr`, executes the local inner function, records the resulting `Value` back into `out_ptr`, and returns the frame status.
+
+#### 2. Cross-Function Direct Call Dispatch
+When calling another function (`func_idx != ctx.self_func_idx`), the compiler audits the callee's JIT status:
+- **Fast-Path (Direct Call):** If the target function has already been JIT-compiled (callee's `jit_ptr` is non-null), the compiler emits a Cranelift `call_indirect` instruction directly to that memory location. The compiler increments `call_depth` check-bounds, moves the VM register stack pointer (`stack_ptr`) forward by `callee_chunk.max_locals` to frame local scopes, and restores them on return.
+- **Slow-Path Fallback:** If the callee is uncompiled (`jit_ptr` is null), processing falls back to the interpreter interface via the `xcx_jit_call_recursive` FFI helper.
 
 ```
-                            [ FFI CALL / VM CALL ]
-                                       │
-                                       ▼
-                       ┌──────────────────────────────┐
-                       │    Outer Export Wrapper      │
-                       │   (method_X, Linkage::Export)│
-                       └──────────────┬───────────────┘
-                                      │
-                                      │ Unpacks registers (locals_ptr)
-                                      │ to raw pairs of (bits, tag)
-                                      ▼
-                       ┌──────────────────────────────┐
-                       │       Inner Function         │
-                       │ (method_inner_X, Linkage::L.)│
-                       └──────────────────────────────┘
-                                      ▲
-                                      │
-                                      │ Direct JIT-to-JIT call
-                                      │ (fast register passing)
-                                      │
-                       ┌──────────────────────────────┐
-                       │     Recursive/Local Caller   │
-                       └──────────────────────────────┘
+                  ┌──────────────────────────────────────────────┐
+                  │            Call Dispatch Decision            │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+                        Calley JIT compiled? (jit_ptr != null)
+                                         │
+                        ┌────────────────┴────────────────┐
+                        ▼ YES                             ▼ NO
+            ┌──────────────────────┐          ┌──────────────────────┐
+            │ Fast-Path Direct     │          │ Slow-Path Fallback   │
+            │ Cranelift            │          │ FFI helper calls     │
+            │ call_indirect        │          │ xcx_jit_call_r       │
+            └──────────────────────┘          └──────────────────────┘
 ```
-
-1. **Inner Function (`Linkage::Local`):** Parses parameters directly using the platform ABI (e.g., pairs of `(bits_reg, tag_reg)`) instead of loading from the `locals_ptr` buffer.
-2. **Outer Wrapper (`Linkage::Export`):** Serves as an interface for the virtual machine interpreter. It fetches arguments from `locals_ptr` at offsets, passes them via CPU JIT-to-JIT parameters to the inner function, writes the output `Value` to `out_ptr` and returns the loop execution status.
 
 ---
 

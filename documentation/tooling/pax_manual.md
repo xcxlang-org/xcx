@@ -99,6 +99,7 @@ PAX is invoked via `xcx pax <command>`.
 | `xcx pax clone <package>`  | Download a published package as a local project.       |
 | `xcx pax run [path]`       | Execute the project entry point.                       |
 | `xcx pax search <query>`   | Search the registry for available packages.            |
+| `xcx pax upgrade <target>` | Upgrade the local XCX installation (xcx, tools, or all).|
 | `xcx pax login <token>`    | Store a registry authentication token.                 |
 | `xcx pax logout`           | Remove the stored authentication token.                |
 | `xcx pax whoami`           | Verify your current registry account.                  |
@@ -215,6 +216,46 @@ Output format:
 - json_utils (v1.2.0) by alice
 - fast_json (v0.9.1) by bob
 ```
+
+---
+
+### `xcx pax upgrade <target>`
+
+Upgrades the local XCX installation itself, separate from project dependency management. Pulls release artifacts from the official GitHub releases.
+
+```sh
+xcx pax upgrade xcx      --- upgrade only the xcx binary (compiler/VM/JIT, includes REPL)
+xcx pax upgrade tools    --- upgrade only pax, stdlib, and docs (installed under lib/ next to the binary)
+xcx pax upgrade all      --- upgrade both xcx and tools
+```
+
+`<target>` is required. Running `xcx pax upgrade` with no target prints an error:
+
+```
+Error: specify what to upgrade: xcx, tools, all
+```
+
+#### `--check`
+
+Add `--check` to any of the three targets to only compare the local version against the latest GitHub release tag and print the result, without downloading or installing anything.
+
+```sh
+xcx pax upgrade xcx --check
+xcx pax upgrade tools --check
+xcx pax upgrade all --check
+```
+
+#### Install layout
+
+`tools` (pax, stdlib, docs) installs into `lib/` next to the `xcx` binary itself — this is a global, installation-level directory, distinct from a project's own `lib/` (which holds dependencies declared in that project's `project.pax`). Upgrading `tools` does not touch project-level dependencies.
+
+```
+<xcx install directory>/
+├── xcx          --- binary (source)
+└── lib/         --- pax, stdlib, docs (tools)
+```
+
+> **Note:** Downgrading to a specific older version is not currently supported.
 
 ---
 

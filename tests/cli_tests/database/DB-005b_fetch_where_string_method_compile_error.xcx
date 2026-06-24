@@ -2,13 +2,11 @@
 --- Runner: expect_compile_error = true
 --- Area: Database
 --- Priority: high
---- Name: db.fetch().where() — wywołanie metody string → błąd kompilacji
+--- Name: db.fetch().where() - string method call -> compilation error
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Kompilator musi odrzucić użycie metody string (.lower()) w .where() dla db.fetch().
----   Jeśli plik wykona się w całości — jest to FAIL.
---- comment
---- Runner: oczekiwany exit code kompilacji niezerowy.
+---   This file must not compile.
+---   Compiler must reject string method (.lower()) usage in .where() for db.fetch().
+---   If this file executes fully, it is a FAIL.
 
 database: app { engine = "sqlite", path = "tests_tmp/db005b.db" };
 
@@ -19,7 +17,6 @@ table: users {
 
 yield app.sync(users);
 
---- LINIA KRYTYCZNA — musi być odrzucona przez kompilator:
 table: bad = yield app.fetch(users).where(name.lower() == "alice");
 
->! "FAIL — string method w where() nie wywołał błędu kompilacji";
+>! "FAIL - string method in where() did not trigger compilation error";

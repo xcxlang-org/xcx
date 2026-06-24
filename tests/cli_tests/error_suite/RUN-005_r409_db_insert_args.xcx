@@ -1,0 +1,10 @@
+--- TEST: RUN-005
+--- Area: Error Handling
+--- Priority: high
+--- Name: R409 Incorrect insert argument
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+
+database: app { engine = "sqlite", path = "dummy.db" };
+yield app.insert("not_a_table"); --- Halt (R409)

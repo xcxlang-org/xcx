@@ -92,6 +92,7 @@ impl<'a> Checker<'a> {
                 self.check_argument_list(args, symbols, errors, false);
                 match method_str {
                     "size" | "count" | "len" | "length" => Type::Int,
+                    "keys" => Type::Array(Box::new(Type::String)),
                     "exists" | "ok" | "status" => Type::Bool,
                     "get" | "parse" | "append" | "push" | "set" | "update" | "delete" | "remove" | "body" | "bind" | "inject" | "first" | "insertId" | "affected" => Type::Json,
                     "toStr" | "toString" | "to_str" | "format" => Type::String,
@@ -187,6 +188,10 @@ impl<'a> Checker<'a> {
                         Type::Bool
                     }
                     "toStr" | "toString" | "toJson" | "show" | "clear" | "sort" | "reverse" => Type::Bool,
+                    "slice" => {
+                        for arg in args { self.check_expr(arg.expr(), symbols, errors); }
+                        Type::Array(inner.clone())
+                    }
                     _ => {
                         errors.push(TypeError { 
                             kind: TypeErrorKind::MethodNotFound { base_type: Type::Array(inner.clone()), method: method_str.to_string() }, 

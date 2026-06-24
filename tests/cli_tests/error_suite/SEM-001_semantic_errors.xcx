@@ -1,0 +1,46 @@
+--- TEST: SEM-001
+--- Area: Error Handling
+--- Priority: high
+--- Name: Błędy Semantyczne - Kompilacja
+--- Expect:
+---   Fail podczas analizy semantycznej.
+--- Runner: expect_compile_error = true
+
+--- S101
+i: a = undefined_var + 1;
+
+--- S102
+i: a = 2;
+
+--- S103
+b: flag = "string";
+
+--- S104
+b: math = true + 1;
+
+--- S105
+const i: MAX = 10;
+MAX = 20;
+
+--- S106 & S107
+break;
+continue;
+
+--- S108
+i: n = 5;
+>! n[0];
+
+--- S110
+i: m = 5;
+m.missing_method();
+
+--- S111
+func add(i: x, i: y -> i) { return x + y; };
+add(1);
+
+--- S208
+func not_fiber() {
+    yield 1;
+};
+
+>! "Jeśli to się kompiluje, to test oblał!";

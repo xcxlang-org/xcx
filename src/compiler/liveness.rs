@@ -38,9 +38,10 @@ impl LivenessAnalysis {
 
         let mut last_use_found = std::collections::HashSet::new();
 
+        let mut registers = Vec::new();
         for i in (0..bytecode.len()).rev() {
             let op = &bytecode[i];
-            let mut registers = Vec::new();
+            registers.clear();
             Self::collect_registers(op, &mut registers);
 
             let mut last_idx = i;
@@ -54,7 +55,7 @@ impl LivenessAnalysis {
                 }
             }
 
-            for reg in registers {
+            for &reg in &registers {
 
                 if !last_use_found.contains(&reg) {
                     last_use_found.insert(reg);

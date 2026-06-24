@@ -41,13 +41,15 @@ To support comfortable multi-line coding blocks directly within the interactive 
 
 ### Interactive Features
 - **Arrow Keys Navigation:** Users can freely navigate the cursor up, down, left, and right within their multi-line input block to modify previous lines before executing.
+- **Line Navigation Shortcuts:** `Ctrl+A` jumps to the beginning of the current interactive line, and `Ctrl+E` jumps to the end.
+- **Tab Key Indentation:** Pressing `Tab` automatically inserts exactly 4 spaces (instead of a literal tab character) to maintain readable indent alignment.
 - **Prompt Transitions:** The standard `xcx> ` prompt initiates the primary buffer, while `...  ` prefixes subsequent lines upon pressing Enter.
 
 ### Executing Code
 Input gathering allows developers to arbitrarily draft their scripts across lines. To dispatch the written block of code to the compiler, developers use the interactive `!exec` command:
 1. Press `<ENTER>` to open a fresh line.
 2. Type `!exec` and press `<ENTER>`.
-The shell captures the entire visual block, parses it, executes the code, and clears the input buffer for the next cycle.
+The shell captures the entire visual block, parses it, executes the code, and clears the input buffer for the next cycle. Any direct input command starting with `!` evaluates immediately.
 
 ---
 
@@ -61,6 +63,9 @@ Interactive commands bypass semantic validation and are handled directly in the 
 | `!help` | Renders a syntax guide including datatypes, operations, built-ins, and errors. | Prints help menu strings directly to standard out. |
 | `!clear` | Clears all scrollback content and returns input cursor to terminal origin. | Renders ANSI code sequence `\x1B[2J\x1B[1;1H`. |
 | `!exit` | Breaks execution loops and halts interactive runtime immediately. | Halts command reading iteration, returning exit status. |
+| `!globals` | Inspects global variable state. | Lists the names, types, and values of all registered variables in global scope. |
+| `!jit` | Displays JIT compiler information and state. | Inspects compilation thresholds, JIT metadata, and active trace definitions. |
+| `!reset` | Clears interpreter state. | Resets persistent interpreter bindings, clearing variables and type definitions. |
 
 ---
 

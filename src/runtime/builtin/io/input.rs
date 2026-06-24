@@ -55,6 +55,7 @@ pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor
                 Ok(_) => continue,
                 Err(_) => {
                     eprintln!("R443: Error: Failed to read input");
+                    crate::vm::core::vm::increment_error_count();
                     return OpResult::Halt;
                 }
             }
@@ -77,12 +78,14 @@ pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor
         TypeTag::Int => {
             if trimmed.contains('.') {
                 eprintln!("R103: Error: Type mismatch - expected integer, got float at input");
+                crate::vm::core::vm::increment_error_count();
                 return OpResult::Halt;
             }
             if let Ok(n) = trimmed.parse::<i64>() {
                 Value::from_i64(n)
             } else {
                 eprintln!("R103: Error: Type mismatch - expected integer, got '{}' at input", trimmed);
+                crate::vm::core::vm::increment_error_count();
                 return OpResult::Halt;
             }
         }
@@ -91,6 +94,7 @@ pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor
                 Value::from_f64(f)
             } else {
                 eprintln!("R103: Error: Type mismatch - expected float, got '{}' at input", trimmed);
+                crate::vm::core::vm::increment_error_count();
                 return OpResult::Halt;
             }
         }
@@ -101,6 +105,7 @@ pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor
                 Value::from_bool(false)
             } else {
                 eprintln!("R103: Error: Type mismatch - expected boolean, got '{}' at input", trimmed);
+                crate::vm::core::vm::increment_error_count();
                 return OpResult::Halt;
             }
         }
@@ -183,6 +188,7 @@ pub fn wait_key(dst: u8, locals: &mut [Value], executor: &Executor, _vm_arc: &Ar
             Ok(_) => continue,
             Err(_) => {
                 eprintln!("R443: Error: Failed to read input");
+                crate::vm::core::vm::increment_error_count();
                 return OpResult::Halt;
             }
         }

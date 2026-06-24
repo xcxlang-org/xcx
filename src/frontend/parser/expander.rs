@@ -31,7 +31,6 @@ impl<'a> Expander<'a> {
         self.include_paths.push(path);
     }
 
-    // Expands all #include directives in the program.
     pub fn expand(&mut self, program: Program, current_dir: &Path) -> Result<Program, String> {
         let mut stmts = Vec::new();
         for stmt in program.stmts {
@@ -41,19 +40,47 @@ impl<'a> Expander<'a> {
                     
                     let mut resolved_path = None;
                     
-                    // 1. Try relative to current_dir
                     let full_path = current_dir.join(&path_str);
-                    if let Ok(cp) = full_path.canonicalize() {
-                        resolved_path = Some(cp);
+                    let mut candidates = vec![full_path.clone()];
+                    if path_str == "math.xcx" || path_str.ends_with("/math.xcx") || path_str.ends_with("\\math.xcx") {
+                        let redirected = path_str.replace("math.xcx", "mathlib/src/math.xcx");
+                        candidates.push(current_dir.join(&redirected));
+                    }
+                    if path_str == "pax.xcx" || path_str.ends_with("/pax.xcx") || path_str.ends_with("\\pax.xcx") {
+                        let redirected = path_str.replace("pax.xcx", "pax/src/pax.xcx");
+                        candidates.push(current_dir.join(&redirected));
+                    }
+                    if path_str == "doc.xcx" || path_str.ends_with("/doc.xcx") || path_str.ends_with("\\doc.xcx") {
+                        let redirected = path_str.replace("doc.xcx", "doc/doc.xcx");
+                        candidates.push(current_dir.join(&redirected));
+                    }
+
+                    for cand in &candidates {
+                        if let Ok(cp) = cand.canonicalize() {
+                            resolved_path = Some(cp);
+                            break;
+                        }
                     }
                     
-                    // 2. Try in include_paths if not found and not absolute
                     if resolved_path.is_none() && !Path::new(&path_str).is_absolute() {
-                        for include_path in &self.include_paths {
-                            let trial = include_path.join(&path_str);
-                            if let Ok(cp) = trial.canonicalize() {
-                                resolved_path = Some(cp);
-                                break;
+                        let mut redirected_paths = vec![path_str.clone()];
+                        if path_str == "math.xcx" {
+                            redirected_paths.push("mathlib/src/math.xcx".to_string());
+                        }
+                        if path_str == "pax.xcx" {
+                            redirected_paths.push("pax/src/pax.xcx".to_string());
+                        }
+                        if path_str == "doc.xcx" {
+                            redirected_paths.push("doc/doc.xcx".to_string());
+                        }
+
+                        'outer: for include_path in &self.include_paths {
+                            for r_path in &redirected_paths {
+                                let trial = include_path.join(r_path);
+                                if let Ok(cp) = trial.canonicalize() {
+                                    resolved_path = Some(cp);
+                                    break 'outer;
+                                }
                             }
                         }
                     }

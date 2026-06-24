@@ -1,17 +1,11 @@
 #!/bin/bash
 
-# XCX Compiler Ecosystem - Linux Installer (Wizard TUI Version)
-# Version 4.0
-
 set -e
-
-# Ensure whiptail is installed
 if ! command -v whiptail &> /dev/null; then
     echo "This installer requires 'whiptail'. Please install it using your distribution's package manager (e.g., sudo apt install whiptail, or pacman -S libnewt)."
     exit 1
 fi
 
-# Determine paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 
 INSTALL_DIR="$HOME/.local/share/xcx"
@@ -19,16 +13,13 @@ INSTALL_BIN_DIR="$INSTALL_DIR/bin"
 INSTALL_LIB_DIR="$INSTALL_DIR/lib"
 USER_BIN_DIR="$HOME/.local/bin"
 
-# Ensure source files exist
 if [ ! -f "$SCRIPT_DIR/xcx" ]; then
     whiptail --title "Error" --msgbox "Could not find xcx binary at $SCRIPT_DIR/xcx\n\nInstallation cannot proceed." 10 60
     exit 1
 fi
 
-# STEP 1: Welcome
-whiptail --title "Setup - XCX Compiler Ecosystem" --msgbox "Welcome to the XCX Compiler Ecosystem Setup Wizard.\n\nThis will install XCX version 4.0 on your computer.\n\nIt is recommended that you close all other applications before continuing." 12 70
+whiptail --title "Setup - XCX Compiler Ecosystem" --msgbox "Welcome to the XCX Compiler Ecosystem Setup Wizard.\n\nThis will install XCX version 4.1 on your computer.\n\nIt is recommended that you close all other applications before continuing." 12 70
 
-# STEP 2: License Agreement
 LICENSE_FILE="$SCRIPT_DIR/resources/LICENSE.txt"
 if [ -f "$LICENSE_FILE" ]; then
     whiptail --title "License Agreement" --textbox "$LICENSE_FILE" 20 80 --scrolltext
@@ -38,7 +29,6 @@ if [ -f "$LICENSE_FILE" ]; then
     fi
 fi
 
-# STEP 3: Component Selection
 COMPONENTS=$(whiptail --title "Select Components" --checklist \
 "Select the components you want to install; clear the components you do not want to install.\nXCX Compiler Core is required and will always be installed." 15 70 3 \
 "PAX" "PAX Package Manager" ON \
@@ -50,7 +40,6 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# Determine selected components
 INSTALL_PAX=false
 INSTALL_MATH=false
 INSTALL_DOC=false
@@ -59,7 +48,6 @@ if echo "$COMPONENTS" | grep -q "PAX"; then INSTALL_PAX=true; fi
 if echo "$COMPONENTS" | grep -q "MATH"; then INSTALL_MATH=true; fi
 if echo "$COMPONENTS" | grep -q "DOC"; then INSTALL_DOC=true; fi
 
-# STEP 4: Additional Tasks
 TASKS=$(whiptail --title "Select Additional Tasks" --checklist \
 "Which additional tasks should be performed?" 12 70 2 \
 "MIME" "Register file associations (.xcx, .pax) and icons" ON 3>&1 1>&2 2>&3)
@@ -72,7 +60,6 @@ fi
 INSTALL_MIME=false
 if echo "$TASKS" | grep -q "MIME"; then INSTALL_MIME=true; fi
 
-# STEP 5: Ready to Install Summary
 SUMMARY="Setup is now ready to begin installing XCX on your computer.\n\nDestination location:\n  $INSTALL_DIR\n\nSelected components:\n  XCX Compiler Core"
 if [ "$INSTALL_PAX" = true ]; then SUMMARY="$SUMMARY\n  PAX Package Manager"; fi
 if [ "$INSTALL_MATH" = true ]; then SUMMARY="$SUMMARY\n  Math Standard Library"; fi
@@ -89,7 +76,6 @@ if ! whiptail --title "Ready to Install" --yesno "$SUMMARY\n\nClick Yes to conti
     exit 0
 fi
 
-# STEP 6: Install with Progress Bar
 {
     echo 5
     
@@ -99,20 +85,21 @@ fi
     
     echo 15
     
-    # Copy binary
     cp "$SCRIPT_DIR/xcx" "$INSTALL_BIN_DIR/"
     chmod +x "$INSTALL_BIN_DIR/xcx"
     
     echo 35
     
-    # Copy libraries based on selection
-    if [ "$INSTALL_PAX" = true ] && [ -f "$SCRIPT_DIR/lib/pax.xcx" ]; then
-        cp "$SCRIPT_DIR/lib/pax.xcx" "$INSTALL_LIB_DIR/"
+    if [ "$INSTALL_PAX" = true ] && [ -d "$SCRIPT_DIR/lib/pax" ]; then
+        cp -r "$SCRIPT_DIR/lib/pax" "$INSTALL_LIB_DIR/"
+    fi
+    if [ -f "$SCRIPT_DIR/lib/VERSION" ]; then
+        cp "$SCRIPT_DIR/lib/VERSION" "$INSTALL_LIB_DIR/"
     fi
     echo 45
     
-    if [ "$INSTALL_MATH" = true ] && [ -f "$SCRIPT_DIR/lib/math.xcx" ]; then
-        cp "$SCRIPT_DIR/lib/math.xcx" "$INSTALL_LIB_DIR/"
+    if [ "$INSTALL_MATH" = true ] && [ -d "$SCRIPT_DIR/lib/mathlib" ]; then
+        cp -r "$SCRIPT_DIR/lib/mathlib" "$INSTALL_LIB_DIR/"
     fi
     echo 60
     
@@ -121,7 +108,6 @@ fi
     fi
     echo 65
     
-    # Copy resources
     if [ -d "$SCRIPT_DIR/resources" ]; then
         cp "$SCRIPT_DIR/resources/LICENSE.txt" "$INSTALL_DIR/" 2>/dev/null || true
         cp "$SCRIPT_DIR/resources/README.txt" "$INSTALL_DIR/" 2>/dev/null || true
@@ -129,12 +115,10 @@ fi
     fi
     echo 65
     
-    # Create symlink
     ln -sf "$INSTALL_BIN_DIR/xcx" "$USER_BIN_DIR/xcx"
     
     echo 75
     
-    # MIME Types and Icons (if selected)
     if [ "$INSTALL_MIME" = true ]; then
         MIME_DIR="$HOME/.local/share/mime/packages"
         mkdir -p "$MIME_DIR"
@@ -182,7 +166,6 @@ EOF
 
     echo 90
 
-    # Generate uninstall.sh
     cat > "$INSTALL_DIR/uninstall.sh" <<EOF
 #!/bin/bash
 if ! whiptail --title "XCX Uninstaller" --yesno "Are you sure you want to completely remove XCX and all of its components?" 10 60; then
@@ -212,5 +195,4 @@ EOF
     echo 100
 } | whiptail --title "Setup - XCX Compiler Ecosystem" --gauge "Installing components...\nPlease wait while Setup installs XCX on your computer." 8 60 0
 
-# STEP 7: Finished
 whiptail --title "Setup - XCX Compiler Ecosystem" --msgbox "Setup has finished installing XCX on your computer.\n\nInstalled to:\n$INSTALL_DIR\n\nExecutable linked in:\n$USER_BIN_DIR\n\nMake sure $USER_BIN_DIR is in your PATH." 14 70

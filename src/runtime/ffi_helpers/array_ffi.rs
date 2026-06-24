@@ -18,6 +18,8 @@ pub unsafe extern "C" fn xcx_jit_array_get(out: *mut Value, arr_bits: u64, _arr_
         if v.is_ptr() { unsafe { v.inc_ref(); } }
         unsafe { *out = v; }
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         unsafe { *out = Value::from_i64(0); }
     }
 }
@@ -32,6 +34,8 @@ pub unsafe extern "C" fn xcx_jit_array_get_bool(arr_bits: u64, _arr_tag: u64, id
     if idx < arr_ref.elements.len() {
         unsafe { arr_ref.elements.get_unchecked(idx).bits as i64 }
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -58,6 +62,8 @@ pub unsafe extern "C" fn xcx_jit_array_update(arr_bits: u64, _arr_tag: u64, idx_
         if old.is_ptr() { unsafe { old.dec_ref(); } }
         1
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -71,6 +77,8 @@ pub unsafe extern "C" fn xcx_jit_array_set_bool(arr_bits: u64, _arr_tag: u64, id
         *unsafe { arr_ref.elements.get_unchecked_mut(idx) } = Value::from_bool(val != 0);
         1
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -102,6 +110,8 @@ pub unsafe extern "C" fn xcx_jit_array_get_int(arr_bits: u64, _arr_tag: u64, idx
     if idx < arr_ref.elements.len() {
         unsafe { arr_ref.elements.get_unchecked(idx).bits as i64 }
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -115,6 +125,8 @@ pub unsafe extern "C" fn xcx_jit_array_set_int(arr_bits: u64, _arr_tag: u64, idx
         unsafe { *arr_ref.elements.get_unchecked_mut(idx) = Value::from_i64(val); }
         1
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -168,6 +180,8 @@ pub unsafe extern "C" fn xcx_jit_array_insert(arr_bits: u64, _arr_tag: u64, idx:
         arr_ref.elements.insert(idx as usize, val);
         1
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array insert index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }
@@ -181,6 +195,8 @@ pub unsafe extern "C" fn xcx_jit_array_delete(arr_bits: u64, _arr_tag: u64, idx:
         unsafe { old.dec_ref(); }
         1
     } else {
+        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array delete index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+        crate::vm::core::vm::increment_error_count();
         0
     }
 }

@@ -173,7 +173,7 @@ impl Executor {
             }
             MethodKind::Show  => { 
                 let map_val = Value::from_map(map_rc.clone());
-                // println!("{}", map_val.to_string()); 
+                println!("{}", map_val.to_string()); 
                 unsafe { map_val.dec_ref(); }
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }

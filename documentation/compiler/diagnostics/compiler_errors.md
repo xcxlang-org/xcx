@@ -62,10 +62,10 @@ The preprocessor (`Expander`) resolves `include "..."` directives before parsing
 - **Circular Inclusion:** Detects nested loop boundaries using call tracking sets, raising `Circular dependency detected: <filename>`.
 
 ### C-Style Comment Validation (`src/frontend/lexer/lexer.rs`)
-XCX strictly requires `---` for single-line comments and `---` ... `*---` blocks. If the lexer scans C-style comment notations (`//` or `/*`), it raises a hard compiler abort panic:
+XCX strictly requires `---` for single-line comments and `---` ... `*---` blocks (which are initiated by placing `---` alone on a line and terminated by `*---` on a line of its own). If the lexer scans C-style comment notations (`//` or `/*`), it raises a hard compiler abort panic:
 ```text
 [XCX Error] C-style comments (// or /* */) are NOT supported in XCX.
-Use '---' for single-line and '---' ... '*---' for multi-line comments.
+Use '---' for single-line comments.
 ```
 
 ---
@@ -77,6 +77,12 @@ During bytecode execution, the VM monitors stack limits:
 - **Stack Boundaries:** If `stack_ptr` exceeds the execution stack pool limits, the VM outputs `ERROR halt: XCX VM Stack Overflow` and increments the `error_count` counter.
 - **Recursion Limits:** The call hierarchy stack tracks nest levels. If function calls nested frame limits exceed 800 trace frames, execution aborts: `ERROR halt: Recursion limit exceeded (800 frames)`.
 - **Invalid Method Invocation:** Unrecognized method tag kinds yield direct failures: `R501: Invalid method kind index: <kind>`.
+
+### Safe FFI Error Reporting
+To support safe and consistent exception reporting from JIT-compiled code and FFI modules (such as Array boundary checks `R303`), the runtime uses a thread-local pointer model:
+- **`ACTIVE_VM: Cell<*const VM>`:** A thread-local cell linking runtime calls back to the executing VM context.
+- **`ActiveVmGuard`:** An RAII guard managing `ACTIVE_VM` registration across VM execution sweeps (`run_frame`, `handle_call_no_jit`, and `dispatch_jit_call`).
+- **`increment_error_count()`:** An FFI helper callable from JIT-emitted code or array bounds checks to safely increment runtime error counters, eliminating JIT compile-time execution divergence.
 
 ### Arithmetic Exception Handlers (`src/vm/core/step/arith.rs`)
 Mathematical divisions evaluate bounds to preempt CPU crashes:

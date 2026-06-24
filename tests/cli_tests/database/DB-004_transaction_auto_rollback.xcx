@@ -1,10 +1,10 @@
 --- TEST: DB-004
 --- Area: Database
 --- Priority: high
---- Name: Transakcja — auto-rollback przy halt.error (naruszenie @unique)
+--- Name: Transaction - auto-rollback on halt.error (unique violation)
 --- Expect:
----   Po naruszeniu @unique wewnątrz transakcji następuje automatyczny rollback.
----   Tabela jest pusta — żaden wiersz nie został zapisany.
+---   Auto-rollback occurs after unique constraint violation in transaction.
+---   Table remains empty - no rows are saved.
 
 database: app { engine = "sqlite", path = "tests_tmp/db004.db" };
 
@@ -15,23 +15,19 @@ table: users {
 
 yield app.sync(users);
 
---- Upewniamy się, że tabela jest czysta
 yield app.truncate(users);
 
 app.begin();
 yield app.insert(users, "Alice", 25);
---- Drugi insert z tym samym name (@unique) powinien wywołać halt.error
---- i automatycznie rollback całej transakcji
 yield app.insert(users, "Alice", 30);
 app.commit();
 
---- Sprawdzenie — tabela musi być pusta (rollback)
 table: result = yield app.fetch(users);
 
 if (result.count() == 0) then;
-    >! "[DB-004] PASS — rollback działa, tabela pusta";
+    >! "[DB-004] PASS - rollback works, table empty";
 else;
-    >! "[DB-004] FAIL — tabela ma " + s(result.count()) + " wierszy (oczekiwano 0 po rollback)";
+    >! "[DB-004] FAIL - table has " + s(result.count()) + " rows (expected 0 after rollback)";
 end;
 
 app.close();

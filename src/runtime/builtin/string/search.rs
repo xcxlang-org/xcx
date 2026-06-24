@@ -47,6 +47,7 @@ impl Executor {
                 let from = args[0].as_string();
                 let to   = args[1].as_string();
                 if from.is_empty() { 
+                    self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     eprintln!("R307: .replace() called with empty 'from'{}", self.current_span_info(ip)); 
                     return OpResult::Halt; 
                 }

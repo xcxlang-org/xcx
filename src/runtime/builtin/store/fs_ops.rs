@@ -5,8 +5,29 @@ use crate::vm::core::vm::OpResult;
 use crate::vm::object::ArrayObj;
 use crate::vm::utils::archive::{zip_folder, unzip_archive};
 
-/// Validates that a path is safe for filesystem operations (no escapes, no absolute paths).
+/// Validates that a path is safe for filesystem operations (no escapes, no absolute paths, unless within install dir).
 pub fn validate_path_safety(path: &str) {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(bin_dir) = exe_path.parent() {
+            if let Some(install_dir) = bin_dir.parent() {
+                let install_dir_str = install_dir.to_string_lossy().replace("\\", "/");
+                let normalized_path = path.replace("\\", "/");
+                
+                #[cfg(windows)]
+                let is_match = normalized_path.to_lowercase().starts_with(&install_dir_str.to_lowercase());
+                #[cfg(not(windows))]
+                let is_match = normalized_path.starts_with(&install_dir_str);
+
+                if is_match {
+                    if path.contains("..") {
+                        panic!("halt.fatal: Security violation - path traversal in: {}", path);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     if path.contains("..") || path.starts_with('/') || (path.len() > 1 && path.as_bytes()[1] == b':') {
         panic!("halt.fatal: Security violation - illegal path access: {}", path);
     }

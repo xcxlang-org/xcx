@@ -1,20 +1,18 @@
 ; XCX Compiler Ecosystem - Inno Setup Script
-; Version: 4.0
+; Version: 4.1
 
 #define MyAppName "XCX Compiler Ecosystem"
-#define MyAppVersion "4.0"
+#define MyAppVersion "4.1"
 #define MyAppPublisher "XCX Team"
 #define MyAppExeName "xcx.exe"
-#define MyAppURL "https://xcx-team.example.com"
-#define MyAppSupportURL "https://xcx-team.example.com/support"
+#define MyAppURL "https://xcxlang.com"
+#define MyAppSupportURL "https://xcxlang.com/contact"
 
 ; SHA-256 checksums for binary files
 ; How to get: certutil -hashfile file.exe SHA256  (Windows)
 ;              sha256sum file.exe                   (Linux/macOS)
 ; Fill in values before each build!
 #define ChecksumXcxExe  "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899"
-#define ChecksumPaxXcx  "1122334455667788990011223344556677889900112233445566778899001122"
-#define ChecksumMathXcx "2233445566778899001122334455667788990011223344556677889900112233"
 
 ; ---------------------------------------------------------------------------
 ; CODE SIGNING
@@ -49,7 +47,7 @@ MinVersion=10.0
 LicenseFile={#SourcePath}\resources\LICENSE.txt
 InfoBeforeFile={#SourcePath}\resources\README.txt
 OutputDir={#SourcePath}\Output
-OutputBaseFilename=xcx-setup-v4.0
+OutputBaseFilename=xcx-setup-v4.1
 SetupIconFile={#SourcePath}\resources\icons\xcx.ico
 ; Sidebar image for wizard (164x314 px, BMP or PNG format)
 WizardImageFile={#SourcePath}\resources\wizard\wizard-sidebar.bmp
@@ -123,15 +121,16 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourcePath}\bin\xcx.exe";             DestDir: "{app}\bin"; Flags: ignoreversion; Components: core
-Source: "{#SourcePath}\lib\pax.xcx";             DestDir: "{app}\lib"; Flags: ignoreversion; Components: pax
-Source: "{#SourcePath}\lib\math.xcx";            DestDir: "{app}\lib"; Flags: ignoreversion; Components: math
+Source: "{#SourcePath}\lib\pax\*";               DestDir: "{app}\lib\pax"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: pax
+Source: "{#SourcePath}\lib\mathlib\*";            DestDir: "{app}\lib\mathlib"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: math
+Source: "{#SourcePath}\lib\VERSION";             DestDir: "{app}\lib"; Flags: ignoreversion; Components: core
 Source: "{#SourcePath}\lib\doc\*";               DestDir: "{app}\lib\doc"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: doc
 Source: "{#SourcePath}\resources\icons\xcx.ico"; DestDir: "{app}";     Flags: ignoreversion; Components: core
 Source: "{#SourcePath}\resources\icons\pax.ico"; DestDir: "{app}";     Flags: ignoreversion; Components: pax
 Source: "{#SourcePath}\resources\LICENSE.txt";   DestDir: "{app}";     Flags: ignoreversion; Components: core
 Source: "{#SourcePath}\resources\README.txt";    DestDir: "{app}";     Flags: ignoreversion; Components: core
 
-; Remove old files from previous versions that no longer exist in v4.0
+; Remove old files from previous versions that no longer exist in v4.1
 [InstallDelete]
 Type: files;          Name: "{app}\bin\xcx-old.exe"
 Type: files;          Name: "{app}\lib\compat.xcx"
@@ -596,20 +595,6 @@ begin
 
   if not VerifyChecksum(SourcePath + '\bin\xcx.exe',
     '{#ChecksumXcxExe}', 'xcx.exe') then
-  begin
-    Result := False;
-    Exit;
-  end;
-
-  if not VerifyChecksum(SourcePath + '\lib\pax.xcx',
-    '{#ChecksumPaxXcx}', 'pax.xcx') then
-  begin
-    Result := False;
-    Exit;
-  end;
-
-  if not VerifyChecksum(SourcePath + '\lib\math.xcx',
-    '{#ChecksumMathXcx}', 'math.xcx') then
   begin
     Result := False;
     Exit;

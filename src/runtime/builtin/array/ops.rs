@@ -211,6 +211,26 @@ impl Executor {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
+            MethodKind::Slice => {
+                let arr = arr_rc.read();
+                let len = arr.elements.len() as i64;
+                let start = if args.len() >= 1 && args[0].is_int() {
+                    args[0].as_i64().max(0).min(len) as usize
+                } else { 0 };
+                let end = if args.len() >= 2 && args[1].is_int() {
+                    args[1].as_i64().max(0).min(len) as usize
+                } else { len as usize };
+                let start = start.min(end);
+                let mut elems = Vec::with_capacity(end - start);
+                for v in &arr.elements[start..end] {
+                    unsafe { v.inc_ref(); }
+                    elems.push(*v);
+                }
+                drop(arr);
+                let res = Value::from_array(Arc::new(RwLock::new(ArrayObj::new(elems))));
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
             _ => { 
                 eprintln!("Method {:?} not supported for Array{}", kind, self.current_span_info(ip)); 
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

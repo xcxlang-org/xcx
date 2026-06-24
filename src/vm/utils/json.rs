@@ -195,8 +195,14 @@ pub fn build_response_json(result: Result<ureq::Response, ureq::Error>) -> crate
                     h_map.push((Arc::new(name), JsonVal::String(Arc::new(val.to_string()))));
                 }
             }
-            let text = resp.into_string().unwrap_or_default();
-            if text.len() > 10 * 1024 * 1024 {
+            use std::io::Read as _;
+            let mut buf = Vec::new();
+            let text = if resp.into_reader().read_to_end(&mut buf).is_ok() {
+                unsafe { String::from_utf8_unchecked(buf) }
+            } else {
+                String::new()
+            };
+            if text.len() > 50 * 1024 * 1024 {
                 let mut res = Vec::new();
                 res.push((Arc::new("status".to_string()), JsonVal::Int(413)));
                 res.push((Arc::new("ok".to_string()),     JsonVal::Bool(false)));
@@ -223,7 +229,13 @@ pub fn build_response_json(result: Result<ureq::Response, ureq::Error>) -> crate
                     h_map.push((Arc::new(name), JsonVal::String(Arc::new(val.to_string()))));
                 }
             }
-            let text = resp.into_string().unwrap_or_default();
+            use std::io::Read as _;
+            let mut buf = Vec::new();
+            let text = if resp.into_reader().read_to_end(&mut buf).is_ok() {
+                unsafe { String::from_utf8_unchecked(buf) }
+            } else {
+                String::new()
+            };
             let body_val = if let Ok(serde_res) = serde_json::from_str::<serde_json::Value>(&text) {
                 JsonVal::from_serde(serde_res)
             } else {

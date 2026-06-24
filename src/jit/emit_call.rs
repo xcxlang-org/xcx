@@ -57,7 +57,7 @@ pub fn emit_call(
             let call_depth_addr = ctx.b.ins().iadd_imm(ctx.executor_ptr, ctx.call_depth_offset as i64);
             let cur_depth = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), call_depth_addr, 0);
             
-            let limit = ctx.b.ins().iconst(types::I64, 800);
+            let limit = ctx.b.ins().iconst(types::I64, crate::vm::core::executor::RECURSION_LIMIT as i64);
             let is_overflow = ctx.b.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, cur_depth, limit);
 
             let halt_blk2 = ctx.create_block();
@@ -169,7 +169,7 @@ pub fn emit_call(
         let call_depth_addr = ctx.b.ins().iadd_imm(ctx.executor_ptr, ctx.call_depth_offset as i64);
         let cur_depth = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), call_depth_addr, 0);
 
-        let limit = ctx.b.ins().iconst(types::I64, 800);
+        let limit = ctx.b.ins().iconst(types::I64, crate::vm::core::executor::RECURSION_LIMIT as i64);
         let is_overflow = ctx.b.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, cur_depth, limit);
 
         let halt_blk2 = ctx.create_block();
@@ -213,6 +213,173 @@ pub fn emit_call(
             emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
         }
         ctx.def_local(dst, res_bits, res_tag);
+    } else if let Some(funcs) = ctx.functions {
+        let callee_chunk = &funcs[func_idx as usize];
+        let callee_jit_ptr_addr = {
+            let atom_ref = &*callee_chunk.jit_ptr;
+            atom_ref as *const std::sync::atomic::AtomicPtr<std::ffi::c_void> as usize
+        };
+
+        let slot_data = cranelift_codegen::ir::StackSlotData::new(cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 16, 8);
+        let slot = ctx.b.create_sized_stack_slot(slot_data);
+        let out_ptr = ctx.b.ins().stack_addr(types::I64, slot, 0);
+
+        let addr_val = ctx.b.ins().iconst(types::I64, callee_jit_ptr_addr as i64);
+        let callee_jit_fn = ctx.b.ins().load(types::I64, MemFlags::trusted(), addr_val, 0);
+
+        let zero_ptr = ctx.b.ins().iconst(types::I64, 0);
+        let is_null = ctx.b.ins().icmp(IntCC::Equal, callee_jit_fn, zero_ptr);
+
+        let slow_blk = ctx.create_block();
+        let fast_blk = ctx.create_block();
+        let join_blk = ctx.create_block();
+
+        let status_var = ctx.b.declare_var(types::I32);
+        
+        ctx.b.ins().brif(is_null, slow_blk, &[], fast_blk, &[]);
+
+        // --- Slow Block (Fallback to xcx_jit_call_recursive) ---
+        ctx.b.switch_to_block(slow_blk);
+        let f_idx = ctx.b.ins().iconst(types::I64, func_idx as i64);
+        let a_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, (base as i64) * 16);
+        let a_cnt = ctx.b.ins().iconst(types::I8, arg_count as i64);
+
+        let mut call_args = Vec::new();
+        call_args.push(out_ptr);
+        call_args.push(f_idx);
+        call_args.push(a_ptr);
+        call_args.push(a_cnt);
+        call_args.push(ctx.executor_ptr);
+
+        ctx.spill_all();
+        let call_inst = ctx.b.ins().call(symbols.xcx_jit_call_recursive, &call_args);
+        let slow_status = ctx.b.func.dfg.inst_results(call_inst)[0];
+        ctx.b.def_var(status_var, slow_status);
+        ctx.b.ins().jump(join_blk, &[]);
+
+        // --- Fast Block (Direct JIT-to-JIT call) ---
+        ctx.b.switch_to_block(fast_blk);
+        
+        let ptr_type = ctx.b.func.dfg.value_type(ctx.locals_ptr);
+        let mut inner_sig = cranelift::prelude::Signature::new(ctx.b.func.signature.call_conv);
+        inner_sig.params.push(AbiParam::new(ptr_type)); // out_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // locals_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // globals_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // consts_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // vm_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // executor_ptr
+        inner_sig.params.push(AbiParam::new(ptr_type)); // shutdown_ptr
+        inner_sig.returns.push(AbiParam::new(types::I32)); // status
+        
+        let sig_ref = ctx.b.import_signature(inner_sig);
+
+        let offset = (ctx.max_locals as i64) * 16;
+        let new_locals_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, offset);
+
+        let callee_uses_heap = callee_chunk.uses_heap.load(std::sync::atomic::Ordering::Relaxed);
+        if callee_uses_heap {
+            for i in 0..callee_chunk.max_locals {
+                let addr = ctx.b.ins().iadd_imm(new_locals_ptr, (i as i64) * 16);
+                let false_bits = ctx.b.ins().iconst(types::I64, 0);
+                let false_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
+                ctx.b.ins().store(MemFlags::trusted(), false_bits, addr, 0);
+                ctx.b.ins().store(MemFlags::trusted(), false_tag, addr, 8);
+            }
+        }
+
+        let mut arg_vals = Vec::new();
+        for i in 0..arg_count as usize {
+            let arg_reg = base + i as u8;
+            let (a_bits, a_tag) = ctx.use_local(arg_reg);
+            if ctx.uses_heap {
+                emit_conditional_inc_ref(ctx, symbols, a_bits, a_tag);
+            }
+            arg_vals.push((a_bits, a_tag));
+        }
+
+        for (i, (bits, tag)) in arg_vals.iter().enumerate() {
+            let offset_bytes = (i as i32) * 16;
+            ctx.b.ins().store(MemFlags::trusted(), *bits, new_locals_ptr, offset_bytes);
+            ctx.b.ins().store(MemFlags::trusted(), *tag,  new_locals_ptr, offset_bytes + 8);
+        }
+
+        let call_depth_addr = ctx.b.ins().iadd_imm(ctx.executor_ptr, ctx.call_depth_offset as i64);
+        let cur_depth = ctx.b.ins().load(types::I64, MemFlags::trusted(), call_depth_addr, 0);
+        let limit = ctx.b.ins().iconst(types::I64, 800);
+        let is_overflow = ctx.b.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::UnsignedGreaterThanOrEqual, cur_depth, limit);
+
+        let fast_halt_blk = ctx.create_block();
+        let fast_run_blk = ctx.create_block();
+
+        ctx.b.ins().brif(is_overflow, fast_halt_blk, &[], fast_run_blk, &[]);
+
+        // - Fast Halt Block
+        ctx.b.switch_to_block(fast_halt_blk);
+        let err_status = ctx.b.ins().iconst(types::I32, 1);
+        let err_val = ctx.b.ins().iconst(types::I64, 0);
+        let err_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
+        ctx.b.ins().store(MemFlags::trusted(), err_val, out_ptr, 0);
+        ctx.b.ins().store(MemFlags::trusted(), err_tag, out_ptr, 8);
+        ctx.b.def_var(status_var, err_status);
+        ctx.b.ins().jump(join_blk, &[]);
+
+        // - Fast Run Block
+        ctx.b.switch_to_block(fast_run_blk);
+        let depth_plus_1 = ctx.b.ins().iadd_imm(cur_depth, 1);
+        ctx.b.ins().store(MemFlags::trusted(), depth_plus_1, call_depth_addr, 0);
+
+        let stack_ptr_addr = ctx.b.ins().iadd_imm(ctx.executor_ptr, ctx.stack_ptr_offset as i64);
+        let cur_stack_ptr = ctx.b.ins().load(types::I64, MemFlags::trusted(), stack_ptr_addr, 0);
+        let new_stack_ptr = ctx.b.ins().iadd_imm(cur_stack_ptr, callee_chunk.max_locals as i64);
+        ctx.b.ins().store(MemFlags::trusted(), new_stack_ptr, stack_ptr_addr, 0);
+
+        ctx.spill_all();
+
+        let mut fast_call_args = Vec::new();
+        fast_call_args.push(out_ptr);
+        fast_call_args.push(new_locals_ptr);
+        fast_call_args.push(ctx.globals_ptr);
+        fast_call_args.push(ctx.consts_ptr);
+        fast_call_args.push(ctx.vm_ptr);
+        fast_call_args.push(ctx.executor_ptr);
+        fast_call_args.push(ctx.shutdown_ptr);
+
+        let call_inst = ctx.b.ins().call_indirect(sig_ref, callee_jit_fn, &fast_call_args);
+        let fast_status = ctx.b.func.dfg.inst_results(call_inst)[0];
+
+        ctx.b.ins().store(MemFlags::trusted(), cur_depth, call_depth_addr, 0);
+        ctx.b.ins().store(MemFlags::trusted(), cur_stack_ptr, stack_ptr_addr, 0);
+
+        ctx.b.def_var(status_var, fast_status);
+        ctx.b.ins().jump(join_blk, &[]);
+
+        // --- Join Block ---
+        ctx.b.switch_to_block(join_blk);
+        let status = ctx.b.use_var(status_var);
+
+        let res_bits = ctx.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 0);
+        let res_tag  = ctx.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 8);
+        ctx.reload_globals();
+
+        if ctx.is_inner_func {
+            let halt_blk = ctx.create_block();
+            let next_blk = ctx.create_block();
+            let zero = ctx.b.ins().iconst(types::I32, 0);
+            let is_halt = ctx.b.ins().icmp(IntCC::NotEqual, status, zero);
+            ctx.b.ins().brif(is_halt, halt_blk, &[], next_blk, &[]);
+
+            ctx.b.switch_to_block(halt_blk);
+            let ret_status = ctx.b.ins().iconst(types::I32, 1);
+            ctx.b.ins().return_(&[ret_status]);
+
+            ctx.b.switch_to_block(next_blk);
+        }
+
+        if !ctx.should_skip_dec_ref(dst) {
+            let (old_bits, old_tag) = ctx.use_local(dst);
+            emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
+        }
+        ctx.def_local(dst, res_bits, res_tag);
     } else {
         let f_idx = ctx.b.ins().iconst(types::I64, func_idx as i64);
         let a_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, (base as i64) * 16);
@@ -227,9 +394,7 @@ pub fn emit_call(
         call_args.push(f_idx);
         call_args.push(a_ptr);
         call_args.push(a_cnt);
-        call_args.push(ctx.vm_ptr);
         call_args.push(ctx.executor_ptr);
-        call_args.push(ctx.globals_ptr);
 
         ctx.spill_all();
         let call_inst = ctx.b.ins().call(symbols.xcx_jit_call_recursive, &call_args);
@@ -366,15 +531,13 @@ pub fn emit_method_call(
                 }
                 ctx.def_local(dst, r_bits, r_tag);
             } else {
-                let dst_val = ctx.b.ins().iconst(types::I32, dst as i64);
-                let dst_i8  = ctx.b.ins().ireduce(types::I8, dst_val);
+
                 let k_val = ctx.b.ins().iconst(types::I32, kind as i64);
                 let k_i8  = ctx.b.ins().ireduce(types::I8, k_val);
                 let args_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, (base as i64 + 1) * 16);
                 let a_cnt_i8 = ctx.b.ins().iconst(types::I8, 1);
-                ctx.spill_all();
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
-                    recv_bits, recv_tag, k_i8, args_ptr, ctx.locals_ptr, dst_i8, a_cnt_i8, ctx.executor_ptr
+                    recv_bits, recv_tag, k_i8, args_ptr, a_cnt_i8, ctx.executor_ptr
                 ]);
                 if !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
@@ -420,15 +583,14 @@ pub fn emit_method_call(
                 let t_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
                 ctx.def_local(dst, t_bits, t_tag);
             } else {
-                let dst_val = ctx.b.ins().iconst(types::I32, dst as i64);
-                let dst_i8  = ctx.b.ins().ireduce(types::I8, dst_val);
+
                 let k_val = ctx.b.ins().iconst(types::I32, kind as i64);
                 let k_i8  = ctx.b.ins().ireduce(types::I8, k_val);
                 let args_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, (base as i64 + 1) * 16);
                 let a_cnt_i8 = ctx.b.ins().iconst(types::I8, 2);
                 ctx.spill_all();
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
-                    recv_bits, recv_tag, k_i8, args_ptr, ctx.locals_ptr, dst_i8, a_cnt_i8, ctx.executor_ptr
+                    recv_bits, recv_tag, k_i8, args_ptr, a_cnt_i8, ctx.executor_ptr
                 ]);
                 if !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
@@ -536,25 +698,25 @@ pub fn emit_method_call(
         }
         MethodKind::Size | MethodKind::Len | MethodKind::Count if arg_count == 0 && (ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Array || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::BoolArray || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Json || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Map) => {
             let (r_bits, r_tag) = if ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Array || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::BoolArray {
-                let call = ctx.b.ins().call(symbols.xcx_jit_array_size, &[recv_bits, recv_tag]);
-                let s_bits = ctx.b.inst_results(call)[0];
+                // Direct layout load: Vec len is at offset 24 from RwLock<ArrayObj> pointer.
+                // verified by unit test: lock_offset (8) + vec_len_offset (16) = 24.
+                let s_bits = ctx.b.ins().load(types::I64, MemFlags::trusted(), recv_bits, 24);
                 let s_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
                 (s_bits, s_tag)
             } else if ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Map {
-                let call = ctx.b.ins().call(symbols.xcx_jit_map_size, &[recv_bits, recv_tag]);
-                let s_bits = ctx.b.inst_results(call)[0];
+                // Direct layout load: Vec len is at offset 24 from RwLock<MapObj> pointer.
+                let s_bits = ctx.b.ins().load(types::I64, MemFlags::trusted(), recv_bits, 24);
                 let s_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
                 (s_bits, s_tag)
             } else {
-                let dst_val = ctx.b.ins().iconst(types::I32, dst as i64);
-                let dst_i8  = ctx.b.ins().ireduce(types::I8, dst_val);
+
                 let k_val = ctx.b.ins().iconst(types::I32, kind as i64);
                 let k_i8  = ctx.b.ins().ireduce(types::I8, k_val);
                 let args_ptr = ctx.b.ins().iconst(types::I64, 0);
                 let a_cnt_i8 = ctx.b.ins().iconst(types::I8, 0);
                 ctx.spill_all();
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
-                    recv_bits, recv_tag, k_i8, args_ptr, ctx.locals_ptr, dst_i8, a_cnt_i8, ctx.executor_ptr
+                    recv_bits, recv_tag, k_i8, args_ptr, a_cnt_i8, ctx.executor_ptr
                 ]);
                 ctx.emit_halt_if_errors(symbols);
                 (r_bits, r_tag)
@@ -722,8 +884,7 @@ pub fn emit_method_call(
         _ => {}
     }
 
-    let dst_val = ctx.b.ins().iconst(types::I32, dst as i64);
-    let dst_i8  = ctx.b.ins().ireduce(types::I8, dst_val);
+
     let kind_val = ctx.b.ins().iconst(types::I32, kind as i64);
     let kind_i8  = ctx.b.ins().ireduce(types::I8, kind_val);
     let args_ptr = if arg_count > 0 {
@@ -736,7 +897,7 @@ pub fn emit_method_call(
 
     ctx.spill_all();
     let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
-        recv_bits, recv_tag, kind_i8, args_ptr, ctx.locals_ptr, dst_i8, arg_cnt_i8, ctx.executor_ptr
+        recv_bits, recv_tag, kind_i8, args_ptr, arg_cnt_i8, ctx.executor_ptr
     ]);
     ctx.emit_halt_if_errors(symbols);
     ctx.reload_globals();
@@ -801,8 +962,7 @@ pub fn emit_method_call_named(
 ) {
     let (recv_bits, recv_tag) = ctx.use_local(base);
 
-    let dst_val = ctx.b.ins().iconst(types::I32, dst as i64);
-    let dst_i8  = ctx.b.ins().ireduce(types::I8, dst_val);
+
     let kind_val = ctx.b.ins().iconst(types::I32, kind as i64);
     let kind_i8  = ctx.b.ins().ireduce(types::I8, kind_val);
     let args_ptr = if arg_count > 0 {
@@ -819,7 +979,7 @@ pub fn emit_method_call_named(
 
     ctx.spill_all();
     let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch_named, &[
-        recv_bits, recv_tag, kind_i8, args_ptr, ctx.locals_ptr, dst_i8, arg_cnt_i8, names_bits_val, names_tag_val, ctx.executor_ptr
+        recv_bits, recv_tag, kind_i8, args_ptr, arg_cnt_i8, names_bits_val, names_tag_val, ctx.executor_ptr
     ]);
     ctx.emit_halt_if_errors(symbols);
     ctx.reload_globals();

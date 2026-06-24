@@ -1,0 +1,16 @@
+--- TEST: RUN-006
+--- Area: Error Handling
+--- Priority: high
+--- Name: R410 Save requires PK
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+
+database: app { engine = "sqlite", path = "dummy.db" };
+
+table: logs {
+    columns = [ msg :: s ] --- UWAGA: Brak @pk
+    rows = [EMPTY]
+};
+
+yield app.save(logs); --- Halt (R410)

@@ -68,6 +68,8 @@ Provides interface wrappers to filesystem storage logic (`read_write.rs`, `fs_op
 Before executing any filesystem access (read, write, append, directory listing), paths are validated by `validate_path_safety`:
 - Traversal checks reject paths carrying directory escape segments (`..`).
 - System root blocks reject absolute prefix values `/` or drives mapping (`C:`).
+- **PAX Installation Directory Exemption:** In XCX 4.1, path writes/reads are permitted if the resolved path resides under the compiler's installation directory structure (allowing the `pax` package manager subsystem to update and load libraries).
+
 Failure to pass security checks instantly raises a `halt.fatal` exception.
 
 ### Storage Operations

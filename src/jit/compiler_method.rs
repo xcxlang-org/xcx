@@ -28,6 +28,7 @@ impl JIT {
         self_func_idx: u32,
         chunk: &Chunk,
         constants: &[VMValue],
+        functions: &[std::sync::Arc<Chunk>],
         _name: &str,
         is_inner_func: bool,
         inner_func_id: Option<cranelift_module::FuncId>,
@@ -81,40 +82,9 @@ impl JIT {
         };
         let registry = SymbolRegistry::new(&mut self.module);
         let symbols = registry.import_in_func(&mut self.module, &mut self.ctx.func);
-        
-        let now = std::time::Instant::now();
-        let _chunk_name = chunk.name.clone();
 
         let mut builder_ctx = FunctionBuilderContext::new();
         let mut b = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
-
-        let mut creates_ptrs = false;
-        for op in chunk.bytecode.iter() {
-            match op {
-                OpCode::ArrayInit { .. } | OpCode::SetInit { .. } | OpCode::MapInit { .. } | 
-                OpCode::TableInit { .. } | OpCode::MethodCall { .. } | OpCode::MethodCallNamed { .. } | OpCode::MethodCallCustom { .. } |
-                OpCode::SetName { .. } | OpCode::JsonParse { .. } | OpCode::DateNow { .. } |
-                OpCode::JsonBind { .. } | OpCode::JsonBindLocal { .. } | OpCode::JsonInject { .. } |
-                OpCode::JsonInjectLocal { .. } | OpCode::FiberCreate { .. } | OpCode::Yield { .. } |
-                OpCode::YieldWithTarget { .. } | OpCode::YieldVoid | OpCode::HttpCall { .. } | OpCode::HttpRequest { .. } |
-                OpCode::HttpServe { .. } | OpCode::CryptoHash { .. } | OpCode::CryptoVerify { .. } |
-                OpCode::CryptoToken { .. } | OpCode::CastString { .. } | OpCode::MakeClosure { .. } |
-                OpCode::GetIndex { .. } | OpCode::SetIndex { .. } | OpCode::GetMember { .. } |
-                OpCode::SetMember { .. } | OpCode::DatabaseInit { .. } | OpCode::TablePushRow { .. } |
-                OpCode::TableCloneSkeleton { .. } => {
-                    creates_ptrs = true;
-                    break;
-                }
-                OpCode::LoadConst { idx, .. } => {
-                    if constants[*idx as usize].is_ptr() {
-                        creates_ptrs = true;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let _pure_func = !creates_ptrs;
 
         let mut blocks: HashMap<usize, Block> = HashMap::new();
         
@@ -150,16 +120,8 @@ impl JIT {
         let executor_ptr = if is_inner_func { arg_vals[chunk.arity * 2 + 5] } else { arg_vals[5] };
         let shutdown_ptr = if is_inner_func { arg_vals[chunk.arity * 2 + 6] } else { arg_vals[6] };
 
-        let bool_array_hints_early = std::collections::HashSet::new();
-        let (types_at_ip, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, None, chunk.arity, self_func_idx, &bool_array_hints_early);
-
         {
-            let call_depth_offset = {
-                let dummy = std::mem::MaybeUninit::<crate::vm::core::executor::Executor>::uninit();
-                let base_ptr = dummy.as_ptr() as usize;
-                let depth_ptr = unsafe { &(*dummy.as_ptr()).call_depth as *const _ as usize };
-                (depth_ptr - base_ptr) as u32
-            };
+            let (call_depth_offset, stack_ptr_offset) = super::codegen_ctx::executor_field_offsets();
 
             let mut ctx = CodegenCtx::new(
                 &mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, 
@@ -168,18 +130,14 @@ impl JIT {
                 self_func_idx,
                 local_callee,
                 call_depth_offset,
+                stack_ptr_offset,
             );
+            ctx.set_functions(functions);
             ctx.is_inner_func = is_inner_func;
-            ctx.set_reg_types_per_ip(types_at_ip);
-            ctx.uses_heap = uses_heap;
 
-            
             let used_locals = analyze_chunk_locals(&chunk.bytecode);
-            
-            let initial_types = [TypeTag::Unknown; 256];
-            
             let bool_array_hints = analyze_bool_array_regs(&chunk.bytecode, constants);
-            let (inferred_types, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, Some(&initial_types), chunk.arity, self_func_idx, &bool_array_hints);
+            let (inferred_types, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, None, chunk.arity, self_func_idx, &bool_array_hints);
             
             // Heuristic: if it's a pure math function, we can elide heap tracking.
             // A function is pure math if it never assigns a non-primitive type.
@@ -1082,9 +1040,8 @@ impl JIT {
                 eprintln!("[JIT] Error finalizing definitions: {:?}", e);
                 return Err(e.to_string());
             }
-            let _elapsed = now.elapsed();
             
-
+            
             
             Ok(self.module.get_finalized_function(func_id) as *const std::ffi::c_void)
         }
@@ -1177,17 +1134,51 @@ impl JIT {
         Ok(self.module.get_finalized_function(func_id) as *const std::ffi::c_void)
     }
 
+    fn precompile_callees(
+        &mut self,
+        caller_func_idx: u32,
+        chunk: &Chunk,
+        constants: &[VMValue],
+        functions: &[std::sync::Arc<Chunk>],
+    ) {
+        for op in chunk.bytecode.iter() {
+            if let OpCode::Call { func_idx, .. } = *op {
+                let fi = func_idx as usize;
+                if fi < functions.len() {
+                    let callee = &functions[fi];
+                    if callee.jit_ptr.load(std::sync::atomic::Ordering::Acquire).is_null() && fi != caller_func_idx as usize {
+                        let callee_id_idx = callee.bytecode.as_ptr() as usize;
+                        let name = callee.name.clone();
+                        match self.compile_method(callee_id_idx, fi as u32, callee, constants, functions, &name) {
+                            Ok(ptr) if !ptr.is_null() => {
+                                callee.jit_ptr.store(ptr as *mut std::ffi::c_void, std::sync::atomic::Ordering::Release);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn compile_method(
         &mut self,
         func_id_idx: usize,
         self_func_idx: u32,
         chunk: &Chunk,
         constants: &[VMValue],
+        functions: &[std::sync::Arc<Chunk>],
         name: &str,
     ) -> Result<*const std::ffi::c_void, String> {
+        if !self.in_progress.insert(func_id_idx) {
+            return Ok(std::ptr::null());
+        }
+
+        self.precompile_callees(self_func_idx, chunk, constants, functions);
+
         let arity = chunk.arity;
-        if self_func_idx == u32::MAX {
-            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, name, false, None)
+        let res = if self_func_idx == u32::MAX {
+            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, false, None)
         } else {
             let ptr_type = self.module.target_config().pointer_type();
             let mut inner_sig = self.module.make_signature();
@@ -1210,8 +1201,11 @@ impl JIT {
                 &inner_sig,
             ).map_err(|e| e.to_string())?;
 
-            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, name, true, Some(inner_func_id))?;
+            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, true, Some(inner_func_id))?;
             self.compile_outer_wrapper(func_id_idx, self_func_idx, chunk, inner_func_id)
-        }
+        };
+
+        self.in_progress.remove(&func_id_idx);
+        res
     }
 }

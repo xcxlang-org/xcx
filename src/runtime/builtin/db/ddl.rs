@@ -48,6 +48,7 @@ impl Executor {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             } else {
+                self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 eprintln!("R401: Table not found in database: {}{}", name, self.current_span_info(ip));
                 return OpResult::Halt;
             }
@@ -64,6 +65,7 @@ impl Executor {
         if args.is_empty() { return OpResult::Continue; }
         let table_val = &args[0];
         if !table_val.is_table() {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             eprintln!("R405: Sync expects a Table object as first argument{}", self.current_span_info(ip));
             return OpResult::Halt;
         }
@@ -109,6 +111,7 @@ impl Executor {
                 OpResult::Continue
             }
             Err(e) => {
+                self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 eprintln!("R406: Failed to sync table {}: {}{}", table.table_name, e, self.current_span_info(ip));
                 OpResult::Halt
             }
@@ -122,6 +125,7 @@ impl Executor {
         } else if args[0].is_table() {
             args[0].as_table().read().table_name.clone()
         } else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             eprintln!("R407: Method {:?} expects a table name or table object{}", kind, self.current_span_info(ip));
             return OpResult::Halt;
         };
@@ -137,6 +141,7 @@ impl Executor {
                         OpResult::Continue
                     }
                     Err(e) => {
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         eprintln!("R408: Failed to drop table {}: {}{}", table_name, e, self.current_span_info(ip));
                         OpResult::Halt
                     }

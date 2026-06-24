@@ -55,7 +55,7 @@ pub fn join_tables(
                     let row_a = Value::from_row(Arc::new(RowObj { table: left_rc.clone(), row_idx: li as u32 }));
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
                     // executor.run_frame will be implemented in a sub-module of core
-                    let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &[row_a, row_b], vm_arc, *fid), Some(res) if res.is_bool() && res.as_bool());
+                    let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &[row_a, row_b], vm_arc), Some(res) if res.is_bool() && res.as_bool());
                     unsafe { row_a.dec_ref(); row_b.dec_ref(); }
                     m
                 }
@@ -64,7 +64,7 @@ pub fn join_tables(
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
                     let mut run_args = vec![row_a, row_b];
                     for v in captures { unsafe { v.inc_ref(); } run_args.push(*v); }
-                    let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &run_args, vm_arc, *fid), Some(res) if res.is_bool() && res.as_bool());
+                    let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &run_args, vm_arc), Some(res) if res.is_bool() && res.as_bool());
                     for v in run_args { unsafe { v.dec_ref(); } }
                     m
                 }
@@ -206,3 +206,21 @@ pub fn inject_json_into_table(table: &mut TableObj, json: &crate::vm::object::Js
         table.rows.push(new_row);
     }
 }
+
+pub fn sqlite_row_to_value(
+    row: &rusqlite::Row<'_>,
+    col_type: &crate::frontend::ast::Type,
+    index: usize,
+) -> Value {
+    match col_type {
+        crate::frontend::ast::Type::Int => Value::from_i64(row.get::<_, i64>(index).unwrap_or(0)),
+        crate::frontend::ast::Type::Float => Value::from_f64(row.get::<_, f64>(index).unwrap_or(0.0)),
+        crate::frontend::ast::Type::Bool => Value::from_bool(row.get::<_, i32>(index).unwrap_or(0) != 0),
+        crate::frontend::ast::Type::String => {
+            let s_val = row.get::<_, String>(index).unwrap_or_default();
+            Value::from_string(Arc::new(crate::vm::object::StringObj::new(s_val.into_bytes())))
+        }
+        _ => Value::from_bool(false),
+    }
+}
+

@@ -61,7 +61,7 @@ impl Executor {
             OpCode::SetRange {..} | OpCode::RandomInt {..} | OpCode::RandomFloat {..} |
             OpCode::RowGet {..} | OpCode::TablePushRow {..} | OpCode::TableCloneSkeleton {..} |
             OpCode::TableInitRow {..} => {
-                collection::handle(op, locals)
+                collection::handle(self, op, locals)
             }
 
             OpCode::TableInit {..} | OpCode::TableBegin {..} => {
@@ -109,29 +109,20 @@ impl Executor {
 
             OpCode::MethodCall { dst, kind, base, arg_count } => {
                 let receiver = locals[base as usize];
-                let args_start = base as usize + 1;
-                let n = arg_count as usize;
-                let mut args_buf = [Value::from_bool(false); 16];
-                for i in 0..n { args_buf[i] = locals[args_start + i]; }
+                let (args_buf, n) = extract_method_args(locals, base, arg_count);
                 let args = &args_buf[..n];
                 Some(self.handle_method_call(dst, receiver, kind, args, None, *ip, locals, vm_arc))
             }
             OpCode::MethodCallCustom { dst, method_name_idx, base, arg_count } => {
                 let receiver = locals[base as usize];
-                let args_start = base as usize + 1;
-                let n = arg_count as usize;
-                let mut args_buf = [Value::from_bool(false); 16];
-                for i in 0..n { args_buf[i] = locals[args_start + i]; }
+                let (args_buf, n) = extract_method_args(locals, base, arg_count);
                 let args = &args_buf[..n];
                 let name = self.ctx.constants[method_name_idx as usize].to_string();
-                Some(self.handle_method_call_custom(dst, receiver, &name, args, *ip, locals, vm_arc, base))
+                Some(self.handle_method_call_custom(dst, receiver, &name, args, *ip, locals, vm_arc))
             }
             OpCode::MethodCallNamed { dst, kind, base, arg_count, names_idx } => {
                 let receiver = locals[base as usize];
-                let args_start = base as usize + 1;
-                let n = arg_count as usize;
-                let mut args_buf = [Value::from_bool(false); 16];
-                for i in 0..n { args_buf[i] = locals[args_start + i]; }
+                let (args_buf, n) = extract_method_args(locals, base, arg_count);
                 let args = &args_buf[..n];
                 let names_val = self.ctx.constants[names_idx as usize];
                 let mut names_vec = Vec::new();
@@ -201,6 +192,14 @@ impl Executor {
             _ => return None,
         }
         Some(OpResult::Continue)
-    }
+    }}
+
+#[inline(always)]
+fn extract_method_args(locals: &[Value], base: u8, arg_count: u8) -> ([Value; 16], usize) {
+    let mut args_buf = [Value::from_bool(false); 16];
+    let args_start = base as usize + 1;
+    let n = arg_count as usize;
+    args_buf[..n].copy_from_slice(&locals[args_start..args_start + n]);
+    (args_buf, n)
 }
 

@@ -89,6 +89,11 @@ impl<'a> Checker<'a> {
             StmtKind::Wait(expr) => {
                 self.check_wait(expr, symbols, errors);
             }
+            StmtKind::MultiVarDecl(stmts) => {
+                for s in stmts {
+                    self.check_stmt(s, symbols, errors);
+                }
+            }
         }
     }
 

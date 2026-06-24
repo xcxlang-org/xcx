@@ -11,6 +11,14 @@ pub struct SlotVars {
     pub tag_var:  Variable,
 }
 
+pub fn executor_field_offsets() -> (u32, u32) {
+    let dummy = std::mem::MaybeUninit::<crate::vm::core::executor::Executor>::uninit();
+    let base_ptr = dummy.as_ptr() as usize;
+    let depth_ptr = unsafe { &(*dummy.as_ptr()).call_depth as *const _ as usize };
+    let sptr = unsafe { &(*dummy.as_ptr()).stack_ptr as *const _ as usize };
+    ((depth_ptr - base_ptr) as u32, (sptr - base_ptr) as u32)
+}
+
 pub struct CodegenCtx<'a, 'b> {
     pub b: &'a mut cranelift_frontend::FunctionBuilder<'b>,
 
@@ -56,8 +64,10 @@ pub struct CodegenCtx<'a, 'b> {
     pub known_types: [crate::vm::opcode::TypeTag; 256],
     pub is_inner_func: bool,
     pub call_depth_offset: u32,
+    pub stack_ptr_offset: u32,
+    pub functions: Option<&'a [std::sync::Arc<crate::vm::opcode::Chunk>]>,
     pub non_ptr_regs: HashSet<u8>,
-    pub may_contain_ptr: Vec<[bool; 256]>,
+    pub may_contain_ptr: Vec<[u64; 4]>,
 }
 
 impl<'a, 'b> CodegenCtx<'a, 'b> {
@@ -76,6 +86,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self_func_idx: u32,
         self_func_ref: Option<cranelift::codegen::ir::FuncRef>,
         call_depth_offset: u32,
+        stack_ptr_offset: u32,
     ) -> Self {
         let mut slots: [Option<SlotVars>; 256] = [None; 256];
         for i in 0..max_locals.min(256) {
@@ -112,9 +123,15 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             register_const: [None; 256],
             is_inner_func: false,
             call_depth_offset,
+            stack_ptr_offset,
+            functions: None,
             non_ptr_regs: HashSet::new(),
             may_contain_ptr: Vec::new(),
         }
+    }
+
+    pub fn set_functions(&mut self, functions: &'a [std::sync::Arc<crate::vm::opcode::Chunk>]) {
+        self.functions = Some(functions);
     }
 
     pub fn create_block(&mut self) -> Block {
@@ -146,7 +163,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.non_ptr_regs = regs;
     }
 
-    pub fn set_may_contain_ptr(&mut self, mcp: Vec<[bool; 256]>) {
+    pub fn set_may_contain_ptr(&mut self, mcp: Vec<[u64; 4]>) {
         self.may_contain_ptr = mcp;
     }
 
@@ -477,7 +494,8 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.is_known_non_ptr(reg as usize)
             || self.reg_is_never_ptr(reg as usize)
             || self.non_ptr_regs.contains(&reg)
-            || (self.current_ip < self.may_contain_ptr.len() && !self.may_contain_ptr[self.current_ip][reg as usize])
+            || (self.current_ip < self.may_contain_ptr.len()
+                && (self.may_contain_ptr[self.current_ip][(reg / 64) as usize] & (1u64 << (reg % 64))) == 0)
     }
 
     // --- Helpers ---

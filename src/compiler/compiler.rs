@@ -11,6 +11,7 @@ use super::mapping;
 use super::defaults;
 use super::globals;
 
+const BUILT_INS: [&str; 5] = ["json", "date", "random", "store", "input"];
 
 pub struct Compiler {
     pub globals: HashMap<StringId, usize>,
@@ -106,14 +107,8 @@ impl Compiler {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn get_global_idx(&self, name: StringId) -> usize {
-        *self.globals.get(&name).expect("Global not found")
-    }
-
     pub fn compile(&mut self, program: &crate::frontend::ast::Program, interner: &mut Interner) -> (Chunk, Arc<Vec<Value>>, Arc<Vec<Arc<Chunk>>>) {
-        let built_ins = ["json", "date", "random", "store", "input"];
-        for (i, name) in built_ins.iter().enumerate() {
+        for (i, name) in BUILT_INS.iter().enumerate() {
             let id = interner.intern(name);
             self.globals.insert(id, i);
         }
@@ -130,13 +125,12 @@ impl Compiler {
         };
         
         let mut main_compiler = FunctionCompiler::new(true, None);
-        let dummy_span = crate::error::Span { line: 0, col: 0, len: 0 };
         
-        for (i, name) in ["json", "date", "random", "store", "input"].iter().enumerate() {
+        for (i, name) in BUILT_INS.iter().enumerate() {
             let val = ctx.add_constant(Value::from_string(Arc::new(StringObj::new(name.to_string().into_bytes()))));
             let dst = main_compiler.push_reg();
-            main_compiler.emit(OpCode::LoadConst { dst, idx: val }, &dummy_span);
-            main_compiler.emit(OpCode::SetVar { idx: i as u32, src: dst }, &dummy_span);
+            main_compiler.emit(OpCode::LoadConst { dst, idx: val }, &crate::error::Span::default());
+            main_compiler.emit(OpCode::SetVar { idx: i as u32, src: dst }, &crate::error::Span::default());
             main_compiler.pop_reg();
         }
         
@@ -163,6 +157,10 @@ impl Compiler {
         main_compiler.max_locals_used = main_compiler.max_locals_used.max(main_compiler.next_local);
         let main_chunk = Chunk::new(main_compiler.bytecode, main_compiler.spans, false, main_compiler.max_locals_used, has_loops, "main".to_string(), 0);
         
+        self.string_constants.clear();
+        self.numeric_constants.clear();
+        self.func_indices.clear();
+        
         (main_chunk, Arc::new(std::mem::take(&mut self.constants)), Arc::new(std::mem::take(&mut self.functions)))
     }
 }
@@ -185,8 +183,7 @@ pub fn compile_function_helper(
     if !compiler.bytecode.last().map_or(false, |op| {
         matches!(op, OpCode::Return { .. } | OpCode::ReturnVoid)
     }) {
-        let dummy_span = crate::error::Span { line: 0, col: 0, len: 0 };
-        compiler.emit(OpCode::ReturnVoid, &dummy_span);
+        compiler.emit(OpCode::ReturnVoid, &crate::error::Span::default());
     }
     let has_loops = crate::vm::opcode::calculate_has_loops(&compiler.bytecode);
 

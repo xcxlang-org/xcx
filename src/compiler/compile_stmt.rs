@@ -10,6 +10,11 @@ impl FunctionCompiler {
             StmtKind::VarDecl { .. } => {
                 self.compile_var_decl(stmt, ctx);
             }
+            StmtKind::MultiVarDecl(stmts) => {
+                for s in stmts {
+                    self.compile_stmt(s, ctx);
+                }
+            }
             StmtKind::Print(expr) => {
                 let src = self.compile_expr(expr, ctx);
                 self.emit(OpCode::Print { src }, &stmt.span);
@@ -175,11 +180,11 @@ impl FunctionCompiler {
             }
             StmtKind::NetRequestStmt { method, url, headers, body, timeout, target } => {
                 let mut elements = Vec::new();
-                elements.push((crate::frontend::ast::Expr { kind: ExprKind::StringLiteral(ctx.interner.intern("method")), span: crate::error::Span::default() }, *method.clone()));
-                elements.push((crate::frontend::ast::Expr { kind: ExprKind::StringLiteral(ctx.interner.intern("url")), span: crate::error::Span::default() }, *url.clone()));
-                if let Some(h) = headers { elements.push((crate::frontend::ast::Expr { kind: ExprKind::StringLiteral(ctx.interner.intern("headers")), span: crate::error::Span::default() }, *h.clone())); }
-                if let Some(b) = body { elements.push((crate::frontend::ast::Expr { kind: ExprKind::StringLiteral(ctx.interner.intern("body")), span: crate::error::Span::default() }, *b.clone())); }
-                if let Some(t) = timeout { elements.push((crate::frontend::ast::Expr { kind: ExprKind::StringLiteral(ctx.interner.intern("timeout")), span: crate::error::Span::default() }, *t.clone())); }
+                elements.push(make_map_pair(make_str_key(ctx.interner, "method", crate::error::Span::default()), *method.clone()));
+                elements.push(make_map_pair(make_str_key(ctx.interner, "url", crate::error::Span::default()), *url.clone()));
+                if let Some(h) = headers { elements.push(make_map_pair(make_str_key(ctx.interner, "headers", crate::error::Span::default()), *h.clone())); }
+                if let Some(b) = body { elements.push(make_map_pair(make_str_key(ctx.interner, "body", crate::error::Span::default()), *b.clone())); }
+                if let Some(t) = timeout { elements.push(make_map_pair(make_str_key(ctx.interner, "timeout", crate::error::Span::default()), *t.clone())); }
                 let map_expr = crate::frontend::ast::Expr { kind: ExprKind::MapLiteral { key_type: Box::new(Type::String), value_type: Box::new(Type::Json), elements }, span: crate::error::Span::default() };
                 let arg_src = self.compile_expr(&map_expr, ctx);
                 let dst = if let Some(slot) = self.lookup_local(target) { slot as u8 } else {
@@ -208,3 +213,15 @@ impl FunctionCompiler {
         }
     }
 }
+
+fn make_str_key(interner: &mut crate::intern::Interner, name: &str, span: crate::error::Span) -> crate::frontend::ast::Expr {
+    crate::frontend::ast::Expr {
+        kind: crate::frontend::ast::ExprKind::StringLiteral(interner.intern(name)),
+        span,
+    }
+}
+
+fn make_map_pair(key: crate::frontend::ast::Expr, val: crate::frontend::ast::Expr) -> (crate::frontend::ast::Expr, crate::frontend::ast::Expr) {
+    (key, val)
+}
+

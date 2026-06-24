@@ -9,8 +9,6 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch(
     receiver_tag: u64,
     kind: u8,
     args_ptr: *const core::ffi::c_void,
-    locals_ptr: *mut core::ffi::c_void,
-    dst: u8,
     arg_count: u8,
     executor_ptr: *mut Executor,
 ) {
@@ -22,10 +20,8 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch(
     };
     
     let executor = unsafe { &mut *executor_ptr };
-    let _ = locals_ptr;
-    let _ = dst;
     
-    match unsafe { executor.dispatch_method(receiver, kind, args) } {
+    match unsafe { executor.dispatch_method(receiver, kind, args, None) } {
         Ok(val) => {
             unsafe { *out = val; }
         }
@@ -43,8 +39,6 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch_named(
     receiver_tag: u64,
     kind: u8,
     args_ptr: *const core::ffi::c_void,
-    locals_ptr: *mut core::ffi::c_void,
-    dst: u8,
     arg_count: u8,
     names_bits: u64,
     names_tag: u64,
@@ -58,8 +52,6 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch_named(
     };
     
     let executor = unsafe { &mut *executor_ptr };
-    let _ = locals_ptr;
-    let _ = dst;
 
     let names_val = Value { bits: names_bits, tag: names_tag };
     let mut names_vec = Vec::new();
@@ -72,7 +64,7 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch_named(
     }
     let names = if names_vec.is_empty() { None } else { Some(names_vec.as_slice()) };
     
-    match unsafe { executor.dispatch_method_named(receiver, kind, args, names) } {
+    match unsafe { executor.dispatch_method(receiver, kind, args, names) } {
         Ok(val) => {
             unsafe { *out = val; }
         }
@@ -108,7 +100,7 @@ pub unsafe extern "C" fn xcx_jit_method_call_custom(
     let executor = unsafe { &mut *executor_ptr };
     let vm_arc = executor.vm.clone();
     let mut locals = [Value::from_bool(false); 256];
-    match executor.handle_method_call_custom(0, receiver, &method_name, args, 0, &mut locals, &vm_arc, 0) {
+    match executor.handle_method_call_custom(0, receiver, &method_name, args, 0, &mut locals, &vm_arc) {
         OpResult::Continue => {
             unsafe { *out = locals[0]; }
         }

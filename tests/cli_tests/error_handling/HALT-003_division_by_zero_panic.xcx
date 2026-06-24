@@ -20,7 +20,7 @@ try_div_zero();
 >! "[HALT-003-1] PASS — int/0 wywołało halt, VM żyje";
 
 --- ── Subtest 2: modulo przez 0 ─────────────────────────────────────────
---- ZNANY BUG: XCX 4.0 może zwracać false zamiast haltu dla modulo/0
+--- ZNANY BUG: XCX 4.1 może zwracać false zamiast haltu dla modulo/0
 func try_mod_zero(-> b) {
     i: a = 7;
     i: b = 0;

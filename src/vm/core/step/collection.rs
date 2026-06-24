@@ -6,7 +6,7 @@ use crate::vm::core::vm::OpResult;
 use crate::vm::object::{StringObj, SetObj, TableObj, RowObj};
 use crate::vm::core::executor::Executor;
 
-pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
+pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
     match op {
         OpCode::ArrayInit { dst, base, count } => {
             let res = crate::vm::core::runtime_ops::RuntimeOps::array_init(&locals[base as usize..(base as usize + count as usize)]);
@@ -42,6 +42,10 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
                 if i < arr_rd.len() {
                     res = arr_rd[i];
                     unsafe { res.inc_ref(); }
+                } else {
+                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!("R303: Array index out of bounds: {} (Array length: {})", idx.as_i64(), arr_rd.len());
+                    return Some(OpResult::Halt);
                 }
             } else if c.is_map() {
                 let map = c.as_map();
@@ -59,6 +63,10 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
                 if i < s.data.len() {
                     let b = s.data[i];
                     res = Value::from_string(Arc::new(StringObj::new(vec![b])));
+                } else {
+                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!("R303: String index out of bounds: {} (String length: {})", idx.as_i64(), s.data.len());
+                    return Some(OpResult::Halt);
                 }
             } else if c.is_json() {
                 let j = c.as_json();
@@ -76,6 +84,10 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
                             let a_read = a.read();
                             if i < a_read.len() {
                                 res = crate::vm::utils::json_val_to_value(&a_read[i]);
+                            } else {
+                                exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                eprintln!("R303: JSON array index out of bounds: {} (Array length: {})", idx.as_i64(), a_read.len());
+                                return Some(OpResult::Halt);
                             }
                         }
                     }
@@ -90,6 +102,10 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
                         table: tbl.clone(),
                         row_idx: i as u32,
                     }));
+                } else {
+                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!("R303: Table index out of bounds: {} (Table length: {})", idx.as_i64(), tbl_read.rows.len());
+                    return Some(OpResult::Halt);
                 }
             }
 
@@ -108,6 +124,10 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
                 if i < arr_wr.len() {
                     unsafe { val.inc_ref(); arr_wr[i].dec_ref(); }
                     arr_wr[i] = val;
+                } else {
+                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!("R303: Array update index out of bounds: {}", idx.as_i64());
+                    return Some(OpResult::Halt);
                 }
             } else if c.is_map() {
                 let map = c.as_map();

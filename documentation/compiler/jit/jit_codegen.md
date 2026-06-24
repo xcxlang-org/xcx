@@ -20,6 +20,8 @@ pub struct CodegenCtx<'a> {
     pub locals_ptr: Value,
     pub globals_ptr: Value,
     pub consts_ptr: Value,
+    pub stack_ptr_offset: u32,
+    pub functions: Option<&'a [Arc<Chunk>]>,
     // Variable storage mapping register index -> Cranelift variables (bits and tag)
     pub slots: [Option<SlotVars>; 256],
     ...
@@ -45,7 +47,15 @@ The compiler implements a static analysis layer inside `src/jit/analysis.rs` to 
 The JIT uses quiet-NaN boxing. Heap-allocated types (strings, sets, arrays, maps, tables) require reference counting (`inc_ref`/`dec_ref`). Primitive integers, floats, and booleans do not. Writing/moving non-pointer values does not trigger costly reference count updates.
 - **`analyze_non_ptr_regs`:** Identifies registers that are guaranteed to stay primitive (e.g. arithmetic registers, known index counters). The emitter queries this map (`ctx.is_known_non_ptr`) to avoid inserting FFI ref count additions/subtractions.
 - **`analyze_global_int_regs`:** Checks which global variables are exclusively used as integer values.
-- **`analyze_maybe_ptr_regs`:** Flags registers that could potentially hold pointers, guaranteeing safety by retaining refcount calls only where strictly necessary.
+- **`analyze_maybe_ptr_regs`:** Analyzes register states using a fast 256-bit bitmask (`[u64; 4]`) instead of `[bool; 256]`. Merging dataflow states across successor blocks is performed using bitwise bitmask operations, allowing the compiler to identify registers that possibly contain heap pointers and optimize refcount elision.
+
+---
+
+## Inlined Collection Size Optimization
+
+To avoid the overhead of calling runtime FFI helpers, collection size queries (`.size()`, `.len()`, and `.count()`) on `Array`, `BoolArray`, and `Map` instances are compiled directly to native Cranelift instructions:
+- The compiler emits a 64-bit load directly from offset 24 of the collection's base memory address (skipping the 8-byte `RwLock` header and reading the 16-byte offset capacity/length field).
+- This bypasses runtime FFI helper calls (`xcx_jit_array_size` and `xcx_jit_map_size`).
 
 ---
 

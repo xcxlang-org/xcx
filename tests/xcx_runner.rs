@@ -214,6 +214,31 @@ fn expect_type_error(source: &str) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
+fn multiple_var_declarations() {
+    run_source(r#"
+        i: a, b = 42, c;
+        assert(a == 0);
+        assert(b == 42);
+        assert(c == 0);
+        
+        f: x = 1.5, y, z = 3.5;
+        assert(x == 1.5);
+        assert(y == 0.0);
+        assert(z == 3.5);
+        
+        s: s1, s2 = "test", s3;
+        assert(s1 == "");
+        assert(s2 == "test");
+        assert(s3 == "");
+        
+        b: b1, b2 = true, b3 = false;
+        assert(b1 == false);
+        assert(b2 == true);
+        assert(b3 == false);
+    "#);
+}
+
+#[test]
 fn type_error_string_assigned_to_int() {
     // Spec: i is Integer, "hello" is String — must be rejected
     expect_type_error(r#"i: x = "hello";"#);
@@ -997,7 +1022,6 @@ mod sql_suite {
 mod stability_suite {
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use std::time::Duration;
 
     struct TestMeta {
         id: String,
@@ -1008,6 +1032,7 @@ mod stability_suite {
         expect_fatal_exit: bool,
         expect_regression: bool,
         is_server_test: bool,
+        disable_jit: bool,
     }
 
     fn parse_meta(path: &Path) -> TestMeta {
@@ -1020,6 +1045,7 @@ mod stability_suite {
             expect_fatal_exit: false,
             expect_regression: false,
             is_server_test: false,
+            disable_jit: false,
         };
 
         let text = std::fs::read_to_string(path).ok().unwrap_or_default();
@@ -1037,6 +1063,7 @@ mod stability_suite {
         meta.expect_fatal_exit = l_text.contains("expect_fatal_exit") || 
             (l_text.contains("halt.fatal") && l_text.contains("nie powinna się wykonać") && !meta.expect_compile_error);
         meta.expect_regression = meta.priority.to_lowercase() == "regression";
+        meta.disable_jit = l_text.contains("disable_jit = true");
         
         let mut has_serve = false;
         for line in text.lines() {
@@ -1068,7 +1095,7 @@ mod stability_suite {
         has_err(stderr) || has_err(stdout)
     }
 
-    fn looks_like_runtime_success(rc: i32, stderr: &str, stdout: &str) -> bool {
+    fn looks_like_runtime_success(_rc: i32, stderr: &str, stdout: &str) -> bool {
         stderr.contains("Compiled successfully") || stdout.contains("Compiled successfully") ||
         stderr.contains("Compiled") || stdout.contains("Compiled")
     }
@@ -1139,7 +1166,13 @@ mod stability_suite {
                 continue;
             }
 
-            let output = Command::new(&xcx_bin)
+            let mut cmd = Command::new(&xcx_bin);
+            
+            if meta.disable_jit {
+                cmd.arg("--no-jit");
+            }
+
+            let output = cmd
                 .arg(path.to_str().unwrap())
                 .current_dir(&temp_dir)
                 .env_remove("XCX_IN_TEST_HARNESS")

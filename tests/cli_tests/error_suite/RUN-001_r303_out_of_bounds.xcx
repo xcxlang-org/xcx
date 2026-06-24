@@ -1,0 +1,12 @@
+--- TEST: RUN-001
+--- Area: Error Handling
+--- Priority: high
+--- Name: R303 Array index out of bounds
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+--- Runner: disable_jit = true
+
+array:i: nums { 1, 2, 3 };
+i: idx = 5;
+>! nums[idx]; --- Halt (R303)

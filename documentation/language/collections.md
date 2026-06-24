@@ -1,4 +1,4 @@
-# XCX 4.0 Collections
+# XCX 4.1 Collections
 
 ## Arrays
 
@@ -17,7 +17,8 @@ nums.show();           --- prints contents to terminal
 
 | Method            | Signature    | Returns | Description                                                         |
 |-------------------|--------------|---------|---------------------------------------------------------------------|
-| `.size()`         | `() → i`     | `i`     | Number of elements                                                  |
+| `.size()`         | `() → i`     | `i`     | Number of elements (alias: `.count()`)                              |
+| `.count()`        | `() → i`     | `i`     | Number of elements (alias of `.size()`)                             |
 | `.get(i)`         | `(i) → T`    | `T`     | Element at position `i` (0-indexed); `halt.error` if out of bounds  |
 | `.push(val)`      | `(T) → b`    | `b`     | Appends element to the end                                          |
 | `.pop()`          | `() → T`     | `T`     | Removes and returns the last element                                |
@@ -30,6 +31,7 @@ nums.show();           --- prints contents to terminal
 | `.clear()`        | `() → b`     | `b`     | Removes all elements                                                |
 | `.sort()`         | `() → b`     | `b`     | Sorts ascending (in-place)                                          |
 | `.reverse()`      | `() → b`     | `b`     | Reverses order (in-place)                                           |
+| `.slice(s, e)`    | `(i, i) → array:T` | `array:T` | Returns a sub-array from index `s` up to `e`                         |
 | `.toStr()`        | `() → s`     | `s`     | Serializes array to a JSON-formatted string                         |
 | `.toJson()`       | `() → json`  | `json`  | Converts array to a native JSON structure                           |
 | `.show()`         | `() → b`     | `b`     | Prints contents to terminal                                         |
@@ -98,7 +100,8 @@ setA ⊕ setB
 
 | Method          | Signature | Returns | Description                                |
 |-----------------|-----------|---------|--------------------------------------------|
-| `.size()`       | `() → i`  | `i`     | Number of elements                         |
+| `.size()`       | `() → i`  | `i`     | Number of elements (alias: `.count()`)      |
+| `.count()`      | `() → i`  | `i`     | Number of elements (alias of `.size()`)     |
 | `.isEmpty()`    | `() → b`  | `b`     | `true` if empty                            |
 | `.contains(v)`  | `(T) → b` | `b`     | Checks membership                          |
 | `.add(v)`       | `(T) → b` | `b`     | Adds element (ignores duplicate)           |
@@ -148,7 +151,8 @@ map: scores {
 
 | Method           | Signature       | Returns   | Description                               |
 |------------------|-----------------|-----------|-------------------------------------------|
-| `.size()`        | `() → i`        | `i`       | Number of key-value pairs                 |
+| `.size()`        | `() → i`        | `i`       | Number of key-value pairs (alias: `.count()`) |
+| `.count()`       | `() → i`        | `i`       | Number of key-value pairs (alias of `.size()`) |
 | `.get(key)`      | `(K) → V`       | `V`       | Returns value; `halt.error` if key missing|
 | `.contains(key)` | `(K) → b`       | `b`       | Checks if key exists                      |
 | `.insert(k, v)`  | `(K, V) → b`    | `b`       | Inserts or overwrites                     |

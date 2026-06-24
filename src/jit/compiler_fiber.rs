@@ -72,14 +72,9 @@ impl JIT {
         let shutdown_ptr = b.block_params(entry_block)[6];
 
         {
-            let call_depth_offset = {
-                let dummy = std::mem::MaybeUninit::<crate::vm::core::executor::Executor>::uninit();
-                let base_ptr = dummy.as_ptr() as usize;
-                let depth_ptr = unsafe { &(*dummy.as_ptr()).call_depth as *const _ as usize };
-                (depth_ptr - base_ptr) as u32
-            };
+            let (call_depth_offset, stack_ptr_offset) = super::codegen_ctx::executor_field_offsets();
 
-            let mut ctx = CodegenCtx::new(&mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, vm_ptr, exec_ptr, shutdown_ptr, start_ip, chunk.max_locals, blocks.clone(), u32::MAX, None, call_depth_offset);
+            let mut ctx = CodegenCtx::new(&mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, vm_ptr, exec_ptr, shutdown_ptr, start_ip, chunk.max_locals, blocks.clone(), u32::MAX, None, call_depth_offset, stack_ptr_offset);
             
             // Phase 4: Analyze used locals and preload them
             let used_locals = analyze_chunk_locals(&chunk.bytecode);
@@ -91,7 +86,6 @@ impl JIT {
             ctx.set_non_ptr_regs(non_ptr_regs);
             let may_contain_ptr = analyze_maybe_ptr_regs(&chunk.bytecode, &global_ints, constants);
             ctx.set_may_contain_ptr(may_contain_ptr);
-            ctx.preload_locals(&used_locals);
             ctx.set_reg_types_per_ip(inferred_types);
             ctx.uses_heap = uses_heap;
 

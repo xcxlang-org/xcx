@@ -151,7 +151,7 @@ pub fn handle(
         OpCode::Call { dst, func_idx, base, arg_count } => {
             let func_chunk = exec.ctx.functions[func_idx as usize].clone();
             let args = &locals[base as usize..(base as usize + arg_count as usize)];
-            let ores = exec.handle_call(dst, func_idx, func_chunk, args, vm_arc);
+            let ores = exec.handle_call(func_idx, func_chunk, args, vm_arc);
             match ores {
                 OpResult::Return(v) => {
                     if let Some(val) = v {

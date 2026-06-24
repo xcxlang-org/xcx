@@ -224,22 +224,7 @@ impl RuntimeOps {
                                 if let Ok(rows_iter) = stmt.query_map(rusqlite::params![], |row| {
                                     let mut row_vals = Vec::with_capacity(cols.len());
                                     for (i, col) in cols.iter().enumerate() {
-                                        let v = match col.ty {
-                                            crate::frontend::ast::Type::Int => {
-                                                Value::from_i64(row.get::<_, i64>(i).unwrap_or(0))
-                                            }
-                                            crate::frontend::ast::Type::Float => {
-                                                Value::from_f64(row.get::<_, f64>(i).unwrap_or(0.0))
-                                            }
-                                            crate::frontend::ast::Type::Bool => {
-                                                Value::from_bool(row.get::<_, i32>(i).unwrap_or(0) != 0)
-                                            }
-                                            crate::frontend::ast::Type::String => {
-                                                let s_val = row.get::<_, String>(i).unwrap_or_default();
-                                                Value::from_string(Arc::new(crate::vm::object::StringObj::new(s_val.into_bytes())))
-                                            }
-                                            _ => Value::from_bool(false),
-                                        };
+                                        let v = crate::vm::utils::table::sqlite_row_to_value(row, &col.ty, i);
                                         row_vals.push(v);
                                     }
                                     Ok(row_vals)

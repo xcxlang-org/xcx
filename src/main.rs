@@ -42,8 +42,36 @@ fn main() {
         args.remove(pos);
     }
 
+    let mut jit_threshold = 50;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i].starts_with("--threshold=") {
+            let val_str = &args[i]["--threshold=".len()..];
+            match val_str.parse::<u32>() {
+                Ok(val) => jit_threshold = val,
+                Err(_) => {
+                    eprintln!("Error: --threshold requires a valid unsigned integer.");
+                    std::process::exit(1);
+                }
+            }
+            args.remove(i);
+        } else if args[i].starts_with("--th=") {
+            let val_str = &args[i]["--th=".len()..];
+            match val_str.parse::<u32>() {
+                Ok(val) => jit_threshold = val,
+                Err(_) => {
+                    eprintln!("Error: --th requires a valid unsigned integer.");
+                    std::process::exit(1);
+                }
+            }
+            args.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+
     if args.len() < 2 {
-        let mut repl = xcx_compiler::repl::Repl::new(disable_jit);
+        let mut repl = xcx_compiler::repl::Repl::new(disable_jit, jit_threshold);
         repl.run();
         return;
     }
@@ -65,13 +93,15 @@ fn main() {
         println!("  xcx --version           Show version");
         println!("  xcx --help              Show help");
         println!("  xcx --no-jit <file.xcx> Run file with JIT compiler disabled");
+        println!("  xcx --threshold=N <file.xcx> Set JIT compilation threshold (default 50)");
+        println!("  xcx --th=N <file.xcx>   Alias for --threshold=N");
         println!("\nInside REPL:");
         println!("  !help                   Show REPL commands");
         return;
     }
 
     if first_arg == "pax" || first_arg == "doc" {
-        let rel_path = if first_arg == "pax" { "lib/pax.xcx" } else { "lib/doc/doc.xcx" };
+        let rel_path = if first_arg == "pax" { "lib/pax/src/pax.xcx" } else { "lib/doc/doc.xcx" };
         let mut resolved_path = rel_path.to_string();
         
         if !Path::new(&resolved_path).exists() {
@@ -87,20 +117,20 @@ fn main() {
                 }
             }
         }
-
+ 
         if !Path::new(&resolved_path).exists() {
             let tool_name = if first_arg == "pax" { "PAX manager" } else { "DOC tool" };
-            let install_dir = if first_arg == "pax" { "lib directory" } else { "lib/doc directory" };
+            let install_dir = if first_arg == "pax" { "lib/pax/src directory" } else { "lib/doc directory" };
             eprintln!("{} not found at {}. Please ensure it is installed in the {}.", tool_name, resolved_path, install_dir);
             return;
         }
-        run_file(&resolved_path, disable_jit);
+        run_file(&resolved_path, disable_jit, jit_threshold);
     } else {
-        run_file(first_arg, disable_jit);
+        run_file(first_arg, disable_jit, jit_threshold);
     }
 }
 
-fn run_file(filename: &str, disable_jit: bool) {
+fn run_file(filename: &str, disable_jit: bool, jit_threshold: u32) {
     let source = match fs::read_to_string(filename) {
         Ok(s) => s,
         Err(e) => {
@@ -161,6 +191,7 @@ fn run_file(filename: &str, disable_jit: bool) {
 
     let mut vm_inner = VM::new();
     vm_inner.disable_jit = disable_jit;
+    vm_inner.jit_threshold = jit_threshold;
     let vm = Arc::new(vm_inner);
     let vm2 = vm.clone();
     

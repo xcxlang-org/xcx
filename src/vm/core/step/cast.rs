@@ -20,10 +20,16 @@ pub fn handle(op: OpCode, locals: &mut [Value]) -> Option<OpResult> {
         }
         OpCode::CastString { dst, src } => {
             let v = locals[src as usize];
-            let s = v.as_string_lossy();
-            let res = Value::from_string(Arc::new(StringObj::new(s.into_bytes())));
-            unsafe { locals[dst as usize].dec_ref(); }
-            locals[dst as usize] = res;
+            if v.is_string() {
+                let res = v;
+                unsafe { res.inc_ref(); locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            } else {
+                let s = v.as_string_lossy();
+                let res = Value::from_string(Arc::new(StringObj::new(s.into_bytes())));
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
         }
         OpCode::CastBool { dst, src } => {
             let v = locals[src as usize];

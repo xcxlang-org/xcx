@@ -9,7 +9,7 @@
 ![Last Commit](https://img.shields.io/github/last-commit/xcxlang-org/xcx)
 ![Repo Size](https://img.shields.io/github/repo-size/xcxlang-org/xcx)
 
-> XCX 4.0 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
+> XCX 4.1 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 ---
 
@@ -19,7 +19,7 @@ Most backend languages make you choose between two bad options: high-level langu
 
 XCX is an experiment in a third path: a statically typed language where HTTP, SQLite, JSON, crypto, and file I/O are part of the language itself, not libraries you bolt on. No `package.json`. No ORM. No middleware boilerplate. You write logic; the runtime handles the rest.
 
-It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.0 is a significant architectural step forward on that foundation, with a redesigned VM, resolved fiber scoping issues, and substantially improved performance. One contributor so far.
+It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.1 is the current stable release, built on a redesigned VM and JIT with substantially improved performance. One contributor so far.
 
 ---
 
@@ -115,7 +115,7 @@ XCX is not trying to replace Go or Node. It occupies a different space: small ba
 
 Benchmarks run on Windows 11, Ryzen 7 5800X, 32GB RAM. XCX uses a register-based VM with a tracing JIT (Cranelift) that kicks in automatically on hot loops after ~50 iterations.
 
-> ⚠️ These benchmarks reflect the **current state of XCX 4.0**.
+> ⚠️ These benchmarks reflect the **current state of XCX 4.1**.
 > The runtime, VM, and JIT are still under active development and will change.
 > Fibonacci, Sieve, and JSON are targeted for optimization in upcoming releases.
 >
@@ -135,7 +135,7 @@ Ranking is sorted by geometric mean across all four benchmarks.
 | 8 | C# | 108ms | 6ms | 0.15ms | 100ms |
 | 9 | Nim | 89ms | 18ms | 0.2ms | 58.9ms |
 | 10 | Node.js | 358.89ms | 6.54ms | 2.28ms | 8.12ms |
-| 11 | **XCX 4.0** | **119ms** | **14.28ms** | **2.55ms** | **22.74ms** |
+| 11 | **XCX 4.1** | **116.27ms** | **12.87ms** | **2.29ms** | **21.46ms** |
 | 12 | LuaJIT | 378ms | 9.1ms | 0.8ms | 119ms |
 | 13 | Erlang | 157.08ms | 6.04ms | 74.65ms | 150.02ms |
 | 14 | PHP | 3219.35ms | 80.33ms | 4.21ms | 10.83ms |
@@ -145,13 +145,13 @@ Ranking is sorted by geometric mean across all four benchmarks.
 | 18 | R | 23327ms | 580ms | 3ms | 357.48ms |
 | 19 | Perl | 11036.03ms | 390.53ms | 17.18ms | 717.61ms |
 
-XCX 4.0 ranks 11th by geometric mean, ahead of LuaJIT, Erlang, and all scripting languages. Loop performance lands ahead of Node.js and LuaJIT, and within the same order of magnitude as Go, Nim, and C#. This is a substantial improvement over 3.1 (520ms loop), driven by the redesigned VM and JIT improvements. Fibonacci, Sieve, and JSON are still being optimized and will improve in upcoming 4.x releases.
+XCX 4.1 ranks 11th by geometric mean, ahead of LuaJIT, Erlang, and all scripting languages. Loop performance lands ahead of Node.js and LuaJIT, and within the same order of magnitude as Go, Nim, and C#. This is a substantial improvement over 3.1 (520ms loop), driven by the redesigned VM and JIT improvements in the 4.x line. Fibonacci, Sieve, and JSON are still being optimized and will improve in upcoming 4.x releases.
 
 ---
 
 ## Architecture
 
-XCX compiles source code through a multi-stage pipeline, all implemented in Rust (~34.1k lines including test files):
+XCX compiles source code through a multi-stage pipeline, all implemented in Rust:
 
 ```
 Source (.xcx)
@@ -166,9 +166,9 @@ Source (.xcx)
 
 **Value representation:** every value is a 16-byte `{ bits: u64, tag: u64 }` struct. The explicit integer tag means zero bitwise operations when reading the type in the interpreter. Scalars (int, float, bool, date) require zero heap allocation. Pointers to heap objects (strings, arrays, JSON, tables, fibers) are packed into `bits`. The JIT uses NaN-boxing internally (Cranelift registers hold a single NaN-boxed `u64`), with `pack_value`/`unpack_value` adapters at the boundary, which keeps CPU register usage lower and block signatures simpler in compiled traces.
 
-**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`. Fiber scoping now works correctly on all platforms; the Windows workaround present in 3.x is no longer needed.
+**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`. Fiber scoping works correctly on all platforms.
 
-**JIT**: backward jumps (loop edges) are counted per instruction pointer. After 50 visits to a given IP, trace recording starts. The trace is specialized for the runtime types seen (integer guards, float guards), then compiled by Cranelift to native code. Functions have a separate threshold: compiled from the 5th call onward. Recursive calls compile to direct native `call` instructions. After 3 guard failures at a given IP, the trace is blacklisted to prevent re-compilation of unstable paths. String operations are not currently JIT-compiled.
+**JIT**: backward jumps (loop edges) are counted per instruction pointer. After 50 visits to a given IP, trace recording starts. The threshold is configurable via `--threshold` / `--th`. The trace is specialized for the runtime types seen (integer guards, float guards), then compiled by Cranelift to native code. Functions have a separate threshold: compiled from the 5th call onward. Recursive calls compile to direct native `call` instructions. After 3 guard failures at a given IP, the trace is blacklisted to prevent re-compilation of unstable paths. String operations are not currently JIT-compiled.
 
 Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
@@ -176,13 +176,13 @@ Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
 ## Project status
 
-XCX 4.0 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
+XCX 4.1 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
 **Known rough edges:** String operation performance (no JIT coverage), and some known internal architectural issues being addressed in the 4.x line. Fibonacci, Sieve, and JSON performance are targeted for improvement.
 
-**Linux**: XCX 4.0 compiles and passes the full test suite on Linux. Primary development happens on Windows, so Linux-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+**Linux**: XCX 4.1 compiles and passes the full test suite on Linux. Primary development happens on Windows, so Linux-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -196,7 +196,6 @@ Contributions are welcome; bug reports and pull requests are appreciated. There 
 
 The 4.x line focuses on fixing known architectural issues and improving runtime correctness and performance:
 
-- **4.1**: map iteration order correctness; call-site argument register mapping fix
 - **4.2**: method dispatch refactor; compiler module consolidation
 - **4.3**: additional fixes as discovered
 - Fibonacci, Sieve, and JSON performance improvements across 4.x
@@ -263,7 +262,7 @@ xcx server.xcx
 
 **Native SQL:** declare a `table:`, connect a `database:`, call `sync()`. No ORM, no migrations file, no config. SQLite out of the box.
 
-**JSON as a first-class type:** raw literals `<<< {} >>>`, `.bind()`, `.set()`, `.inject()`. JSON is how you talk to the outside world.
+**JSON as a first-class type:** raw literals `<<< {} >>>`, `.bind()`, `.set()`, `.inject()`, `.keys()`. JSON is how you talk to the outside world.
 
 **Built-in HTTP:** client (`net.get/post/put/delete`) and server (`serve:`). Routes, handlers, CORS, and status codes, all in the language.
 
@@ -271,7 +270,11 @@ xcx server.xcx
 
 **Terminal + interactive input:** raw mode, cursor control, non-blocking key input. Enough to build games, editors, and CLI tools.
 
-**PAX package manager:** `xcx pax install pkg`. Own registry, beta stage; functional and usable, but API may still change.
+**Collections:** `array.slice(start, end)` for subarray extraction; `.size()`, `.len()`, `.count()` as interchangeable aliases. Multiple variables of the same type can be declared in a single statement: `i: a, b = 42, c;`.
+
+**PAX package manager:** `xcx pax install pkg`, `xcx pax upgrade xcx`. Own registry, beta stage; functional and usable, but API may still change.
+
+**Configurable JIT threshold:** `xcx script.xcx --threshold=100` controls how many executions before a fiber segment is JIT-compiled. Default is 50.
 
 ---
 
@@ -305,7 +308,7 @@ code --install-extension xcx-vscode-1.0.0.vsix
 
 Full docs at **[xcxlang.com](https://xcxlang.com)**
 
-Translated versions of the documentation (Polish, French, Russian, Chinese, Japanese, and more) are available at [github.com/xcxlang-org/xcx-docs](https://github.com/xcxlang-org/xcx-docs). Note that translations were generated with AI assistance and may contain inaccuracies; the English docs in this repository are always the canonical, up-to-date reference. The compiler internals documentation translated into other languages, available at [xcx-docs](https://github.com/xcxlang-org/xcx-docs), currently lags behind the XCX 4.0 architecture in some languages. The English compiler documentation linked below is fully aligned with 4.0. We are working on bringing the translations up to date. If you'd like to help, please open an issue and let us know which language you want to translate.
+Translated versions of the documentation are available at [github.com/xcxlang-org/xcx-docs](https://github.com/xcxlang-org/xcx-docs). Currently, translations cover XCX 3.1 only and have not been updated for 4.x. The English documentation in this repository is always the canonical and up-to-date reference.
 
 ### Language
 
@@ -362,11 +365,12 @@ Translated versions of the documentation (Polish, French, Russian, Chinese, Japa
 | **REPL** | |
 | REPL | [`repl/repl.md`](documentation/compiler/repl/repl.md) |
 
-### Package manager
+### Tooling
 
 | Topic | File |
 |---|---|
-| PAX manual | [`pax_manual.md`](documentation/pax/pax_manual.md) |
+| PAX manual | [`pax_manual.md`](documentation/tooling/pax_manual.md) |
+| Doc tool | [`doc_manual.md`](documentation/tooling/doc_manual.md) |
 
 ---
 

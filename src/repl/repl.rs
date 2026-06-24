@@ -14,9 +14,10 @@ pub struct Repl {
 }
 
 impl Repl {
-    pub fn new(disable_jit: bool) -> Self {
+    pub fn new(disable_jit: bool, jit_threshold: u32) -> Self {
         let mut vm = VM::new();
         vm.disable_jit = disable_jit;
+        vm.jit_threshold = jit_threshold;
         Self {
             vm: Arc::new(vm),
             symbols: SymbolTable::new(),
@@ -53,7 +54,7 @@ impl Repl {
         }
     }
 
-    fn handle_command(&self, command: &str) -> bool {
+    fn handle_command(&mut self, command: &str) -> bool {
         match command {
             "!help" => {
                 self.print_help();
@@ -68,11 +69,94 @@ impl Repl {
                 io::stdout().flush().unwrap();
                 false
             }
+            "!globals" => {
+                self.show_globals();
+                false
+            }
+            "!jit" => {
+                self.show_jit_stats();
+                false
+            }
+            "!reset" => {
+                self.reset_state();
+                false
+            }
             _ => {
                 println!("Unknown REPL command: {}. Type '!help' for available commands.", command);
                 false
             }
         }
+    }
+
+    fn show_globals(&self) {
+        let names = self.vm.global_names.read();
+        if names.is_empty() {
+            println!("No global variables defined in current session.");
+            return;
+        }
+        let globals = self.vm.globals.read();
+        
+        let mut sorted_vars: Vec<(&String, &usize)> = names.iter().collect();
+        sorted_vars.sort_by(|a, b| a.0.cmp(b.0));
+        
+        println!("+----------------------+----------+----------------------------------------+");
+        println!("| {:<20} | {:<8} | {:<38} |", "Variable Name", "Type", "Value");
+        println!("+----------------------+----------+----------------------------------------+");
+        for (name, &idx) in sorted_vars {
+            if idx < globals.len() {
+                let val = globals[idx];
+                let type_str = val.type_name();
+                let val_str = val.to_string();
+                let limit = 38;
+                let val_truncated = if val_str.len() > limit {
+                    format!("{}...", &val_str[..limit - 3])
+                } else {
+                    val_str
+                };
+                println!("| {:<20} | {:<8} | {:<38} |", name, type_str, val_truncated);
+            }
+        }
+        println!("+----------------------+----------+----------------------------------------+");
+    }
+
+    fn show_jit_stats(&self) {
+        let disabled = self.vm.disable_jit;
+        let threshold = self.vm.jit_threshold;
+        
+        let traces = self.vm.traces.read();
+        let total_traces = traces.len();
+        let mut compiled_traces = 0;
+        for trace_lock in traces.values() {
+            let trace = trace_lock.read();
+            if !trace.native_ptr.load(std::sync::atomic::Ordering::Acquire).is_null() {
+                compiled_traces += 1;
+            }
+        }
+        
+        println!("+---------------------------------------+");
+        println!("| XCX JIT Compiler Diagnostics          |");
+        println!("+---------------------------------------+");
+        println!("| JIT Enabled:    {:<21} |", if disabled { "No" } else { "Yes" });
+        println!("| Hotspot Limit:  {:<21} |", threshold);
+        println!("| Loop Traces:    {:<21} |", total_traces);
+        println!("| JIT-Compiled:   {:<21} |", compiled_traces);
+        println!("+---------------------------------------+");
+    }
+
+    fn reset_state(&mut self) {
+        let disable_jit = self.vm.disable_jit;
+        let jit_threshold = self.vm.jit_threshold;
+        
+        let mut new_vm = VM::new();
+        new_vm.disable_jit = disable_jit;
+        new_vm.jit_threshold = jit_threshold;
+        
+        self.vm = Arc::new(new_vm);
+        self.symbols = SymbolTable::new();
+        self.compiler = Compiler::new();
+        self.interner = crate::intern::Interner::new();
+        
+        println!("REPL session and VM state reset successfully.");
     }
 
     fn execute(&mut self, input: &str) {
@@ -106,11 +190,14 @@ impl Repl {
 ================================================================================
                                 XCX HELP SYSTEM
 ================================================================================
-
+ 
 REPL COMMANDS:
   !exec          Execute the current multi-line buffer
   !help          Show this help message
   !clear         Clear the terminal screen
+  !globals       Show defined global variables and their types/values
+  !jit           Show JIT compiler statistics
+  !reset         Reset REPL session and VM state
   !exit          Exit the interactive mode
 
 BASIC SYNTAX:

@@ -38,122 +38,152 @@ impl<'a> Parser<'a> {
 
         if self.current.kind == TokenKind::Colon { self.advance(); }
 
-        let name = self.parse_identifier_as_string_id(true)?;
-
-        let value = if is_map {
-            if self.current.kind == TokenKind::Equal { self.advance(); }
-            if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Map {
-                let map_lit = self.parse_map_literal()?;
-                if let ExprKind::MapLiteral { ref key_type, ref value_type, .. } = map_lit.kind {
-                    ty = Type::Map(key_type.clone(), value_type.clone());
+        if is_map || is_table || is_database {
+            let name = self.parse_identifier_as_string_id(true)?;
+            let value = if is_map {
+                if self.current.kind == TokenKind::Equal { self.advance(); }
+                if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Map {
+                    let map_lit = self.parse_map_literal()?;
+                    if let ExprKind::MapLiteral { ref key_type, ref value_type, .. } = map_lit.kind {
+                        ty = Type::Map(key_type.clone(), value_type.clone());
+                    }
+                    self.advance();
+                    self.expect_semicolon();
+                    Some(map_lit)
+                } else {
+                    let val = self.parse_expression(Precedence::Lowest)?;
+                    self.expect_semicolon();
+                    Some(val)
                 }
-                self.advance();
-                self.expect_semicolon();
-                Some(map_lit)
-            } else {
-                let val = self.parse_expression(Precedence::Lowest)?;
-                self.expect_semicolon();
-                Some(val)
-            }
-        } else if is_table {
-            if self.current.kind == TokenKind::Equal { self.advance(); }
-            if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Table {
-                let table_lit = self.parse_table_literal()?;
-                if let ExprKind::TableLiteral { ref columns, .. } = table_lit.kind {
-                    ty = Type::Table(columns.clone().into());
-                }
+            } else if is_table {
+                if self.current.kind == TokenKind::Equal { self.advance(); }
+                if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Table {
+                    let table_lit = self.parse_table_literal()?;
+                    if let ExprKind::TableLiteral { ref columns, .. } = table_lit.kind {
+                        ty = Type::Table(columns.clone().into());
+                    }
 
-                self.advance();
-                self.expect_semicolon();
-                Some(table_lit)
+                    self.advance();
+                    self.expect_semicolon();
+                    Some(table_lit)
+                } else {
+                    let val = self.parse_expression(Precedence::Lowest)?;
+                    self.expect_semicolon();
+                    Some(val)
+                }
             } else {
-                let val = self.parse_expression(Precedence::Lowest)?;
-                self.expect_semicolon();
+                if self.current.kind == TokenKind::Equal { self.advance(); }
+                if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Database {
+                    let db_lit = self.parse_database_literal()?;
+                    self.advance();
+                    self.expect_semicolon();
+                    Some(db_lit)
+                } else {
+                    let val = self.parse_expression(Precedence::Lowest)?;
+                    self.expect_semicolon();
+                    Some(val)
+                }
+            };
+
+            return Some(Stmt {
+                kind: StmtKind::VarDecl { is_const, ty: Box::new(ty), name, value: value.map(Box::new) },
+                span,
+            });
+        }
+
+        let mut decls = Vec::new();
+        loop {
+            let decl_span = self.current.span.clone();
+            let name = self.parse_identifier_as_string_id(true)?;
+            let value = if self.current.kind == TokenKind::Equal || matches!(self.current.kind, TokenKind::RawBlock(_)) {
+                if self.current.kind == TokenKind::Equal { self.advance(); }
+                let mut val = self.parse_expression(Precedence::Lowest)?;
+                if matches!(ty, Type::Json) && matches!(val.kind, ExprKind::RawBlock(_)) {
+                    let parse_method = self.interner.intern("parse");
+                    let json_target = self.interner.intern("json");
+                    val = Expr {
+                        kind: ExprKind::MethodCall {
+                            receiver: Box::new(Expr { kind: ExprKind::Identifier(json_target), span: decl_span.clone() }),
+                            method: parse_method,
+                            args: vec![Argument::Positional(val.clone())],
+                            wait_after: false,
+                        },
+                        span: decl_span.clone(),
+                    };
+                }
                 Some(val)
-            }
-        } else if is_database {
-            if self.current.kind == TokenKind::Equal { self.advance(); }
-            if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Database {
-                let db_lit = self.parse_database_literal()?;
-                self.advance();
-                self.expect_semicolon();
-                Some(db_lit)
-            } else {
-                let val = self.parse_expression(Precedence::Lowest)?;
-                self.expect_semicolon();
-                Some(val)
-            }
-        } else if self.current.kind == TokenKind::Equal || matches!(self.current.kind, TokenKind::RawBlock(_)) {
-            if self.current.kind == TokenKind::Equal { self.advance(); }
-            
-            let mut val = self.parse_expression(Precedence::Lowest)?;
-            if matches!(ty, Type::Json) && matches!(val.kind, ExprKind::RawBlock(_)) {
-                let parse_method = self.interner.intern("parse");
-                let json_target = self.interner.intern("json");
-                val = Expr {
-                    kind: ExprKind::MethodCall {
-                        receiver: Box::new(Expr { kind: ExprKind::Identifier(json_target), span: span.clone() }),
-                        method: parse_method,
-                        args: vec![Argument::Positional(val.clone())],
-                        wait_after: false,
-                    },
-                    span: span.clone(),
-                };
-            }
-            self.expect_semicolon();
-            Some(val)
-        } else if self.current.kind == TokenKind::LeftBrace {
-            let lit_span = self.current.span.clone();
-            self.advance(); 
-            if let Type::Set(st) = &ty {
-                let st = st.clone();
-                let mut elements = Vec::new();
-                let mut range = None;
-                if self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
-                    let first_expr = self.parse_expression(Precedence::Lowest)?;
-                    if self.current.kind == TokenKind::DoubleComma {
-                        self.advance();
-                        let end_expr = self.parse_expression(Precedence::Lowest)?;
-                        let mut step_expr = None;
-                        if self.current.kind == TokenKind::AtStep {
+            } else if self.current.kind == TokenKind::LeftBrace {
+                let lit_span = self.current.span.clone();
+                self.advance(); 
+                if let Type::Set(st) = &ty {
+                    let st = st.clone();
+                    let mut elements = Vec::new();
+                    let mut range = None;
+                    if self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
+                        let first_expr = self.parse_expression(Precedence::Lowest)?;
+                        if self.current.kind == TokenKind::DoubleComma {
                             self.advance();
-                            let s_expr = self.parse_expression(Precedence::Lowest)?;
-                            step_expr = Some(Box::new(s_expr));
-                        }
-                        range = Some(SetRange { start: Box::new(first_expr), end: Box::new(end_expr), step: step_expr });
-                    } else {
-                        elements.push(first_expr);
-                        if self.current.kind == TokenKind::Comma { self.advance(); }
-                        while self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
-                            if let Some(expr) = self.parse_expression(Precedence::Lowest) {
-                                elements.push(expr);
+                            let end_expr = self.parse_expression(Precedence::Lowest)?;
+                            let mut step_expr = None;
+                            if self.current.kind == TokenKind::AtStep {
+                                self.advance();
+                                let s_expr = self.parse_expression(Precedence::Lowest)?;
+                                step_expr = Some(Box::new(s_expr));
                             }
+                            range = Some(SetRange { start: Box::new(first_expr), end: Box::new(end_expr), step: step_expr });
+                        } else {
+                            elements.push(first_expr);
                             if self.current.kind == TokenKind::Comma { self.advance(); }
+                            while self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
+                                if let Some(expr) = self.parse_expression(Precedence::Lowest) {
+                                    elements.push(expr);
+                                }
+                                if self.current.kind == TokenKind::Comma { self.advance(); }
+                            }
                         }
                     }
+                    if self.current.kind == TokenKind::RightBrace { self.advance(); }
+                    Some(Expr { kind: ExprKind::SetLiteral { set_type: st, elements, range }, span: lit_span })
+                } else {
+                    let mut elements = Vec::new();
+                    while self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
+                        if let Some(expr) = self.parse_expression(Precedence::Lowest) { elements.push(expr); }
+                        if self.current.kind == TokenKind::Comma { self.advance(); }
+                    }
+                    if self.current.kind == TokenKind::RightBrace { self.advance(); }
+                    Some(Expr { kind: ExprKind::ArrayLiteral { elements }, span: lit_span })
                 }
-                if self.current.kind == TokenKind::RightBrace { self.advance(); }
-                self.expect_semicolon();
-                Some(Expr { kind: ExprKind::SetLiteral { set_type: st, elements, range }, span: lit_span })
             } else {
-                let mut elements = Vec::new();
-                while self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
-                    if let Some(expr) = self.parse_expression(Precedence::Lowest) { elements.push(expr); }
-                    if self.current.kind == TokenKind::Comma { self.advance(); }
-                }
-                if self.current.kind == TokenKind::RightBrace { self.advance(); }
-                self.expect_semicolon();
-                Some(Expr { kind: ExprKind::ArrayLiteral { elements }, span: lit_span })
-            }
-        } else {
-            self.expect_semicolon();
-            None
-        };
+                None
+            };
 
-        Some(Stmt {
-            kind: StmtKind::VarDecl { is_const, ty: Box::new(ty), name, value: value.map(Box::new) },
-            span,
-        })
+            decls.push(Stmt {
+                kind: StmtKind::VarDecl {
+                    is_const,
+                    ty: Box::new(ty.clone()),
+                    name,
+                    value: value.map(Box::new),
+                },
+                span: decl_span,
+            });
+
+            if self.current.kind == TokenKind::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        self.expect_semicolon();
+
+        if decls.len() == 1 {
+            Some(decls.pop().unwrap())
+        } else {
+            Some(Stmt {
+                kind: StmtKind::MultiVarDecl(decls),
+                span,
+            })
+        }
     }
 
     pub fn parse_include_stmt(&mut self) -> Option<Stmt> {

@@ -77,8 +77,9 @@ impl RegisterManager {
 
         // 3. Collect all other used registers.
         let mut used_regs: std::collections::BTreeSet<u8> = std::collections::BTreeSet::new();
+        let mut temp_regs = Vec::new();
         for op in bytecode.iter() {
-            Self::collect_all_regs(op, &mut used_regs);
+            Self::collect_all_regs(op, &mut used_regs, &mut temp_regs);
         }
 
         // 4. Map used registers in increasing order to preserve contiguity.
@@ -99,10 +100,10 @@ impl RegisterManager {
         if max_slot == 0 && num_params == 0 && bytecode.is_empty() { 0 } else { max_slot + 1 }
     }
 
-    fn collect_all_regs(op: &OpCode, used: &mut std::collections::BTreeSet<u8>) {
+    fn collect_all_regs(op: &OpCode, used: &mut std::collections::BTreeSet<u8>, regs: &mut Vec<u8>) {
         use super::liveness::LivenessAnalysis;
-        let mut regs = Vec::new();
-        LivenessAnalysis::collect_registers(op, &mut regs);
+        regs.clear();
+        LivenessAnalysis::collect_registers(op, regs);
         
         // Destination register
         if let Some(dst) = LivenessAnalysis::get_dst_reg(op) {
@@ -110,7 +111,7 @@ impl RegisterManager {
         }
         
         // Source registers
-        for r in regs {
+        for &r in regs.iter() {
             used.insert(r);
         }
     }

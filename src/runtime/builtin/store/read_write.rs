@@ -32,7 +32,20 @@ pub fn write(dst: u8, base: u8, locals: &mut [Value]) -> OpResult {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let res = std::fs::write(path, &*content).is_ok();
+    let mut res = std::fs::write(path, &*content).is_ok();
+    
+    #[cfg(windows)]
+    if !res {
+        if let Some(ext) = path.extension() {
+            if ext.to_string_lossy().to_lowercase() == "exe" {
+                let old_path = path.with_extension("exe.old");
+                let _ = std::fs::remove_file(&old_path);
+                if std::fs::rename(path, &old_path).is_ok() {
+                    res = std::fs::write(path, &*content).is_ok();
+                }
+            }
+        }
+    }
     
     unsafe { locals[dst as usize].dec_ref(); }
     locals[dst as usize] = Value::from_bool(res);

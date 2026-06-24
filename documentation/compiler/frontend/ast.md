@@ -58,6 +58,7 @@ pub struct Stmt {
 | Variant | Description |
 |---|---|
 | `VarDecl { is_const, ty, name, value }` | Variable or constant declaration. `value` is `None` when the variable is declared but not initialized. |
+| `MultiVarDecl(Vec<Stmt>)` | Grouped list of sequential variable declarations. Created during desugaring of multiple variable declarations (e.g., `i: a, b, c;`). |
 | `Print(expr)` | `>!` print statement. Writes to stdout. |
 | `TerminalWrite(expr)` | `terminal.write(...)` output. Distinct from print for codegen purposes. |
 | `Input(name, ty)` | `>?` read from stdin. Binds result to `name` with declared type `ty`. |

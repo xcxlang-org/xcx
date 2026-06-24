@@ -39,7 +39,6 @@ impl Executor {
             locals[dst as usize] = res;
             OpResult::Continue
         } else {
-            // eprintln!("R303: Table.get index out of bounds: {}{}", idx, self.current_span_info(ip));
             self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             OpResult::Halt
         }
@@ -66,7 +65,6 @@ impl Executor {
                     unsafe { locals[dst as usize].dec_ref(); }
                     locals[dst as usize] = val;
                 } else {
-                    // eprintln!("R304: Column not found: {}{}", col_name, self.current_span_info(ip));
                     self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     return OpResult::Halt;
                 }
@@ -102,7 +100,6 @@ impl Executor {
                     unsafe { locals[dst as usize].dec_ref(); }
                     locals[dst as usize] = res;
                 } else {
-                    // eprintln!("R304: Column not found for set: {}{}", col_name, self.current_span_info(ip));
                     self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     return OpResult::Halt;
                 }
@@ -129,7 +126,6 @@ impl Executor {
                 locals[dst as usize] = res;
             }
             _ => { 
-                // eprintln!("Method {:?} not supported for Row{}", kind, self.current_span_info(ip)); 
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 return OpResult::Halt; 
             }
@@ -155,7 +151,6 @@ impl Executor {
             locals[dst as usize] = val;
             OpResult::Continue
         } else {
-            // eprintln!("R304: Column not found: {}{}", col_name, self.current_span_info(ip));
             self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             OpResult::Halt
         }

@@ -1,0 +1,9 @@
+--- TEST: RUN-002
+--- Area: Error Handling
+--- Priority: high
+--- Name: R305 Invalid JSON Parser
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+
+json: obj = json.parse("{ niepoprawny json }"); --- Halt (R305)

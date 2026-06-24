@@ -1,0 +1,12 @@
+--- TEST: RUN-004
+--- Area: Error Handling
+--- Priority: high
+--- Name: R307 Empty replace pattern
+--- Expect:
+---   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+--- Runner: expect_fatal_exit = true
+
+func trigger_replace(s: target) {
+    s: result = target.replace("", "x"); --- Halt (R307)
+};
+trigger_replace("hello");

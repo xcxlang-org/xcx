@@ -28,8 +28,8 @@ The emission routines are split by operation groups under `src/jit/`:
  │emit_load_store│          │  emit_object  │         │   emit_misc   │
  ├───────────────┤          ├───────────────┤         ├───────────────┤
  │ Const Loading,│          │   Disk I/O,   │         │ Environment,  │
- │ Variable Move │          │  Database,  │         │ Halt/Fatal,   │
- │ & Refcounting │          │ Table Parsing │         │   Printing    │
+ │ Variable Move │          │   Database,   │         │ Halt/Fatal,   │
+ │ & Refcounting │          │  Table Parsing│         │   Printing    │
  └───────────────┘          └───────────────┘         └───────────────┘
 ```
 
@@ -47,7 +47,7 @@ Arithmetic operations compile through fast-path primitives if types are statical
 ## 2. Call Emitters (`emit_call.rs`)
 
 Calculates call offsets and invokes local JIT frames or VM wrappers.
-- **`emit_call`:** Routes function calls. If calling a JIT-compiled local function matching target signatures, it generates direct local recursive JIT-to-JIT call instructions. If calling uncompiled routines, it invokes `xcx_jit_call_recursive`.
+- **`emit_call`:** Routes function calls. For local, matching-signature functions, it generates direct local recursive JIT-to-JIT calls. For other functions, the compiler emits a fast-path direct `call_indirect` to the callee's JIT memory pointer if compiled. Otherwise, it emits a slow-path FFI call to `xcx_jit_call_recursive`.
 - **`emit_method_call` & `emit_method_call_custom`:** Resolves method dispatch targets by calling `xcx_jit_method_dispatch` or invoking FFI handlers.
 
 ---
@@ -84,3 +84,11 @@ Links variables to tables, disk arrays, and structured I/O endpoints:
 Handles environment lookups and fatal errors.
 - **Halt Handling (`emit_halt_alert`, `emit_halt_error`, `emit_halt_fatal`):** Halts compiler execution, registers error context fields, and executes clean return patterns.
 - **OS Environment:** Accesses variables and startup scripts (`emit_env_get`, `emit_env_args`).
+
+---
+
+## 7. Eager JIT Compilation Pre-Pass
+
+Before IR generation begins for a method or fiber segment, the JIT scans its bytecode for `OpCode::Call` instructions to eagerly compile dependencies:
+- **Callee Pre-compilation:** Statically pre-compiling callees ensures that the target `jit_ptr` is resolved and ready in the fast-path direct `call_indirect` check, preventing slow FFI roundtrips.
+- **Compiler Cycle Prevention:** Uses a thread-safe compiler state context tracker (`in_progress: HashSet<usize>` on the JIT compiler struct) containing bytecode chunk indexes currently undergoing compilation. If a circular call reference chain is encountered during eager compilation, the compiler immediately yields a null JIT pointer, safely fallbacking to the interpreter linkage for runtime resolution.

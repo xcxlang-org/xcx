@@ -65,6 +65,7 @@ impl Executor {
                 let mut rows_iter = match stmt.query(rusql_params) {
                     Ok(i) => i,
                     Err(e) => {
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         eprintln!("R403: DB query error: {}{}", e, self.current_span_info(ip));
                         return OpResult::Halt;
                     }

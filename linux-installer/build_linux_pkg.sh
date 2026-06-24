@@ -26,8 +26,8 @@ fi
 chmod +x "$DIST_DIR/xcx"
 
 mkdir -p "$DIST_DIR/lib"
-cp "$PROJECT_ROOT/xcx-installer-pkg/lib/math.xcx" "$DIST_DIR/lib/" 2>/dev/null || true
-cp "$PROJECT_ROOT/xcx-installer-pkg/lib/pax.xcx" "$DIST_DIR/lib/" 2>/dev/null || true
+cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/mathlib" "$DIST_DIR/lib/" 2>/dev/null || true
+cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/pax" "$DIST_DIR/lib/" 2>/dev/null || true
 cp -r "$PROJECT_ROOT/lib/doc" "$DIST_DIR/lib/"
 
 mkdir -p "$DIST_DIR/resources"
@@ -37,6 +37,6 @@ cp "$PROJECT_ROOT/xcx-installer-pkg/resources/README.txt" "$DIST_DIR/resources/"
 
 echo "Creating tarball..."
 cd "$SCRIPT_DIR/dist"
-tar -czvf "xcx-installer-linux-v4.0.tar.gz" "xcx-installer-linux"
+tar -czvf "xcx-installer-linux-v4.1.tar.gz" "xcx-installer-linux"
 
-echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-linux-v4.0.tar.gz"
+echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-linux-v4.1.tar.gz"

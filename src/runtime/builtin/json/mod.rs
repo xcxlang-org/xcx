@@ -231,7 +231,6 @@ impl Executor {
         _ip: usize,
         locals: &mut [Value],
         _vm_arc: &Arc<VM>,
-        _base: u8,
     ) -> OpResult {
         let path_borrow = std::str::from_utf8(method_name_bytes).ok();
         let path_temp;
