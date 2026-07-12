@@ -1,4 +1,6 @@
-<img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560" align="center">
+<p align="center">
+  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560">
+</p>
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
