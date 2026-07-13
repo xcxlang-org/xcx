@@ -30,14 +30,14 @@ chmod +x "$DIST_DIR/xcx"
 xattr -d com.apple.quarantine "$DIST_DIR/xcx" 2>/dev/null || true
 
 mkdir -p "$DIST_DIR/lib"
-cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/mathlib" "$DIST_DIR/lib/" 2>/dev/null || true
-cp -r "$PROJECT_ROOT/xcx-installer-pkg/lib/pax" "$DIST_DIR/lib/" 2>/dev/null || true
+cp -r "$PROJECT_ROOT/lib/mathlib" "$DIST_DIR/lib/" 2>/dev/null || cp -r "$PROJECT_ROOT/Windows/lib/mathlib" "$DIST_DIR/lib/" 2>/dev/null || true
+cp -r "$PROJECT_ROOT/lib/pax" "$DIST_DIR/lib/" 2>/dev/null || cp -r "$PROJECT_ROOT/Windows/lib/pax" "$DIST_DIR/lib/" 2>/dev/null || true
 cp -r "$PROJECT_ROOT/lib/doc" "$DIST_DIR/lib/" 2>/dev/null || true
-cp "$PROJECT_ROOT/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || cp "$PROJECT_ROOT/xcx-installer-pkg/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || true
+cp "$PROJECT_ROOT/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || cp "$PROJECT_ROOT/Windows/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || true
 
 mkdir -p "$DIST_DIR/resources"
-cp "$PROJECT_ROOT/xcx-installer-pkg/resources/LICENSE.txt" "$DIST_DIR/resources/" 2>/dev/null || true
-cp "$PROJECT_ROOT/xcx-installer-pkg/resources/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
+cp "$PROJECT_ROOT/Windows/resources/LICENSE.txt" "$DIST_DIR/resources/" 2>/dev/null || true
+cp "$PROJECT_ROOT/Windows/resources/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
 # Note: no icons folder - not used on macOS (no MIME/UTI registration)
 
 echo "Creating tarball..."
