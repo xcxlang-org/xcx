@@ -20,5 +20,10 @@ jobs:
       - name: Cache cargo registry & build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install mold linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold
+
       - name: Run tests (release, builds + tests in one go)
         run: cargo test --release --verbose
