@@ -11,7 +11,7 @@ echo "Building XCX macOS Distribution Package..."
 rm -rf "$SCRIPT_DIR/dist"
 mkdir -p "$DIST_DIR"
 
-cp "$SCRIPT_DIR/install-macos.sh" "$DIST_DIR/install.sh"
+cp "$SCRIPT_DIR/install.sh" "$DIST_DIR/install.sh"
 chmod +x "$DIST_DIR/install.sh"
 
 if [ -f "$PROJECT_ROOT/target/release/xcx" ]; then
