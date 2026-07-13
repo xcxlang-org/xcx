@@ -1255,9 +1255,25 @@ mod stability_suite {
                 eprintln!("FAIL: {} ({})\nReason: {}\nSTDOUT:\n{}\nSTDERR:\n{}", meta.name, meta.id, reason, stdout, stderr);
             }
         }
-
         cleanup_db_files(&project_root);
         cleanup_db_files(&temp_dir);
+
+        #[cfg(target_os = "windows")]
+        {
+            let script_path = temp_dir.join("xcx_cleanup.ps1");
+            let script = format!(
+                "Start-Sleep -Seconds 3\nRemove-Item -Path '{}' -Recurse -Force -ErrorAction SilentlyContinue\nGet-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue\nGet-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue\nRemove-Item $PSCommandPath -Force -ErrorAction SilentlyContinue",
+                project_root.join("test_output").display(),
+                project_root.display(),
+                temp_dir.display()
+            );
+            let _ = std::fs::write(&script_path, script);
+            if let Some(path_str) = script_path.to_str() {
+                let _ = std::process::Command::new("powershell")
+                    .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", path_str])
+                    .spawn();
+            }
+        }
 
         println!("Stability tests summary: {} passed, {} failed, {} skipped", passed, failed, skipped);
         assert_eq!(failed, 0, "Some stability tests failed");
