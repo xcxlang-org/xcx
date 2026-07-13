@@ -1038,6 +1038,11 @@ mod stability_suite {
     }
 
     fn collect_db_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+            if name == "target" || name == ".git" || name == ".github" || name == "Linux" || name == "MacOS" || name == "Windows" || name == "linux" || name == "macOS" {
+                return;
+            }
+        }
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => return,
@@ -1260,26 +1265,15 @@ mod stability_suite {
 
         #[cfg(target_os = "windows")]
         {
-            let script_path = project_root.join("tests").join("xcx_cleanup.ps1");
-            if let (Some(path_str), Some(proj_str), Some(temp_str)) = (
-                script_path.to_str(),
-                project_root.to_str(),
-                temp_dir.to_str(),
-            ) {
-                let pid_str = std::process::id().to_string();
-                let _ = std::process::Command::new("powershell")
-                    .args(&[
-                        "-NoProfile",
-                        "-NonInteractive",
-                        "-WindowStyle", "Hidden",
-                        "-ExecutionPolicy", "Bypass",
-                        "-File", path_str,
-                        "-ProjectRoot", proj_str,
-                        "-TempDir", temp_str,
-                        "-ParentPid", &pid_str,
-                    ])
-                    .spawn();
-            }
+            let script = format!(
+                "Start-Sleep -Seconds 3; Remove-Item -Path '{}' -Recurse -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue",
+                project_root.join("test_output").display(),
+                project_root.display(),
+                temp_dir.display()
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+                .spawn();
         }
 
         println!("Stability tests summary: {} passed, {} failed, {} skipped", passed, failed, skipped);
