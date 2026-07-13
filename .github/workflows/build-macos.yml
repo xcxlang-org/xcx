@@ -25,11 +25,11 @@ jobs:
 
       - name: Build distribution package (tar.gz)
         run: |
-          chmod +x ./build-macos-package.sh   # adjust path to match the script's location in your repo
-          ./build-macos-package.sh
+          chmod +x ./MacOS/build_macOS_pkg.sh
+          ./MacOS/build_macOS_pkg.sh
 
       - name: Upload macOS package artifact
         uses: actions/upload-artifact@v4
         with:
           name: xcx-installer-macos
-          path: dist/xcx-installer-macos-v4.1.tar.gz   # adjust path to match SCRIPT_DIR in build-macos-package.sh
+          path: MacOS/dist/xcx-installer-macos-v4.1.tar.gz
