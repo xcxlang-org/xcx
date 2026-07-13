@@ -1002,6 +1002,66 @@ mod stability_suite {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
+    fn force_remove_file(path: &Path) {
+        const MAX_ATTEMPTS: u32 = 10;
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
+
+        if !path.exists() {
+            return;
+        }
+
+        for attempt in 1..=MAX_ATTEMPTS {
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = std::fs::set_permissions(path, perms);
+                }
+            }
+
+            match std::fs::remove_file(path) {
+                Ok(_) => return,
+                Err(e) => {
+                    if attempt == MAX_ATTEMPTS {
+                        eprintln!(
+                            "force_remove_file failed for {} after {} attempts: {}",
+                            path.display(),
+                            MAX_ATTEMPTS,
+                            e
+                        );
+                    } else {
+                        std::thread::sleep(RETRY_DELAY);
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_db_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                collect_db_files(&p, out);
+            } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
+                    out.push(p);
+                }
+            }
+        }
+    }
+
+    fn cleanup_db_files(dir: &Path) {
+        let mut files = Vec::new();
+        collect_db_files(dir, &mut files);
+        for f in files {
+            force_remove_file(&f);
+        }
+    }
+
     struct TestMeta {
         id: String,
         area: String,
@@ -1082,20 +1142,8 @@ mod stability_suite {
     #[test]
     #[serial_test::serial]
     fn run_xcx_stability_suite() {
-        #[cfg(not(target_os = "windows"))]
-        {
-            let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            if let Ok(entries) = std::fs::read_dir(&project_root) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                        if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
-                            let _ = std::fs::remove_file(&p);
-                        }
-                    }
-                }
-            }
-        }
+        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        cleanup_db_files(&project_root);
         let mut base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         base_dir.push("tests");
         base_dir.push("cli_tests");
@@ -1207,6 +1255,9 @@ mod stability_suite {
                 eprintln!("FAIL: {} ({})\nReason: {}\nSTDOUT:\n{}\nSTDERR:\n{}", meta.name, meta.id, reason, stdout, stderr);
             }
         }
+
+        cleanup_db_files(&project_root);
+        cleanup_db_files(&temp_dir);
 
         println!("Stability tests summary: {} passed, {} failed, {} skipped", passed, failed, skipped);
         assert_eq!(failed, 0, "Some stability tests failed");
