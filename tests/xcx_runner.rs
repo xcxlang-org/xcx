@@ -1266,6 +1266,7 @@ mod stability_suite {
                 project_root.to_str(),
                 temp_dir.to_str(),
             ) {
+                let pid_str = std::process::id().to_string();
                 let _ = std::process::Command::new("powershell")
                     .args(&[
                         "-NoProfile",
@@ -1275,6 +1276,7 @@ mod stability_suite {
                         "-File", path_str,
                         "-ProjectRoot", proj_str,
                         "-TempDir", temp_str,
+                        "-ParentPid", &pid_str,
                     ])
                     .spawn();
             }
