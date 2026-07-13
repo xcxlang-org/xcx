@@ -22,3 +22,14 @@ jobs:
 
       - name: Run tests (release, builds + tests in one go)
         run: cargo test --release --verbose
+
+      - name: Build distribution package (tar.gz)
+        run: |
+          chmod +x ./build-macos-package.sh   # adjust path to match the script's location in your repo
+          ./build-macos-package.sh
+
+      - name: Upload macOS package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcx-installer-macos
+          path: dist/xcx-installer-macos-v4.1.tar.gz   # adjust path to match SCRIPT_DIR in build-macos-package.sh
