@@ -1280,3 +1280,4 @@ mod stability_suite {
         assert_eq!(failed, 0, "Some stability tests failed");
     }
 }
+
