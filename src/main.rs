@@ -6,18 +6,18 @@ use std::path::Path;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use xcx_compiler::frontend::parser::Parser;
-use xcx_compiler::frontend::parser::expander::Expander;
-use xcx_compiler::sema::{Checker, SymbolTable};
-use xcx_compiler::compiler::Compiler;
-use xcx_compiler::vm::{VM, SharedContext, SHUTDOWN};
-use xcx_compiler::error::Reporter;
+use xcx::frontend::parser::Parser;
+use xcx::frontend::parser::expander::Expander;
+use xcx::sema::{Checker, SymbolTable};
+use xcx::compiler::Compiler;
+use xcx::vm::{VM, SharedContext, SHUTDOWN};
+use xcx::error::Reporter;
 
 struct TerminalCleanup;
 
 impl Drop for TerminalCleanup {
     fn drop(&mut self) {
-        if xcx_compiler::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
+        if xcx::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
             let _ = crossterm::terminal::disable_raw_mode();
         }
     }
@@ -29,7 +29,7 @@ fn main() {
     ctrlc::set_handler(move || {
         SHUTDOWN.store(true, std::sync::atomic::Ordering::SeqCst);
         println!("\n[XCX] Shutdown signal received. Cleaning up...");
-        if xcx_compiler::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
+        if xcx::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
             let _ = crossterm::terminal::disable_raw_mode();
         }
         std::process::exit(0);
@@ -132,7 +132,7 @@ fn main() {
     }
 
     if args.len() < 2 {
-        let mut repl = xcx_compiler::repl::Repl::new(disable_jit, jit_threshold);
+        let mut repl = xcx::repl::Repl::new(disable_jit, jit_threshold);
         repl.run();
         return;
     }

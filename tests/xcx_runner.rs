@@ -1,11 +1,11 @@
 use serial_test::serial;
 use std::path::PathBuf;
-use xcx_compiler::frontend::parser::Parser;
-use xcx_compiler::frontend::parser::expander::Expander;
-use xcx_compiler::sema::Checker;
-use xcx_compiler::sema::SymbolTable;
-use xcx_compiler::compiler::Compiler as XCXCompiler;
-use xcx_compiler::vm::{VM, SharedContext};
+use xcx::frontend::parser::Parser;
+use xcx::frontend::parser::expander::Expander;
+use xcx::sema::Checker;
+use xcx::sema::SymbolTable;
+use xcx::compiler::Compiler as XCXCompiler;
+use xcx::vm::{VM, SharedContext};
 use std::sync::Arc;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1108,7 +1108,7 @@ mod stability_suite {
         let mut xcx_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         xcx_bin.push("target");
         xcx_bin.push("release");
-        xcx_bin.push("xcx-compiler.exe");
+        xcx_bin.push("xcx.exe");
 
         if !xcx_bin.exists() {
             xcx_bin.set_extension("");

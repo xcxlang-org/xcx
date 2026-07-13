@@ -4,9 +4,9 @@ use crate::vm::core::vm::{VM, OpResult};
 use crate::vm::core::executor::Executor;
 
 #[cfg(windows)]
-const BIN_NAME: &str = "xcx-compiler.exe";
+const BIN_NAME: &str = "xcx.exe";
 #[cfg(not(windows))]
-const BIN_NAME: &str = "xcx-compiler";
+const BIN_NAME: &str = "xcx";
 
 /// Prints a value to stdout.
 pub fn print_val(src: u8, locals: &[Value]) -> OpResult {

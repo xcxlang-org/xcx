@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::thread;
-use xcx_compiler::vm::object::{JsonObj, JsonVal};
+use xcx::vm::object::{JsonObj, JsonVal};
 
 #[test]
 fn test_json_concurrency_race() {
@@ -37,7 +37,7 @@ fn test_json_concurrency_race() {
                     if buf.is_empty() {
                         let mut serialize_buf = String::with_capacity(256);
                         json_clone.root.to_string_buf(&mut serialize_buf);
-                        let string_obj = Arc::new(xcx_compiler::vm::object::StringObj::new(serialize_buf.into_bytes()));
+                        let string_obj = Arc::new(xcx::vm::object::StringObj::new(serialize_buf.into_bytes()));
                         
                         let mut lock = json_clone.cached_str.lock();
                         if json_clone.version.load(std::sync::atomic::Ordering::Acquire) == ver {

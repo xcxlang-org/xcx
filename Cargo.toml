@@ -1,5 +1,5 @@
 [package]
-name = "xcx-compiler"
+name = "xcx"
 version = "4.2.0"
 edition = "2024"
 
