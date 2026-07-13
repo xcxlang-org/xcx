@@ -111,6 +111,7 @@ pub enum OpCode {
 
     // Collections
     ArrayInit { dst: u8, base: u8, count: u32 },
+    BoolArrayInit { dst: u8 },
     SetInit { dst: u8, base: u8, count: u32 },
     MapInit { dst: u8, base: u8, count: u32 },
     TableInit { dst: u8, skeleton_idx: u32, base: u8, row_count: u32, col_count: u32 },
@@ -191,6 +192,8 @@ pub enum OpCode {
     DecVar { idx: u32 },
     IncVarLoopNext { g_idx: u32, reg: u8, limit_reg: u8, target: u32 },
     DecVarLoopPrev { g_idx: u32, reg: u8, limit_reg: u8, target: u32 },
+    StrAppendVar { var_idx: u32, src: u8 },
+    StrAppendLocal { local_idx: u8, src: u8 },
     ArrayLoopNext { idx_reg: u8, size_reg: u8, target: u32 },
     DatabaseInit { dst: u8, engine_src: u8, path_src: u8, tables_base_reg: u8, table_count: u32 },
     MethodCallNamed { dst: u8, kind: MethodKind, base: u8, arg_count: u8, names_idx: u32 },
@@ -201,6 +204,8 @@ pub enum OpCode {
     SetIndex { container: u8, index: u8, src: u8 },
     GetMember { dst: u8, container: u8, name_idx: u32 },
     SetMember { container: u8, name_idx: u32, src: u8 },
+    StrAppendMember { container: u8, name_idx: u32, src: u8 },
+    StrAppendElement { container: u8, index: u8, src: u8 },
 
     RowGet { dst: u8, row_reg: u8, col_idx: u16 },
     TableIter { tbl_reg: u8, idx_reg: u8, row_reg: u8, limit_reg: u8, target: u32 },
@@ -210,21 +215,337 @@ pub enum OpCode {
     TableInitRow { tbl_dst: u8, base: u8, col_count: u8 },
 }
 
+impl OpCode {
+    pub fn jump_target(&self) -> Option<u32> {
+        match self {
+            OpCode::Jump { target } |
+            OpCode::JumpIfFalse { target, .. } |
+            OpCode::JumpIfTrue { target, .. } |
+            OpCode::LoopNext { target, .. } |
+            OpCode::LoopPrev { target, .. } |
+            OpCode::IncLocalLoopNext { target, .. } |
+            OpCode::DecLocalLoopPrev { target, .. } |
+            OpCode::IncVarLoopNext { target, .. } |
+            OpCode::DecVarLoopPrev { target, .. } |
+            OpCode::ArrayLoopNext { target, .. } |
+            OpCode::TableIter { target, .. } => Some(*target),
+            _ => None,
+        }
+    }
+
+    pub fn is_unconditional_jump(&self) -> bool {
+        match self {
+            OpCode::Jump { .. } => true,
+            _ => false,
+        }
+    }
+    
+    pub fn is_return(&self) -> bool {
+        match self {
+            OpCode::Return { .. } | OpCode::ReturnVoid => true,
+            _ => false,
+        }
+    }
+    
+    pub fn is_halt(&self) -> bool {
+        match self {
+            OpCode::Halt => true,
+            _ => false,
+        }
+    }
+
+    pub fn dst_reg(&self) -> Option<u8> {
+        match self {
+            OpCode::Move { dst, .. } |
+            OpCode::LoadConst { dst, .. } |
+            OpCode::Add { dst, .. } |
+            OpCode::Sub { dst, .. } |
+            OpCode::Mul { dst, .. } |
+            OpCode::Div { dst, .. } |
+            OpCode::Mod { dst, .. } |
+            OpCode::Pow { dst, .. } |
+            OpCode::Equal { dst, .. } |
+            OpCode::NotEqual { dst, .. } |
+            OpCode::Greater { dst, .. } |
+            OpCode::Less { dst, .. } |
+            OpCode::GreaterEqual { dst, .. } |
+            OpCode::LessEqual { dst, .. } |
+            OpCode::And { dst, .. } |
+            OpCode::Or { dst, .. } |
+            OpCode::Has { dst, .. } |
+            OpCode::SetUnion { dst, .. } |
+            OpCode::SetIntersection { dst, .. } |
+            OpCode::SetDifference { dst, .. } |
+            OpCode::SetSymDifference { dst, .. } |
+            OpCode::IntConcat { dst, .. } |
+            OpCode::Not { dst, .. } |
+            OpCode::CastInt { dst, .. } |
+            OpCode::CastFloat { dst, .. } |
+            OpCode::CastString { dst, .. } |
+            OpCode::CastBool { dst, .. } |
+            OpCode::Neg { dst, .. } |
+            OpCode::Typeof { dst, .. } |
+            OpCode::RandomChoice { dst, .. } |
+            OpCode::JsonParse { dst, .. } |
+            OpCode::EnvGet { dst, .. } |
+            OpCode::TableCloneSkeleton { dst, .. } |
+            OpCode::Input { dst, .. } |
+            OpCode::TerminalExit { dst, .. } |
+            OpCode::TerminalClear { dst, .. } |
+            OpCode::TerminalRaw { dst, .. } |
+            OpCode::TerminalNormal { dst, .. } |
+            OpCode::TerminalCursor { dst, .. } |
+            OpCode::TerminalRun { dst, .. } |
+            OpCode::TerminalMove { dst, .. } |
+            OpCode::TerminalWrite { dst, .. } |
+            OpCode::InputKey { dst, .. } |
+            OpCode::InputKeyWait { dst, .. } |
+            OpCode::InputReady { dst, .. } |
+            OpCode::DateNow { dst, .. } |
+            OpCode::EnvArgs { dst, .. } |
+            OpCode::Call { dst, .. } |
+            OpCode::MethodCall { dst, .. } |
+            OpCode::MethodCallNamed { dst, .. } |
+            OpCode::MethodCallCustom { dst, .. } |
+            OpCode::FiberCreate { dst, .. } |
+            OpCode::ArrayInit { dst, .. } |
+            OpCode::BoolArrayInit { dst } |
+            OpCode::SetInit { dst, .. } |
+            OpCode::MapInit { dst, .. } |
+            OpCode::TableInit { dst, .. } |
+            OpCode::TableBegin { dst, .. } |
+            OpCode::SetRange { dst, .. } |
+            OpCode::RandomInt { dst, .. } |
+            OpCode::RandomFloat { dst, .. } |
+            OpCode::StoreWrite { dst, .. } |
+            OpCode::StoreRead { dst, .. } |
+            OpCode::StoreAppend { dst, .. } |
+            OpCode::StoreExists { dst, .. } |
+            OpCode::StoreDelete { dst, .. } |
+            OpCode::StoreList { dst, .. } |
+            OpCode::StoreIsDir { dst, .. } |
+            OpCode::StoreSize { dst, .. } |
+            OpCode::StoreMkdir { dst, .. } |
+            OpCode::StoreGlob { dst, .. } |
+            OpCode::StoreZip { dst, .. } |
+            OpCode::StoreUnzip { dst, .. } |
+            OpCode::JsonBindLocal { dst, .. } |
+            OpCode::JsonInjectLocal { table_reg: dst, .. } |
+            OpCode::YieldWithTarget { dst, .. } |
+            OpCode::HttpCall { dst, .. } |
+            OpCode::HttpRequest { dst, .. } |
+            OpCode::HttpRespond { dst, .. } |
+            OpCode::CryptoHash { dst, .. } |
+            OpCode::CryptoVerify { dst, .. } |
+            OpCode::CryptoToken { dst, .. } |
+            OpCode::GetIndex { dst, .. } |
+            OpCode::GetMember { dst, .. } |
+            OpCode::RowGet { dst, .. } |
+            OpCode::MakeClosure { dst, .. } |
+            OpCode::IncLocal { reg: dst } |
+            OpCode::LoopNext { reg: dst, .. } |
+            OpCode::IncLocalLoopNext { reg: dst, .. } |
+            OpCode::IncVarLoopNext { reg: dst, .. } |
+            OpCode::ArrayLoopNext { idx_reg: dst, .. } |
+            OpCode::DatabaseInit { dst, .. } => Some(*dst),
+            _ => None,
+        }
+    }
+
+    pub fn src_regs(&self, regs: &mut Vec<u8>) {
+        match self {
+            OpCode::Move { src, .. } => regs.push(*src),
+            OpCode::Add { src1, src2, .. } |
+            OpCode::Sub { src1, src2, .. } |
+            OpCode::Mul { src1, src2, .. } |
+            OpCode::Div { src1, src2, .. } |
+            OpCode::Mod { src1, src2, .. } |
+            OpCode::Pow { src1, src2, .. } |
+            OpCode::Equal { src1, src2, .. } |
+            OpCode::NotEqual { src1, src2, .. } |
+            OpCode::Greater { src1, src2, .. } |
+            OpCode::Less { src1, src2, .. } |
+            OpCode::GreaterEqual { src1, src2, .. } |
+            OpCode::LessEqual { src1, src2, .. } |
+            OpCode::And { src1, src2, .. } |
+            OpCode::Or { src1, src2, .. } |
+            OpCode::Has { src1, src2, .. } |
+            OpCode::SetUnion { src1, src2, .. } |
+            OpCode::SetIntersection { src1, src2, .. } |
+            OpCode::SetDifference { src1, src2, .. } |
+            OpCode::SetSymDifference { src1, src2, .. } |
+            OpCode::IntConcat { src1, src2, .. } => {
+                regs.push(*src1);
+                regs.push(*src2);
+            }
+            OpCode::Not { src, .. } |
+            OpCode::JumpIfFalse { src, .. } |
+            OpCode::JumpIfTrue { src, .. } |
+            OpCode::Print { src, .. } |
+            OpCode::HaltAlert { src, .. } |
+            OpCode::HaltError { src, .. } |
+            OpCode::HaltFatal { src, .. } |
+            OpCode::Return { src, .. } |
+            OpCode::Yield { src, .. } |
+            OpCode::YieldWithTarget { src, .. } |
+            OpCode::Wait { src, .. } |
+            OpCode::CastInt { src, .. } |
+            OpCode::CastFloat { src, .. } |
+            OpCode::CastString { src, .. } |
+            OpCode::CastBool { src, .. } |
+            OpCode::Neg { src, .. } |
+            OpCode::Typeof { src, .. } |
+            OpCode::SetName { src, .. } |
+            OpCode::SetVar { src, .. } |
+            OpCode::RandomChoice { src, .. } |
+            OpCode::JsonParse { src, .. } |
+            OpCode::EnvGet { src, .. } |
+            OpCode::TableCloneSkeleton { src, .. } |
+            OpCode::TerminalWrite { src, .. } => {
+                regs.push(*src);
+            }
+            
+            OpCode::TerminalRun { cmd_src, .. } => { regs.push(*cmd_src); }
+            OpCode::TerminalMove { x_src, y_src, .. } => { regs.push(*x_src); regs.push(*y_src); }
+
+            OpCode::Call { base, arg_count, .. } |
+            OpCode::FiberCreate { base, arg_count, .. } => {
+                let start = *base as usize;
+                let end = start + *arg_count as usize;
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+            OpCode::MethodCall { base, arg_count, .. } |
+            OpCode::MethodCallNamed { base, arg_count, .. } |
+            OpCode::MethodCallCustom { base, arg_count, .. } => {
+                let start = *base as usize;
+                let end = start + *arg_count as usize + 1;
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+
+            OpCode::ArrayInit { base, count, .. } |
+            OpCode::SetInit { base, count, .. } => {
+                let start = *base as usize;
+                let end = start + *count as usize;
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+            OpCode::MapInit { base, count, .. } => {
+                let start = *base as usize;
+                let end = start + (*count as usize * 2);
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+            
+            OpCode::TableInit { base, row_count, col_count, .. } => {
+                let start = *base as usize;
+                let end = start + (*row_count as usize * *col_count as usize);
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+            
+            OpCode::TableInitRow { tbl_dst, base, col_count } => {
+                regs.push(*tbl_dst);
+                let start = *base as usize;
+                let end = start + *col_count as usize;
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+
+            OpCode::SetRange { start, end, step, .. } |
+            OpCode::RandomInt { min: start, max: end, step, .. } |
+            OpCode::RandomFloat { min: start, max: end, step, .. } => { regs.push(*start); regs.push(*end); regs.push(*step); }
+            
+            OpCode::StoreWrite { base, .. } |
+            OpCode::StoreRead { base, .. } |
+            OpCode::StoreAppend { base, .. } |
+            OpCode::StoreExists { base, .. } |
+            OpCode::StoreDelete { base, .. } |
+            OpCode::StoreList { base, .. } |
+            OpCode::StoreIsDir { base, .. } |
+            OpCode::StoreSize { base, .. } |
+            OpCode::StoreMkdir { base, .. } |
+            OpCode::StoreGlob { base, .. } |
+            OpCode::StoreZip { base, .. } |
+            OpCode::StoreUnzip { base, .. } => { regs.push(*base); }
+
+            OpCode::JsonBind { json_src, path_src, .. } |
+            OpCode::JsonBindLocal { json_src, path_src, .. } => { regs.push(*json_src); regs.push(*path_src); }
+
+            OpCode::JsonInject { json_src, mapping_src, .. } |
+            OpCode::JsonInjectLocal { json_src, mapping_src, .. } => { regs.push(*json_src); regs.push(*mapping_src); }
+
+            OpCode::JsonFastGetPush { json_src, path_src, val_src } => { regs.push(*json_src); regs.push(*path_src); regs.push(*val_src); }
+
+            OpCode::HttpCall { url_src, body_src, .. } => { regs.push(*url_src); regs.push(*body_src); }
+            OpCode::HttpRequest { arg_src, .. } => { regs.push(*arg_src); }
+            OpCode::HttpRespond { status_src, body_src, headers_src, .. } => { regs.push(*status_src); regs.push(*body_src); regs.push(*headers_src); }
+            OpCode::HttpServe { port_src, host_src, workers_src, routes_src, .. } => { regs.push(*port_src); regs.push(*host_src); regs.push(*workers_src); regs.push(*routes_src); }
+            
+            OpCode::CryptoHash { pass_src, alg_src, .. } => { regs.push(*pass_src); regs.push(*alg_src); }
+            OpCode::CryptoVerify { pass_src, hash_src, alg_src, .. } => { regs.push(*pass_src); regs.push(*hash_src); regs.push(*alg_src); }
+            OpCode::CryptoToken { len_src, .. } => { regs.push(*len_src); }
+            
+            OpCode::IncLocal { reg } => { regs.push(*reg); }
+            OpCode::LoopNext { reg, limit_reg, .. } |
+            OpCode::LoopPrev { reg, limit_reg, .. } => { regs.push(*reg); regs.push(*limit_reg); }
+            OpCode::IncLocalLoopNext { inc_reg, reg, limit_reg, .. } => { regs.push(*inc_reg); regs.push(*reg); regs.push(*limit_reg); }
+            OpCode::DecLocalLoopPrev { dec_reg, reg, limit_reg, .. } => { regs.push(*dec_reg); regs.push(*reg); regs.push(*limit_reg); }
+            OpCode::IncVarLoopNext { reg, limit_reg, .. } |
+            OpCode::DecVarLoopPrev { reg, limit_reg, .. } => { regs.push(*reg); regs.push(*limit_reg); }
+            OpCode::StrAppendVar { src, .. } |
+            OpCode::StrAppendLocal { src, .. } => { regs.push(*src); }
+            OpCode::ArrayLoopNext { idx_reg, size_reg, .. } => { regs.push(*idx_reg); regs.push(*size_reg); }
+            
+            OpCode::DatabaseInit { engine_src, path_src, tables_base_reg, .. } => { regs.push(*engine_src); regs.push(*path_src); regs.push(*tables_base_reg); }
+
+            OpCode::GetIndex { container, index, .. } => { regs.push(*container); regs.push(*index); }
+            OpCode::SetIndex { container, index, src } |
+            OpCode::StrAppendElement { container, index, src } => { regs.push(*container); regs.push(*index); regs.push(*src); }
+            OpCode::GetMember { container, .. } => { regs.push(*container); }
+            OpCode::SetMember { container, src, .. } |
+            OpCode::StrAppendMember { container, src, .. } => { regs.push(*container); regs.push(*src); }
+            OpCode::RowGet { row_reg, .. } => { regs.push(*row_reg); }
+            OpCode::TableIter { tbl_reg, idx_reg, row_reg, limit_reg, .. } => { regs.push(*tbl_reg); regs.push(*idx_reg); regs.push(*row_reg); regs.push(*limit_reg); }
+            OpCode::TablePushRow { tbl_reg, row_reg } => { regs.push(*tbl_reg); regs.push(*row_reg); }
+            OpCode::MakeClosure { capture_start, capture_count, .. } => {
+                let start = *capture_start as usize;
+                let end = start + *capture_count as usize;
+                for r in start..end {
+                    regs.push(r as u8);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn collect_backedges(bytecode: &[OpCode]) -> Vec<(usize, usize)> {
+    let mut loops = Vec::new();
+    for (i, op) in bytecode.iter().enumerate() {
+        if let Some(target) = op.jump_target() {
+            if (target as usize) < i {
+                loops.push((target as usize, i));
+            }
+        }
+    }
+    loops
+}
+
 pub fn calculate_has_loops(bytecode: &[OpCode]) -> bool {
     bytecode.iter().enumerate().any(|(i, op)| {
-        match op {
-            OpCode::Jump { target } => (*target as usize) < i,
-            OpCode::JumpIfFalse { target, .. } => (*target as usize) < i,
-            OpCode::JumpIfTrue { target, .. } => (*target as usize) < i,
-            OpCode::LoopNext { target, .. } => (*target as usize) < i,
-            OpCode::LoopPrev { target, .. } => (*target as usize) < i,
-            OpCode::IncLocalLoopNext { target, .. } => (*target as usize) < i,
-            OpCode::DecLocalLoopPrev { target, .. } => (*target as usize) < i,
-            OpCode::IncVarLoopNext { target, .. } => (*target as usize) < i,
-            OpCode::DecVarLoopPrev { target, .. } => (*target as usize) < i,
-            OpCode::ArrayLoopNext { target, .. } => (*target as usize) < i,
-            OpCode::TableIter { target, .. } => (*target as usize) < i,
-            _ => false,
+        if let Some(target) = op.jump_target() {
+            (target as usize) < i
+        } else {
+            false
         }
     })
 }
+

@@ -1,15 +1,17 @@
 use std::sync::Arc;
 use parking_lot::RwLock;
 use crate::vm::object::{
-    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, FunctionObj, ClosureObj
+    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, FunctionObj, ClosureObj, BoolArrayObj
 };
 use super::value::Value;
 use super::nan_boxing::*;
+use super::tag::*;
 
 // --- Constructors ---
 
 pub fn from_string(s: Arc<StringObj>)           -> Value { Value::pack_ptr(Arc::into_raw(s), TAG_STR) }
 pub fn from_array(a: Arc<RwLock<ArrayObj>>)     -> Value { Value::pack_ptr(Arc::into_raw(a), TAG_ARR) }
+pub fn from_bool_array(a: Arc<RwLock<BoolArrayObj>>) -> Value { Value::pack_ptr(Arc::into_raw(a), TAG_BOOL_ARR) }
 pub fn from_set(s: Arc<RwLock<SetObj>>)         -> Value { Value::pack_ptr(Arc::into_raw(s), TAG_SET) }
 pub fn from_map(m: Arc<RwLock<MapObj>>)         -> Value { Value::pack_ptr(Arc::into_raw(m), TAG_MAP) }
 pub fn from_table(t: Arc<RwLock<TableObj>>)     -> Value { Value::pack_ptr(Arc::into_raw(t), TAG_TBL) }
@@ -69,6 +71,17 @@ pub fn as_array(val: &Value) -> Arc<RwLock<ArrayObj>> {
     unsafe {
         let p = val.unpack_ptr::<RwLock<ArrayObj>>();
         let arc: Arc<RwLock<ArrayObj>> = Arc::from_raw(p);
+        let cl = arc.clone();
+        std::mem::forget(arc);
+        cl
+    }
+}
+
+pub fn as_bool_array(val: &Value) -> Arc<RwLock<BoolArrayObj>> {
+    debug_assert_eq!(val.tag, TAG_BOOL_ARR, "Expected BoolArray, found tag={}", val.tag);
+    unsafe {
+        let p = val.unpack_ptr::<RwLock<BoolArrayObj>>();
+        let arc: Arc<RwLock<BoolArrayObj>> = Arc::from_raw(p);
         let cl = arc.clone();
         std::mem::forget(arc);
         cl
@@ -202,7 +215,9 @@ pub fn to_string(val: &Value) -> String {
         }
         TAG_JSON  => {
             let arc = as_json(val);
-            if !arc.dirty.load(std::sync::atomic::Ordering::Acquire) {
+            let ver = arc.version.load(std::sync::atomic::Ordering::Acquire);
+            let cached_ver = arc.cached_version.load(std::sync::atomic::Ordering::Acquire);
+            if ver == cached_ver {
                 if let Some(s) = arc.cached_str.lock().as_ref() {
                     return String::from_utf8_lossy(&s.data).into_owned();
                 }
@@ -211,8 +226,12 @@ pub fn to_string(val: &Value) -> String {
             arc.root.to_string_buf(&mut buf);
             let s = buf;
             let string_obj = Arc::new(StringObj::new(s.into_bytes()));
-            *arc.cached_str.lock() = Some(string_obj.clone());
-            arc.dirty.store(false, std::sync::atomic::Ordering::Release);
+            
+            let mut lock = arc.cached_str.lock();
+            if arc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
+                *lock = Some(string_obj.clone());
+                arc.cached_version.store(ver, std::sync::atomic::Ordering::Release);
+            }
             String::from_utf8_lossy(&string_obj.data).into_owned()
         }
         TAG_ARR   => {
@@ -222,6 +241,17 @@ pub fn to_string(val: &Value) -> String {
             for (i, v) in arr.iter().enumerate() {
                 if i > 0 { out.push(','); }
                 out.push_str(&v.to_string());
+            }
+            out.push(']');
+            out
+        }
+        TAG_BOOL_ARR => {
+            let arc = as_bool_array(val);
+            let arr = arc.read();
+            let mut out = String::from("[");
+            for (i, b) in arr.data.iter().enumerate() {
+                if i > 0 { out.push(','); }
+                out.push_str(if *b != 0 { "true" } else { "false" });
             }
             out.push(']');
             out
@@ -269,14 +299,15 @@ pub fn to_string(val: &Value) -> String {
 }
 
 pub fn to_sql_value(val: &Value) -> rusqlite::types::Value {
-    match val.tag {
-        TAG_INT   => rusqlite::types::Value::Integer(val.bits as i64),
-        TAG_FLOAT => rusqlite::types::Value::Real(unpack_float_bits(val.bits)),
-        TAG_BOOL  => rusqlite::types::Value::Integer(if val.bits != 0 { 1 } else { 0 }),
-        TAG_STR   => {
-            let b = as_string(val);
-            rusqlite::types::Value::Text(String::from_utf8_lossy(&b.data).into_owned())
+    if val.is_string() {
+        let b = as_string(val);
+        rusqlite::types::Value::Text(String::from_utf8_lossy(&b.data).into_owned())
+    } else {
+        match val.tag {
+            TAG_INT   => rusqlite::types::Value::Integer(val.bits as i64),
+            TAG_FLOAT => rusqlite::types::Value::Real(unpack_float_bits(val.bits)),
+            TAG_BOOL  => rusqlite::types::Value::Integer(if val.bits != 0 { 1 } else { 0 }),
+            _ => rusqlite::types::Value::Null,
         }
-        _ => rusqlite::types::Value::Null,
     }
 }

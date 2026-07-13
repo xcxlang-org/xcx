@@ -68,7 +68,7 @@ impl JIT {
         let globals_ptr = b.block_params(entry_block)[2];
         let consts_ptr  = b.block_params(entry_block)[3];
         let vm_ptr      = b.block_params(entry_block)[4];
-        let exec_ptr     = b.block_params(entry_block)[5];
+        let exec_ptr    = b.block_params(entry_block)[5];
         let shutdown_ptr = b.block_params(entry_block)[6];
 
         {
@@ -123,7 +123,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_add_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_add_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_add_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -134,7 +134,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_sub_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_sub_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_sub_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -145,7 +145,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_mul_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_mul_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_mul_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -156,7 +156,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_poly_div_mod_fast_path(&mut ctx, &symbols, dst, src1, src2, symbols.xcx_jit_div, false);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_div_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_poly_div_mod_fast_path(&mut ctx, &symbols, dst, src1, src2, symbols.xcx_jit_div, false);
@@ -189,7 +189,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 0);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 0);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 0);
@@ -200,7 +200,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 1);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 1);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 1);
@@ -211,7 +211,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 2);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 2);
@@ -222,7 +222,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 3);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 3);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 3);
@@ -233,7 +233,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 4);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 4);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 4);
@@ -244,7 +244,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 5);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 5);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 5);

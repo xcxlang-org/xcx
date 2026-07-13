@@ -26,7 +26,7 @@ pub unsafe extern "C" fn xcx_jit_json_get(out: *mut Value, json_bits: u64, json_
         }
     };
     
-    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     let v_opt = if is_simple {
         match unsafe { &(*json_ptr).root } {
@@ -83,10 +83,10 @@ pub unsafe extern "C" fn xcx_jit_json_set(json_bits: u64, json_tag: u64, path_bi
     };
     
     let val = Value { bits: val_bits, tag: val_tag };
-    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     unsafe {
-        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
         
         if is_simple {
             if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
@@ -122,13 +122,14 @@ pub unsafe extern "C" fn xcx_jit_json_push(json_bits: u64, json_tag: u64, val_bi
     let val = Value { bits: val_bits, tag: val_tag };
 
     unsafe {
-        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
         if let crate::vm::object::JsonVal::Array(a) = &(*json_ptr).root {
             let arr = &mut *(*a).data_ptr();
             arr.push(value_to_json(&val));
             1
         } else {
-            panic!("halt.error: Cannot push to a JSON object (R306)");
+            crate::vm::core::vm::increment_error_count();
+            0
         }
     }
 }
@@ -158,10 +159,10 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
     };
     
     let val = Value { bits: val_bits, tag: val_tag };
-    let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+    let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     unsafe {
-        (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
         
         if is_simple {
             if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
@@ -205,7 +206,9 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
     };
 
     unsafe {
-        if !(*json_ptr).dirty.load(std::sync::atomic::Ordering::Acquire) {
+        let ver = (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire);
+        let cached_ver = (*json_ptr).cached_version.load(std::sync::atomic::Ordering::Acquire);
+        if ver == cached_ver {
             if let Some(s) = (*json_ptr).cached_str.lock().as_ref() {
                 let res = Value::from_string(s.clone());
                 if res.is_ptr() { res.inc_ref(); }
@@ -226,8 +229,12 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
         });
 
         let string_obj = std::sync::Arc::new(crate::vm::object::StringObj::new(s.into_bytes()));
-        *(*json_ptr).cached_str.lock() = Some(string_obj.clone());
-        (*json_ptr).dirty.store(false, std::sync::atomic::Ordering::Release);
+        
+        let mut lock = (*json_ptr).cached_str.lock();
+        if (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire) == ver {
+            *lock = Some(string_obj.clone());
+            (*json_ptr).cached_version.store(ver, std::sync::atomic::Ordering::Release);
+        }
         let res = Value::from_string(string_obj);
         if res.is_ptr() { res.inc_ref(); }
         *out = res;

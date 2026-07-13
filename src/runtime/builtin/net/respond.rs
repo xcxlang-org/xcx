@@ -1,19 +1,19 @@
 use std::sync::Arc;
-use crate::vm::value::{Value, TAG_STR, TAG_JSON, TAG_ARR, TAG_MAP, TAG_TBL};
+use crate::vm::value::Value;
 use crate::vm::core::vm::OpResult;
 use crate::vm::utils::json::value_to_json;
 
 /// Responds to an incoming HTTP request (server-side).
 pub fn respond_impl(status: u32, body_val: Value, headers: Value, http_req: Option<Arc<std::sync::Mutex<Option<tiny_http::Request>>>>) -> OpResult {
-    let (body_bytes, _is_binary) = if body_val.is_ptr() && body_val.tag == TAG_STR {
+    let (body_bytes, _is_binary) = if body_val.is_string() {
         (Arc::new(body_val.as_string().data.clone()), true)
-    } else if body_val.is_ptr() && body_val.tag == TAG_JSON {
+    } else if body_val.is_json() {
         let mut buf = String::new();
         body_val.as_json().root.to_string_buf(&mut buf);
         (Arc::new(buf.into_bytes()), false)
-    } else if body_val.is_ptr() && (body_val.tag == TAG_ARR || 
-                                 body_val.tag == TAG_MAP ||
-                                 body_val.tag == TAG_TBL) {
+    } else if body_val.is_array() || 
+              body_val.is_map() ||
+              body_val.is_table() {
         let mut buf = String::new();
         value_to_json(&body_val).to_string_buf(&mut buf);
         (Arc::new(buf.into_bytes()), false)

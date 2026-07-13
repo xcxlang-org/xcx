@@ -10,6 +10,7 @@ pub mod json_obj;
 pub mod table_obj;
 pub mod database_obj;
 pub mod row_obj;
+pub mod bool_array_obj;
 
 pub use string_obj::*;
 pub use array_obj::*;
@@ -23,3 +24,4 @@ pub use json_obj::*;
 pub use table_obj::*;
 pub use database_obj::*;
 pub use row_obj::*;
+pub use bool_array_obj::*;

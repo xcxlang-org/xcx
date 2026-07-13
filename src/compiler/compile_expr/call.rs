@@ -43,6 +43,8 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                     if src != arg_reg {
                         fc.emit(OpCode::Move { dst: arg_reg, src }, &expr.span);
                     }
+                    fc.next_local = arg_reg as usize + 1;
+                    fc.sync_max_locals();
                     arg_count += 1;
                 }
 
@@ -210,6 +212,8 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                     fc.next_local = arg_reg as usize;
                     let src = fc.compile_expr(arg.expr(), ctx);
                     if src != arg_reg { fc.emit(OpCode::Move { dst: arg_reg, src }, &expr.span); }
+                    fc.next_local = arg_reg as usize + 1;
+                    fc.sync_max_locals();
                     arg_count += 1;
                 }
                 let dst = base;
@@ -238,7 +242,13 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                 }
             }
 
-            let base = fc.compile_expr(receiver, ctx);
+            let base = fc.next_local as u8;
+            let receiver_reg = fc.compile_expr(receiver, ctx);
+            if receiver_reg != base {
+                fc.emit(OpCode::Move { dst: base, src: receiver_reg }, &expr.span);
+            }
+            fc.next_local = (base + 1) as usize;
+            fc.sync_max_locals();
 
             if method_name == "where" {
                 if let Some(dst) = fc.compile_query_where(expr, base, args, ctx) {
@@ -310,6 +320,8 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                     }
                 }
             }
+            fc.next_local = (base + 1 + arg_count) as usize;
+            fc.sync_max_locals();
             fc.next_local = base as usize + 1;
             fc.sync_max_locals();
             dst

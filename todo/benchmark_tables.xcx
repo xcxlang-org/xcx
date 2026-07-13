@@ -1,0 +1,44 @@
+--- XCX Benchmark: table.where environment reuse and table.join performance
+
+func run_test(-> b) {
+    >! "=== Populating Tables ... ===";
+    table: t1 {
+        columns = [ id :: i, name :: s ]
+        rows = [EMPTY]
+    };
+    table: t2 {
+        columns = [ user_id :: i, country :: s ]
+        rows = [EMPTY]
+    };
+
+    i: idx = 0;
+    while (idx < 500) do;
+        t1.insert(idx, "User_" + s(idx));
+        t2.insert(idx, "Country_" + s(idx));
+        idx = idx + 1;
+    end;
+
+    >! "=== 1. Benchmarking table.where (1000 iterations over 500 rows) ===";
+    i: t_start1 = perf.ms();
+    i: runs = 0;
+    while (runs < 1000) do;
+        table: filtered = t1.where(id > 250);
+        runs = runs + 1;
+    end;
+    i: t_end1 = perf.ms();
+    >! "where (env reuse) elapsed: " + s(t_end1 - t_start1) + " ms";
+
+    >! "=== 2. Benchmarking table.join (100 runs of 500 x 500 rows key-join) ===";
+    i: t_start2 = perf.ms();
+    i: join_runs = 0;
+    while (join_runs < 100) do;
+        table: joined = t1.join(t2, "id", "user_id");
+        join_runs = join_runs + 1;
+    end;
+    i: t_end2 = perf.ms();
+    >! "join (hash-map lookup) elapsed: " + s(t_end2 - t_start2) + " ms";
+
+    return true;
+};
+
+run_test();

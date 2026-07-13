@@ -34,6 +34,10 @@ pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::valu
                     non_bool_array.insert(*dst);
                 }
             }
+            OpCode::BoolArrayInit { dst } => {
+                array_origins[*dst as usize] = Some(*dst);
+                bool_array.insert(*dst);
+            }
             OpCode::MethodCall { kind, base, arg_count, .. } => {
                 let base_reg = *base;
                 match kind {
@@ -160,8 +164,13 @@ pub fn analyze_chunk_locals_init(bytecode: &[OpCode], arity: u8) -> Vec<u8> {
             OpCode::JumpIfFalse { src, .. } | OpCode::JumpIfTrue { src, .. } |
             OpCode::Return { src } | OpCode::Wait { src } | OpCode::Yield { src } |
             OpCode::HaltAlert { src } | OpCode::HaltError { src } | OpCode::HaltFatal { src } |
-            OpCode::Print { src } => {
+            OpCode::Print { src } | OpCode::StrAppendVar { src, .. } => {
                 read!(src);
+            }
+            OpCode::StrAppendLocal { local_idx, src } => {
+                read!(local_idx);
+                read!(src);
+                write!(local_idx);
             }
             OpCode::IncLocal { reg } => { read!(reg); write!(reg); }
             OpCode::LoopNext { reg, limit_reg, .. } | OpCode::IncVarLoopNext { reg, limit_reg, .. } |
@@ -186,16 +195,21 @@ pub fn analyze_chunk_locals_init(bytecode: &[OpCode], arity: u8) -> Vec<u8> {
                 for i in 0..count { read!(base + (i as u8)); }
                 write!(dst);
             }
+            OpCode::BoolArrayInit { dst } => {
+                write!(dst);
+            }
             OpCode::GetIndex { dst, container, index } => {
                 read!(container); read!(index); write!(dst);
             }
-            OpCode::SetIndex { container, index, src } => {
+            OpCode::SetIndex { container, index, src } |
+            OpCode::StrAppendElement { container, index, src } => {
                 read!(container); read!(index); read!(src);
             }
             OpCode::GetMember { dst, container, .. } => {
                 read!(container); write!(dst);
             }
-            OpCode::SetMember { container, src, .. } => {
+            OpCode::SetMember { container, src, .. } |
+            OpCode::StrAppendMember { container, src, .. } => {
                 read!(container); read!(src);
             }
             OpCode::TableIter { tbl_reg, idx_reg, row_reg, limit_reg, .. } => {
@@ -297,7 +311,11 @@ where
             OpCode::Return { src } | OpCode::Wait { src } | OpCode::IncLocal { reg: src } |
             OpCode::Yield { src } | OpCode::YieldWithTarget { src, .. } |
             OpCode::HaltAlert { src } | OpCode::HaltError { src } | OpCode::HaltFatal { src } |
-            OpCode::Print { src } => {
+            OpCode::Print { src } | OpCode::StrAppendVar { src, .. } => {
+                used.insert(src);
+            }
+            OpCode::StrAppendLocal { local_idx, src } => {
+                used.insert(local_idx);
                 used.insert(src);
             }
             OpCode::LoopNext { reg, limit_reg, .. } |
@@ -330,23 +348,159 @@ where
                     used.insert((base as usize + i as usize) as u8);
                 }
             }
+            OpCode::BoolArrayInit { dst } => {
+                used.insert(dst);
+            }
             OpCode::GetIndex { dst, container, index } => {
                 used.insert(dst); used.insert(container); used.insert(index);
             }
-            OpCode::SetIndex { container, index, src } => {
+            OpCode::SetIndex { container, index, src } |
+            OpCode::StrAppendElement { container, index, src } => {
                 used.insert(container); used.insert(index); used.insert(src);
             }
             OpCode::GetMember { dst, container, .. } => {
                 used.insert(dst); used.insert(container);
             }
-            OpCode::SetMember { container, src, .. } => {
+            OpCode::SetMember { container, src, .. } |
+            OpCode::StrAppendMember { container, src, .. } => {
                 used.insert(container); used.insert(src);
             }
             OpCode::TableIter { tbl_reg, idx_reg, row_reg, limit_reg, .. } => {
                 used.insert(tbl_reg); used.insert(idx_reg); used.insert(row_reg); used.insert(limit_reg);
             }
-            OpCode::DatabaseInit { dst, path_src, tables_base_reg, .. } => {
-                used.insert(dst); used.insert(path_src); used.insert(tables_base_reg);
+            OpCode::DatabaseInit { dst, engine_src, path_src, tables_base_reg, .. } => {
+                used.insert(dst); used.insert(engine_src); used.insert(path_src); used.insert(tables_base_reg);
+            }
+            OpCode::SetName { src, .. } => {
+                used.insert(src);
+            }
+            OpCode::TableInit { dst, base, row_count, col_count, .. } => {
+                used.insert(dst);
+                for i in 0..(row_count * col_count) {
+                    used.insert((base as usize + i as usize) as u8);
+                }
+            }
+            OpCode::RandomInt { dst, min, max, step, has_step } |
+            OpCode::RandomFloat { dst, min, max, step, has_step } => {
+                used.insert(dst);
+                used.insert(min);
+                used.insert(max);
+                if has_step != 0 {
+                    used.insert(step);
+                }
+            }
+            OpCode::StoreWrite { dst, base } | OpCode::StoreRead { dst, base } |
+            OpCode::StoreAppend { dst, base } | OpCode::StoreExists { dst, base } |
+            OpCode::StoreDelete { dst, base } | OpCode::StoreList { dst, base } |
+            OpCode::StoreIsDir { dst, base } | OpCode::StoreSize { dst, base } |
+            OpCode::StoreMkdir { dst, base } | OpCode::StoreGlob { dst, base } |
+            OpCode::StoreZip { dst, base } | OpCode::StoreUnzip { dst, base } => {
+                used.insert(dst);
+                used.insert(base);
+            }
+            OpCode::JsonBind { json_src, path_src, .. } => {
+                used.insert(json_src);
+                used.insert(path_src);
+            }
+            OpCode::JsonBindLocal { dst, json_src, path_src } => {
+                used.insert(dst);
+                used.insert(json_src);
+                used.insert(path_src);
+            }
+            OpCode::JsonInject { json_src, mapping_src, .. } => {
+                used.insert(json_src);
+                used.insert(mapping_src);
+            }
+            OpCode::JsonInjectLocal { table_reg, json_src, mapping_src } => {
+                used.insert(table_reg);
+                used.insert(json_src);
+                used.insert(mapping_src);
+            }
+            OpCode::PerfMs { dst } | OpCode::PerfUs { dst } | OpCode::PerfNs { dst } => {
+                used.insert(dst);
+            }
+            OpCode::HttpRequest { dst, arg_src } => {
+                used.insert(dst);
+                used.insert(arg_src);
+            }
+            OpCode::HttpRespond { dst, status_src, body_src, headers_src } => {
+                used.insert(dst);
+                used.insert(status_src);
+                used.insert(body_src);
+                used.insert(headers_src);
+            }
+            OpCode::HttpServe { port_src, host_src, workers_src, routes_src, .. } => {
+                used.insert(port_src);
+                used.insert(host_src);
+                used.insert(workers_src);
+                used.insert(routes_src);
+            }
+            OpCode::EnvGet { dst, src } => {
+                used.insert(dst);
+                used.insert(src);
+            }
+            OpCode::CryptoHash { dst, pass_src, alg_src } => {
+                used.insert(dst);
+                used.insert(pass_src);
+                used.insert(alg_src);
+            }
+            OpCode::CryptoVerify { dst, pass_src, hash_src, alg_src } => {
+                used.insert(dst);
+                used.insert(pass_src);
+                used.insert(hash_src);
+                used.insert(alg_src);
+            }
+            OpCode::CryptoToken { dst, len_src } => {
+                used.insert(dst);
+                used.insert(len_src);
+            }
+            OpCode::DecLocal { reg } => {
+                used.insert(reg);
+            }
+            OpCode::LoopPrev { reg, limit_reg, .. } |
+            OpCode::DecVarLoopPrev { reg, limit_reg, .. } => {
+                used.insert(reg);
+                used.insert(limit_reg);
+            }
+            OpCode::DecLocalLoopPrev { dec_reg, reg, limit_reg, .. } => {
+                used.insert(dec_reg);
+                used.insert(reg);
+                used.insert(limit_reg);
+            }
+            OpCode::MakeClosure { dst, capture_count, capture_start, .. } => {
+                used.insert(dst);
+                for i in 0..capture_count {
+                    used.insert((capture_start as usize + i as usize) as u8);
+                }
+            }
+            OpCode::TerminalCursor { dst, .. } => {
+                used.insert(dst);
+            }
+            OpCode::TerminalMove { dst, x_src, y_src } => {
+                used.insert(dst);
+                used.insert(x_src);
+                used.insert(y_src);
+            }
+            OpCode::RowGet { dst, row_reg, .. } => {
+                used.insert(dst);
+                used.insert(row_reg);
+            }
+            OpCode::TablePushRow { tbl_reg, row_reg } => {
+                used.insert(tbl_reg);
+                used.insert(row_reg);
+            }
+            OpCode::TableCloneSkeleton { dst, src } => {
+                used.insert(dst);
+                used.insert(src);
+            }
+            OpCode::TableBegin { dst, .. } => {
+                used.insert(dst);
+            }
+            OpCode::TableInitRow { tbl_dst, base, col_count } => {
+                used.insert(tbl_dst);
+                for i in 0..col_count {
+                    used.insert((base as usize + i as usize) as u8);
+                }
             }
             _ => {}
         }
@@ -423,7 +577,7 @@ pub fn analyze_global_int_regs(bytecode: &[OpCode], constants: &[crate::vm::valu
             OpCode::TerminalMove { dst, .. } | OpCode::TerminalWrite { dst, .. } |
             OpCode::InputKey { dst } | OpCode::InputKeyWait { dst } | OpCode::InputReady { dst } |
             OpCode::Call { dst, .. } | OpCode::SetName { src: dst, .. } |
-            OpCode::ArrayInit { dst, .. } | OpCode::SetInit { dst, .. } |
+            OpCode::ArrayInit { dst, .. } | OpCode::BoolArrayInit { dst } | OpCode::SetInit { dst, .. } |
             OpCode::MapInit { dst, .. } | OpCode::TableInit { dst, .. } |
             OpCode::JsonParse { dst, .. } | OpCode::DateNow { dst } |
             OpCode::MethodCall { dst, .. } | OpCode::MethodCallCustom { dst, .. } |
@@ -488,6 +642,7 @@ pub fn analyze_non_ptr_regs(
                 | OpCode::InputReady { dst }
                 | OpCode::Call { dst, .. }
                 | OpCode::ArrayInit { dst, .. }
+                | OpCode::BoolArrayInit { dst }
                 | OpCode::SetInit { dst, .. }
                 | OpCode::MapInit { dst, .. }
                 | OpCode::TableInit { dst, .. }
@@ -530,6 +685,11 @@ pub fn analyze_non_ptr_regs(
                 | OpCode::Typeof { dst, .. }
                 | OpCode::TableCloneSkeleton { dst, .. } => {
                     if non_ptr_regs.remove(dst) {
+                        changed = true;
+                    }
+                }
+                OpCode::StrAppendLocal { local_idx, .. } => {
+                    if non_ptr_regs.remove(&local_idx) {
                         changed = true;
                     }
                 }
@@ -752,7 +912,7 @@ pub fn analyze_maybe_ptr_regs(
             OpCode::CryptoHash { dst, .. } | OpCode::CryptoVerify { dst, .. } |
             OpCode::CryptoToken { dst, .. } |
             OpCode::CastString { dst, .. } |
-            OpCode::ArrayInit { dst, .. } | OpCode::SetInit { dst, .. } |
+            OpCode::ArrayInit { dst, .. } | OpCode::BoolArrayInit { dst } | OpCode::SetInit { dst, .. } |
             OpCode::MapInit { dst, .. } | OpCode::TableInit { dst, .. } |
             OpCode::MethodCall { dst, .. } | OpCode::MethodCallCustom { dst, .. } |
             OpCode::SetUnion { dst, .. } | OpCode::SetIntersection { dst, .. } |
@@ -779,6 +939,9 @@ pub fn analyze_maybe_ptr_regs(
             OpCode::RowGet { dst, .. } |
             OpCode::TableCloneSkeleton { dst, .. } => {
                 set_ptr_bit(&mut next_state, dst, true);
+            }
+            OpCode::StrAppendLocal { local_idx, .. } => {
+                set_ptr_bit(&mut next_state, local_idx, true);
             }
             OpCode::TableIter { idx_reg, row_reg, .. } => {
                 set_ptr_bit(&mut next_state, idx_reg, false);

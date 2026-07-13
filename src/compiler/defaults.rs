@@ -11,7 +11,13 @@ pub(crate) fn get_default_value(ty: &Type, ctx: &mut CompileContext) -> Value {
         Type::Float => Value::from_f64(0.0),
         Type::String => Value::from_string(Arc::new(StringObj::new(Vec::new()))),
         Type::Bool => Value::from_bool(false),
-        Type::Array(_) => Value::from_array(Arc::new(RwLock::new(ArrayObj::new(Vec::new())))),
+        Type::Array(inner) => {
+            if **inner == Type::Bool {
+                Value::from_bool_array(Arc::new(RwLock::new(crate::vm::object::bool_array_obj::BoolArrayObj::new(Vec::new()))))
+            } else {
+                Value::from_array(Arc::new(RwLock::new(ArrayObj::new(Vec::new()))))
+            }
+        }
         Type::Set(_) => Value::from_set(Arc::new(RwLock::new(SetObj::new(std::collections::BTreeSet::new())))),
         Type::Map(_, _) => Value::from_map(Arc::new(RwLock::new(MapObj::new(Vec::new())))),
         Type::Date => Value::from_date(0),

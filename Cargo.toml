@@ -1,6 +1,6 @@
 [package]
 name = "xcx-compiler"
-version = "4.1.0"
+version = "4.2.0"
 edition = "2024"
 
 [features]
@@ -41,6 +41,11 @@ lto = "thin"
 codegen-units = 1
 panic = "unwind"
 strip = false
+
+[profile.dev-release]
+inherits = "release"
+codegen-units = 16
+lto = "thin"
 
 [dev-dependencies]
 serial_test = "3.1"

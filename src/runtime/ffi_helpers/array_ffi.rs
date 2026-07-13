@@ -27,59 +27,108 @@ pub unsafe extern "C" fn xcx_jit_array_get(out: *mut Value, arr_bits: u64, _arr_
 /// Returns the bits field of a boolean array element directly as i64 (0 or 1).
 /// Avoids the output-pointer/inc_ref path used by xcx_jit_array_get for bool-typed reads.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_array_get_bool(arr_bits: u64, _arr_tag: u64, idx_bits: u64) -> i64 {
-    let rlock_ptr = arr_bits as *const parking_lot::RwLock<crate::vm::object::ArrayObj>;
-    let arr_ref = unsafe { &*(*rlock_ptr).data_ptr() };
-    let idx = idx_bits as usize;
-    if idx < arr_ref.elements.len() {
-        unsafe { arr_ref.elements.get_unchecked(idx).bits as i64 }
+pub unsafe extern "C" fn xcx_jit_array_get_bool(arr_bits: u64, arr_tag: u64, idx_bits: u64) -> i64 {
+    if arr_tag == crate::vm::value::TAG_BOOL_ARR {
+        let rlock_ptr = arr_bits as *const parking_lot::RwLock<crate::vm::object::bool_array_obj::BoolArrayObj>;
+        let arr_ref = unsafe { &*(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.data.len() {
+            unsafe { *arr_ref.data.get_unchecked(idx) as i64 }
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: BoolArray index out of bounds: {} (Array length: {})\n", idx, arr_ref.data.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
     } else {
-        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
-        crate::vm::core::vm::increment_error_count();
-        0
+        let rlock_ptr = arr_bits as *const parking_lot::RwLock<crate::vm::object::ArrayObj>;
+        let arr_ref = unsafe { &*(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.elements.len() {
+            unsafe { arr_ref.elements.get_unchecked(idx).bits as i64 }
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_array_push(arr_bits: u64, _arr_tag: u64, val_bits: u64, val_tag: u64) {
-    let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
-    let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
-    let val = Value { bits: val_bits, tag: val_tag };
-    if val.is_ptr() { unsafe { val.inc_ref(); } }
-    arr_ref.elements.push(val);
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_array_update(arr_bits: u64, _arr_tag: u64, idx_bits: u64, val_bits: u64, val_tag: u64) -> i32 {
-    let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
-    let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
-    let idx = idx_bits as usize;
-    if idx < arr_ref.elements.len() {
-        let old = arr_ref.elements[idx];
+pub unsafe extern "C" fn xcx_jit_array_push(arr_bits: u64, arr_tag: u64, val_bits: u64, val_tag: u64) {
+    if arr_tag == crate::vm::value::TAG_BOOL_ARR {
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::bool_array_obj::BoolArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
+        let b = val_bits != 0;
+        arr_ref.data.push(b as u8);
+    } else {
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
         let val = Value { bits: val_bits, tag: val_tag };
         if val.is_ptr() { unsafe { val.inc_ref(); } }
-        arr_ref.elements[idx] = val;
-        if old.is_ptr() { unsafe { old.dec_ref(); } }
-        1
-    } else {
-        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
-        crate::vm::core::vm::increment_error_count();
-        0
+        arr_ref.elements.push(val);
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_array_set_bool(arr_bits: u64, _arr_tag: u64, idx_bits: u64, val: u8) -> i32 {
-    let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
-    let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
-    let idx = idx_bits as usize;
-    if idx < arr_ref.elements.len() {
-        *unsafe { arr_ref.elements.get_unchecked_mut(idx) } = Value::from_bool(val != 0);
-        1
+pub unsafe extern "C" fn xcx_jit_array_update(arr_bits: u64, arr_tag: u64, idx_bits: u64, val_bits: u64, val_tag: u64) -> i32 {
+    if arr_tag == crate::vm::value::TAG_BOOL_ARR {
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::bool_array_obj::BoolArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.data.len() {
+            let b = val_bits != 0;
+            arr_ref.data[idx] = b as u8;
+            1
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: BoolArray update index out of bounds: {} (Array length: {})\n", idx, arr_ref.data.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
     } else {
-        crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
-        crate::vm::core::vm::increment_error_count();
-        0
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.elements.len() {
+            let old = arr_ref.elements[idx];
+            let val = Value { bits: val_bits, tag: val_tag };
+            if val.is_ptr() { unsafe { val.inc_ref(); } }
+            arr_ref.elements[idx] = val;
+            if old.is_ptr() { unsafe { old.dec_ref(); } }
+            1
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_array_set_bool(arr_bits: u64, arr_tag: u64, idx_bits: u64, val: u8) -> i32 {
+    if arr_tag == crate::vm::value::TAG_BOOL_ARR {
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::bool_array_obj::BoolArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.data.len() {
+            arr_ref.data[idx] = val;
+            1
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: BoolArray update index out of bounds: {} (Array length: {})\n", idx, arr_ref.data.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
+    } else {
+        let rlock_ptr = arr_bits as *mut parking_lot::RwLock<crate::vm::object::ArrayObj>;
+        let arr_ref = unsafe { &mut *(*rlock_ptr).data_ptr() };
+        let idx = idx_bits as usize;
+        if idx < arr_ref.elements.len() {
+            *unsafe { arr_ref.elements.get_unchecked_mut(idx) } = Value::from_bool(val != 0);
+            1
+        } else {
+            crate::runtime::builtin::io::eprint_buffered(&format!("R303: Array update index out of bounds: {} (Array length: {})\n", idx, arr_ref.elements.len()));
+            crate::vm::core::vm::increment_error_count();
+            0
+        }
     }
 }
 
@@ -100,6 +149,16 @@ pub unsafe extern "C" fn xcx_jit_array_init(
         slice.to_vec()
     };
     unsafe { *out = Value::from_array(std::sync::Arc::new(parking_lot::RwLock::new(crate::vm::object::ArrayObj::new(elements)))); }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_bool_array_init(
+    out: *mut Value,
+    _exec: *mut Executor,
+) {
+    unsafe {
+        *out = Value::from_bool_array(std::sync::Arc::new(parking_lot::RwLock::new(crate::vm::object::BoolArrayObj::new(Vec::new()))));
+    }
 }
 
 #[unsafe(no_mangle)]

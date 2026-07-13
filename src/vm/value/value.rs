@@ -1,15 +1,14 @@
 use std::sync::Arc;
 use parking_lot::RwLock;
 
-use crate::vm::object::{TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj};
+use crate::vm::object::{TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, BoolArrayObj};
 
-use super::nan_boxing::{
-    TAG_FLOAT, TAG_INT, TAG_BOOL, TAG_DATE, TAG_STR, TAG_ARR, TAG_SET,
+use super::tag::{
+    Tag, TAG_FLOAT, TAG_INT, TAG_BOOL, TAG_DATE, TAG_STR, TAG_ARR, TAG_SET,
     TAG_MAP, TAG_TBL, TAG_FUNC, TAG_ROW, TAG_JSON, TAG_FIB, TAG_DB,
-    TAG_CLOSURE, TAG_ARENA, TAG_FIRST_PTR, TAG_FUNC_PTR,
-    pack_float_bits, unpack_float_bits,
+    TAG_CLOSURE, TAG_ARENA, TAG_FIRST_PTR, TAG_FUNC_PTR, TAG_BOOL_ARR,
 };
-use super::tag::Tag;
+use super::nan_boxing::{pack_float_bits, unpack_float_bits};
 use super::ref_count;
 use super::heap_object;
 
@@ -85,15 +84,6 @@ impl Ord for Value {
     }
 }
 
-impl std::ops::Neg for Value {
-    type Output = Self;
-    #[inline]
-    fn neg(self) -> Self {
-        if self.is_int()   { Self::from_i64(-(self.as_i64())) }
-        else if self.is_float() { Self::from_f64(-(self.as_f64())) }
-        else { self }
-    }
-}
 
 impl Value {
     // --- Arithmetic ---
@@ -104,13 +94,64 @@ impl Value {
             return Self::from_i64((self.bits as i64).wrapping_add(rhs.bits as i64));
         }
         if self.is_string() || rhs.is_string() {
+            if self.tag == TAG_STR {
+                let ptr = self.bits as *const StringObj;
+                let arc = unsafe { Arc::from_raw(ptr) };
+                
+                let sc = Arc::strong_count(&arc);
+                let wc = Arc::weak_count(&arc);
+
+                if sc == 1 && wc == 0 {
+                    if rhs.tag == TAG_STR {
+                        let rhs_s = heap_object::as_string(&rhs);
+                        let obj_ptr = ptr as *mut StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(&rhs_s.data);
+                            Arc::increment_strong_count(ptr);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        return Self { bits, tag: TAG_STR };
+                    } else if rhs.tag == TAG_ARENA && heap_object::arena_inner_tag(&rhs) == TAG_STR as u64 {
+                        let p_arena = heap_object::arena_ptr::<StringObj>(&rhs);
+                        let obj_ptr = ptr as *mut StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(&(*p_arena).data);
+                            Arc::increment_strong_count(ptr);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        return Self { bits, tag: TAG_STR };
+                    } else {
+                        let rhs_str = rhs.to_string();
+                        let obj_ptr = ptr as *mut StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(rhs_str.as_bytes());
+                            Arc::increment_strong_count(ptr);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        return Self { bits, tag: TAG_STR };
+                    }
+                }
+                std::mem::forget(arc);
+            }
+
+            if self.tag == TAG_STR && rhs.tag == TAG_STR {
+                let lhs = heap_object::as_string(&self);
+                let rhs_s = heap_object::as_string(&rhs);
+                let mut combined = Vec::with_capacity(lhs.data.len() + rhs_s.data.len());
+                combined.extend_from_slice(&lhs.data);
+                combined.extend_from_slice(&rhs_s.data);
+                return Self::from_string(Arc::new(StringObj::new(combined)));
+            }
             let s1 = self.to_string();
             let s2 = rhs.to_string();
             let combined = s1 + &s2;
             return Self::from_string(Arc::new(StringObj::new(combined.into_bytes())));
         }
         if self.is_float() || rhs.is_float() {
-            return Self::from_f64(self.as_f64() + rhs.as_f64());
+            return Self::from_f64(self.cast_float() + rhs.cast_float());
         }
         if self.is_date() && rhs.is_int() {
             return Self::from_date(self.as_date() + rhs.as_i64() * 86_400_000);
@@ -127,7 +168,7 @@ impl Value {
             return Self::from_i64((self.bits as i64).wrapping_sub(rhs.bits as i64));
         }
         if self.is_float() || rhs.is_float() {
-            return Self::from_f64(self.as_f64() - rhs.as_f64());
+            return Self::from_f64(self.cast_float() - rhs.cast_float());
         }
         if self.is_date() && rhs.is_int() {
             return Self::from_date(self.as_date() - rhs.as_i64() * 86_400_000);
@@ -144,17 +185,17 @@ impl Value {
         if self.tag == TAG_INT && rhs.tag == TAG_INT {
             return Self::from_i64((self.bits as i64).wrapping_mul(rhs.bits as i64));
         }
-        Self::from_f64(self.as_f64() * rhs.as_f64())
+        Self::from_f64(self.cast_float() * rhs.cast_float())
     }
 
     #[inline]
     pub fn div(self, rhs: Self) -> Result<Self, ()> {
         if self.is_float() || rhs.is_float() {
-            let r_f = rhs.as_f64();
+            let r_f = rhs.cast_float();
             if r_f == 0.0 {
                 return Err(());
             }
-            return Ok(Self::from_f64(self.as_f64() / r_f));
+            return Ok(Self::from_f64(self.cast_float() / r_f));
         }
         let r = rhs.as_i64();
         if r == 0 {
@@ -166,11 +207,11 @@ impl Value {
     #[inline]
     pub fn rem(self, rhs: Self) -> Result<Self, ()> {
         if self.is_float() || rhs.is_float() {
-            let r_f = rhs.as_f64();
+            let r_f = rhs.cast_float();
             if r_f == 0.0 {
                 return Err(());
             }
-            return Ok(Self::from_f64(self.as_f64() % r_f));
+            return Ok(Self::from_f64(self.cast_float() % r_f));
         }
         let r = rhs.as_i64();
         if r == 0 {
@@ -183,13 +224,13 @@ impl Value {
     #[inline]
     pub fn pow(self, rhs: Self) -> Self {
         if self.is_float() || rhs.is_float() {
-            return Self::from_f64(self.as_f64().powf(rhs.as_f64()));
+            return Self::from_f64(self.cast_float().powf(rhs.cast_float()));
         }
         let b = rhs.as_i64();
         if b >= 0 && b <= u32::MAX as i64 {
             Self::from_i64(self.as_i64().wrapping_pow(b as u32))
         } else {
-            Self::from_f64(self.as_f64().powf(rhs.as_f64()))
+            Self::from_f64(self.cast_float().powf(rhs.cast_float()))
         }
     }
 
@@ -236,6 +277,7 @@ impl Value {
     #[inline] pub fn is_arena(&self)   -> bool { self.tag == TAG_ARENA }
     #[inline] pub fn is_string(&self)  -> bool { self.tag == TAG_STR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_STR) }
     #[inline] pub fn is_array(&self)   -> bool { self.tag == TAG_ARR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_ARR) }
+    #[inline] pub fn is_bool_array(&self) -> bool { self.tag == TAG_BOOL_ARR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_BOOL_ARR) }
     #[inline] pub fn is_set(&self)     -> bool { self.tag == TAG_SET || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_SET) }
     #[inline] pub fn is_map(&self)     -> bool { self.tag == TAG_MAP || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_MAP) }
     #[inline] pub fn is_table(&self)   -> bool { self.tag == TAG_TBL || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_TBL) }
@@ -256,6 +298,7 @@ impl Value {
             TAG_DATE    => Tag::Date,
             TAG_STR     => Tag::String,
             TAG_ARR     => Tag::Array,
+            TAG_BOOL_ARR => Tag::BoolArray,
             TAG_SET     => Tag::Set,
             TAG_MAP     => Tag::Map,
             TAG_TBL     => Tag::Table,
@@ -269,6 +312,7 @@ impl Value {
                 match heap_object::arena_inner_tag(self) {
                     TAG_STR     => Tag::String,
                     TAG_ARR     => Tag::Array,
+                    TAG_BOOL_ARR => Tag::BoolArray,
                     TAG_SET     => Tag::Set,
                     TAG_MAP     => Tag::Map,
                     TAG_TBL     => Tag::Table,
@@ -343,6 +387,7 @@ impl Value {
             TAG_BOOL    => 2,
             TAG_STR     => 3,
             TAG_ARR     => 4,
+            TAG_BOOL_ARR => 4,
             TAG_SET     => 5,
             TAG_MAP     => 6,
             TAG_DATE    => 7,
@@ -361,6 +406,7 @@ impl Value {
 
     #[inline] pub fn from_string(s: Arc<StringObj>)               -> Self { heap_object::from_string(s) }
     #[inline] pub fn from_array(a: Arc<RwLock<ArrayObj>>)         -> Self { heap_object::from_array(a) }
+    #[inline] pub fn from_bool_array(a: Arc<RwLock<BoolArrayObj>>) -> Self { heap_object::from_bool_array(a) }
     #[inline] pub fn from_set(s: Arc<RwLock<SetObj>>)             -> Self { heap_object::from_set(s) }
     #[inline] pub fn from_map(m: Arc<RwLock<MapObj>>)             -> Self { heap_object::from_map(m) }
     #[inline] pub fn from_table(t: Arc<RwLock<TableObj>>)         -> Self { heap_object::from_table(t) }
@@ -384,6 +430,7 @@ impl Value {
 
     pub fn as_string(&self) -> Arc<StringObj>               { heap_object::as_string(self) }
     pub fn as_array(&self)  -> Arc<RwLock<ArrayObj>>        { heap_object::as_array(self) }
+    pub fn as_bool_array(&self) -> Arc<RwLock<BoolArrayObj>> { heap_object::as_bool_array(self) }
     pub fn as_set(&self)    -> Arc<RwLock<SetObj>>          { heap_object::as_set(self) }
     pub fn as_map(&self)    -> Arc<RwLock<MapObj>>          { heap_object::as_map(self) }
     pub fn as_table(&self)  -> Arc<RwLock<TableObj>>        { heap_object::as_table(self) }
@@ -415,12 +462,12 @@ impl Value {
         if self.tag == TAG_STR {
             unsafe {
                 let p = self.unpack_ptr::<StringObj>();
-                std::str::from_utf8(&(*p).data).ok()
+                Some(std::str::from_utf8_unchecked(&(*p).data))
             }
         } else if self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_STR {
             unsafe {
                 let p = heap_object::arena_ptr::<StringObj>(self);
-                std::str::from_utf8(&(*p).data).ok()
+                Some(std::str::from_utf8_unchecked(&(*p).data))
             }
         } else {
             None

@@ -22,6 +22,105 @@ pub unsafe extern "C" fn xcx_jit_dec_ref(bits: u64, tag: u64) {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_str_append_var(
+    vm_ptr: *mut VM,
+    var_idx: u32,
+    src_bits: u64,
+    src_tag: u64,
+) {
+    let vm = unsafe { &*vm_ptr };
+    let rhs_val = Value { bits: src_bits, tag: src_tag };
+    let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
+        let arc = crate::vm::value::heap_object::as_string(&rhs_val);
+        arc.data.clone()
+    } else {
+        rhs_val.to_string().into_bytes()
+    };
+
+    let raw = vm.get_global(var_idx as usize);
+    if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
+        let ptr = raw.bits as *const crate::vm::object::StringObj;
+        let arc = unsafe { Arc::from_raw(ptr) };
+
+        let sc = Arc::strong_count(&arc);
+        if sc <= 2 {
+            let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+            unsafe {
+                (*obj_ptr).hash = None;
+                (*obj_ptr).data.extend_from_slice(&rhs_bytes);
+            }
+            let bits = Arc::into_raw(arc) as u64;
+            let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+            vm.set_global(var_idx as usize, new_val);
+        } else {
+            let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
+            combined.extend_from_slice(&arc.data);
+            combined.extend_from_slice(&rhs_bytes);
+            std::mem::forget(arc);
+            let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
+            let new_val = crate::vm::value::heap_object::from_string(new_arc);
+            vm.set_global(var_idx as usize, new_val);
+        }
+    } else {
+        let s1 = raw.to_string();
+        let suffix = String::from_utf8_lossy(&rhs_bytes).into_owned();
+        let combined = s1 + &suffix;
+        let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
+        vm.set_global(var_idx as usize, new_val);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_str_append_local(
+    locals_ptr: *mut Value,
+    local_idx: u32,
+    src_bits: u64,
+    src_tag: u64,
+) {
+    let locals = unsafe { std::slice::from_raw_parts_mut(locals_ptr, (local_idx + 1) as usize) };
+    let rhs_val = Value { bits: src_bits, tag: src_tag };
+    let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
+        let arc = crate::vm::value::heap_object::as_string(&rhs_val);
+        arc.data.clone()
+    } else {
+        rhs_val.to_string().into_bytes()
+    };
+
+    let raw = locals[local_idx as usize];
+    if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
+        let ptr = raw.bits as *const crate::vm::object::StringObj;
+        let arc = unsafe { Arc::from_raw(ptr) };
+
+        let sc = Arc::strong_count(&arc);
+        let wc = Arc::weak_count(&arc);
+        if sc <= 1 && wc == 0 {
+            let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+            unsafe {
+                (*obj_ptr).hash = None;
+                (*obj_ptr).data.extend_from_slice(&rhs_bytes);
+            }
+            let bits = Arc::into_raw(arc) as u64;
+            let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+            locals[local_idx as usize] = new_val;
+        } else {
+            let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
+            combined.extend_from_slice(&arc.data);
+            combined.extend_from_slice(&rhs_bytes);
+            std::mem::forget(arc);
+            let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
+            let new_val = crate::vm::value::heap_object::from_string(new_arc);
+            unsafe { new_val.replace_at(&mut locals[local_idx as usize]); }
+        }
+    } else {
+        let s1 = raw.to_string();
+        let suffix = String::from_utf8_lossy(&rhs_bytes).into_owned();
+        let combined = s1 + &suffix;
+        let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
+        unsafe { new_val.replace_at(&mut locals[local_idx as usize]); }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_check_recursion(exec_ptr: *mut Executor) -> u32 {
     let executor = unsafe { &mut *exec_ptr };
     if executor.call_depth >= crate::vm::core::executor::RECURSION_LIMIT {
@@ -112,7 +211,7 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
             }
         }
 
-        let globals_ptr = executor.vm.globals.read().as_ptr() as *mut Value;
+        let globals_ptr = executor.globals_raw;
         let consts_ptr = executor.ctx.constants.as_ptr() as *const Value;
         let vm_ptr = Arc::as_ptr(&executor.vm) as *mut VM;
         let shutdown_ptr = &crate::vm::core::executor::SHUTDOWN as *const std::sync::atomic::AtomicBool as *const bool;
@@ -696,6 +795,29 @@ pub unsafe extern "C" fn xcx_jit_set_member(obj_bits: u64, obj_tag: u64, name_pt
     let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len as usize) };
     let name = String::from_utf8_lossy(name_bytes);
     crate::vm::core::runtime_ops::RuntimeOps::set_member(obj, &name, val);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_str_append_member(obj_bits: u64, obj_tag: u64, name_ptr: *const u8, name_len: u64, val_bits: u64, val_tag: u64) {
+    let obj = Value { bits: obj_bits, tag: obj_tag };
+    let val = Value { bits: val_bits, tag: val_tag };
+    let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len as usize) };
+    let name = String::from_utf8_lossy(name_bytes);
+    crate::vm::core::runtime_ops::RuntimeOps::str_append_member(obj, &name, val);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn xcx_jit_str_append_element(
+    arr_bits: u64,
+    arr_tag: u64,
+    idx: i64,
+    val_bits: u64,
+    val_tag: u64,
+) -> u32 {
+    let arr = Value { bits: arr_bits, tag: arr_tag };
+    let val = Value { bits: val_bits, tag: val_tag };
+    crate::vm::core::runtime_ops::RuntimeOps::str_append_element(arr, idx as usize, val);
+    0
 }
 
 #[unsafe(no_mangle)]

@@ -62,12 +62,16 @@ impl std::fmt::Debug for SqlBinding {
 
 impl TableObj {
     pub fn to_json(&self) -> crate::vm::object::JsonVal {
+        let col_keys: Vec<std::sync::Arc<String>> = self.columns
+            .iter()
+            .map(|c| std::sync::Arc::new(c.name.clone()))
+            .collect();
         let mut rows = Vec::with_capacity(self.rows.len());
         for row in &self.rows {
-            let mut obj = Vec::new();
-            for (i, col) in self.columns.iter().enumerate() {
+            let mut obj = Vec::with_capacity(self.columns.len());
+            for (i, _col) in self.columns.iter().enumerate() {
                 if i < row.len() {
-                    obj.push((std::sync::Arc::new(col.name.clone()), crate::vm::utils::json::value_to_json(&row[i])));
+                    obj.push((std::sync::Arc::clone(&col_keys[i]), crate::vm::utils::json::value_to_json(&row[i])));
                 }
             }
             rows.push(crate::vm::object::JsonVal::Object(std::sync::Arc::new(parking_lot::RwLock::new(obj))));

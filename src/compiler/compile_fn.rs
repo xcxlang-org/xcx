@@ -7,8 +7,9 @@ use crate::compiler::compiler::{FunctionCompiler, CompileContext};
 impl FunctionCompiler {
     pub fn compile_fn_def(&mut self, name: &StringId, params: &[(crate::frontend::ast::Type, StringId)], body: &[Stmt], stmt: &Stmt, ctx: &mut CompileContext) {
         let mut fc = FunctionCompiler::new(false, None);
-        for (i, (_, pname)) in params.iter().enumerate() {
+        for (i, (ty, pname)) in params.iter().enumerate() {
             fc.define_local(*pname, i);
+            fc.local_types.insert(*pname, ty.clone());
         }
         fc.next_local = params.len();
         for s in body { fc.compile_stmt(s, ctx); }

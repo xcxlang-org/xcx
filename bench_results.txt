@@ -1,0 +1,4 @@
+Loop: 100000000 iterations in 93.738ms. Checksum: 3552931968
+Fib(30): 832040 in 15.159ms
+Sieve up to 100000: 9592 found in 2.994ms
+JSON 1000x100: in 24.065ms. Bytes: 2933446

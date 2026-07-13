@@ -8,8 +8,7 @@ pub fn infer_param_types(bytecode: &[OpCode], arity: usize, _constants: &[VMValu
         for op in bytecode {
             match op {
                 OpCode::Less { src1, src2, .. } | OpCode::Greater { src1, src2, .. } |
-                OpCode::LessEqual { src1, src2, .. } | OpCode::GreaterEqual { src1, src2, .. } |
-                OpCode::Equal { src1, src2, .. } | OpCode::NotEqual { src1, src2, .. } => {
+                OpCode::LessEqual { src1, src2, .. } | OpCode::GreaterEqual { src1, src2, .. } => {
                     if *src1 == reg || *src2 == reg {
                         types[reg as usize] = TypeTag::Int;
                         break;
@@ -96,6 +95,7 @@ pub fn analyze_chunk_types(
                             else if val.is_string() { TypeTag::String }
                             else if val.is_date() { TypeTag::Date }
                             else if val.is_array() { TypeTag::Array }
+                            else if val.is_bool_array() { TypeTag::BoolArray }
                             else if val.is_map() { TypeTag::Map }
                             else if val.is_set() { TypeTag::Set }
                             else if val.is_table() { TypeTag::Table }
@@ -201,6 +201,9 @@ pub fn analyze_chunk_types(
                 } else {
                     out_types[*dst as usize] = TypeTag::Array;
                 }
+            }
+            OpCode::BoolArrayInit { dst } => {
+                out_types[*dst as usize] = TypeTag::BoolArray;
             }
             OpCode::SetInit { dst, .. } |
             OpCode::SetRange { dst, .. } |
@@ -344,36 +347,3 @@ pub fn analyze_chunk_types(
     (types_at_ip, uses_heap)
 }
 
-impl OpCode {
-    pub fn jump_target(&self) -> Option<u32> {
-        match self {
-            OpCode::Jump { target } | OpCode::JumpIfFalse { target, .. } | OpCode::JumpIfTrue { target, .. } |
-            OpCode::LoopNext { target, .. } | OpCode::LoopPrev { target, .. } |
-            OpCode::IncLocalLoopNext { target, .. } | OpCode::DecLocalLoopPrev { target, .. } |
-            OpCode::IncVarLoopNext { target, .. } | OpCode::DecVarLoopPrev { target, .. } |
-            OpCode::ArrayLoopNext { target, .. } | OpCode::TableIter { target, .. } => Some(*target),
-            _ => None,
-        }
-    }
-    
-    pub fn is_unconditional_jump(&self) -> bool {
-        match self {
-            OpCode::Jump { .. } => true,
-            _ => false,
-        }
-    }
-    
-    pub fn is_return(&self) -> bool {
-        match self {
-            OpCode::Return { .. } | OpCode::ReturnVoid => true,
-            _ => false,
-        }
-    }
-    
-    pub fn is_halt(&self) -> bool {
-        match self {
-            OpCode::Halt => true,
-            _ => false,
-        }
-    }
-}

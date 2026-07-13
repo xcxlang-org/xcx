@@ -1,4 +1,6 @@
-![XCX Banner](https://raw.githubusercontent.com/xcxlang-org/xcx-vscode/main/images/banner.png)
+<p align="center">
+  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560">
+</p>
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
@@ -121,6 +123,16 @@ Benchmarks run on Windows 11, Ryzen 7 5800X, 32GB RAM. XCX uses a register-based
 >
 > The goal of this section is **transparency**, not competition.
 
+> 📌 **A note on benchmark fairness:** the benchmark code for every language in this
+> comparison is continuously evolving, not a fixed, peer-reviewed reference suite.
+> These benchmarks are maintained by a single developer working outside their
+> primary area of expertise for most of the listed languages, so implementations
+> may not reflect each language's idiomatic best practices or the optimizations a
+> specialist in that ecosystem would apply. Treat these numbers as directional
+> rather than definitive. Once I'm reasonably confident the benchmark code is
+> correct and fair across all languages, I plan to publish the source so anyone
+> can verify or improve it.
+
 Ranking is sorted by geometric mean across all four benchmarks.
 
 | # | Language / Platform | Loop (100M) | Fib (30) | Sieve | JSON |
@@ -180,7 +192,7 @@ XCX 4.1 is best treated as an experimental platform. It is not production-ready,
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
-**Known rough edges:** String operation performance (no JIT coverage), and some known internal architectural issues being addressed in the 4.x line. Fibonacci, Sieve, and JSON performance are targeted for improvement.
+**Known rough edges:** 
 
 **Linux**: XCX 4.1 compiles and passes the full test suite on Linux. Primary development happens on Windows, so Linux-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 

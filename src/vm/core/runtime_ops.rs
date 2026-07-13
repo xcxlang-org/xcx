@@ -17,6 +17,11 @@ impl RuntimeOps {
     }
 
     #[inline]
+    pub fn bool_array_init() -> Value {
+        Value::from_bool_array(Arc::new(RwLock::new(crate::vm::object::BoolArrayObj::new(Vec::new()))))
+    }
+
+    #[inline]
     pub fn set_init(elements: &[Value]) -> Value {
         let mut set_elements = std::collections::BTreeSet::new();
         for &v in elements {
@@ -266,6 +271,77 @@ impl RuntimeOps {
                 }
             }
             _ => {}
+        }
+    }
+
+    pub fn str_append_member(c: Value, name: &str, rhs: Value) {
+        match c.tag() {
+            crate::vm::value::Tag::Json => {
+                let j = c.as_json();
+                if let crate::vm::object::JsonVal::Object(o) = &j.root {
+                    let mut obj = o.write();
+                    if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == name) {
+                        let rhs_bytes = if rhs.tag() == crate::vm::value::Tag::String {
+                            let arc = crate::vm::value::heap_object::as_string(&rhs);
+                            arc.data.clone()
+                        } else {
+                            rhs.to_string().into_bytes()
+                        };
+                        let suffix = String::from_utf8_lossy(&rhs_bytes);
+
+                        if let crate::vm::object::JsonVal::String(arc_str) = &mut obj[pos].1 {
+                            if let Some(s) = std::sync::Arc::get_mut(arc_str) {
+                                s.push_str(&suffix);
+                            } else {
+                                let mut combined = (**arc_str).clone();
+                                combined.push_str(&suffix);
+                                obj[pos].1 = crate::vm::object::JsonVal::String(std::sync::Arc::new(combined));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn str_append_element(c: Value, index: usize, rhs: Value) {
+        if c.is_array() {
+            let arr = c.as_array();
+            let mut arr_wr = arr.write();
+            if index < arr_wr.len() {
+                let rhs_bytes = if rhs.tag() == crate::vm::value::Tag::String {
+                    let arc = crate::vm::value::heap_object::as_string(&rhs);
+                    arc.data.clone()
+                } else {
+                    rhs.to_string().into_bytes()
+                };
+
+                let raw = arr_wr[index];
+                if raw.tag() == crate::vm::value::Tag::String {
+                    let ptr = raw.bits as *const crate::vm::object::StringObj;
+                    arr_wr[index] = Value::from_bool(false);
+                    
+                    let arc = unsafe { Arc::from_raw(ptr) };
+                    let sc = Arc::strong_count(&arc);
+                    let wc = Arc::weak_count(&arc);
+                    if sc == 1 && wc == 0 {
+                        let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(&rhs_bytes);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        arr_wr[index] = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+                    } else {
+                        let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
+                        combined.extend_from_slice(&arc.data);
+                        combined.extend_from_slice(&rhs_bytes);
+                        let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined)));
+                        arr_wr[index] = new_val;
+                    }
+                }
+            }
         }
     }
 }

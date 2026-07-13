@@ -1,12 +1,3 @@
-/// Integration test runner for XCX edge case test files.
-/// 
-/// NOTE: By default, this test runner silently suppresses all XCX JIT/VM 
-/// string outputs (`print`, `>!`, `halt`) to keep the test summary clean.
-/// If you need to debug a failing test and want to see the detailed VM execution logs
-/// and print outputs, run tests with the show-output flag:
-/// 
-///     cargo test --release -- --nocapture
-///
 use serial_test::serial;
 use std::path::PathBuf;
 use xcx_compiler::frontend::parser::Parser;
@@ -109,7 +100,7 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
     
     let handle = std::thread::Builder::new()
         .name("xcx-test-executor".to_string())
-        .stack_size(64 * 1024 * 1024) // 64MB
+        .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             vm_for_thread.run(main_chunk_arc, ctx, &[]);
         })
@@ -124,7 +115,6 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
     vm
 }
 
-/// Load a .xcx file from tests/xcx/ and run it through the full pipeline.
 fn run_file(filename: &str) -> Arc<VM> {
     let path = test_dir().join(filename);
     let source = std::fs::read_to_string(&path)
@@ -191,10 +181,9 @@ fn run_sql_file(filename: &str) -> Arc<VM> {
         let _vm = run_source_with_dir(&source, Some(dir.clone()));
     }
     
-    Arc::new(VM::new()) // Return a dummy VM since the result is usually ignored in tests
+    Arc::new(VM::new()) 
 }
 
-/// Expect the type checker to REJECT this source with at least one error.
 fn expect_type_error(source: &str) {
     let mut parser = Parser::new(source);
     let mut program = parser.parse_program();
@@ -240,19 +229,16 @@ fn multiple_var_declarations() {
 
 #[test]
 fn type_error_string_assigned_to_int() {
-    // Spec: i is Integer, "hello" is String — must be rejected
     expect_type_error(r#"i: x = "hello";"#);
 }
 
 #[test]
 fn type_error_int_plus_string() {
-    // Adding integer and string should fail the type checker
     expect_type_error(r#"i: a = 5; s: b = "abc"; i: c = a + b;"#);
 }
 
 #[test]
 fn type_error_bool_from_int() {
-    // b: flag = 10 — boolean cannot hold an integer literal
     expect_type_error("b: flag = 10;");
 }
 
@@ -262,20 +248,16 @@ fn type_error_bool_from_int() {
 
 #[test]
 fn overflow_max_int_literal() {
-    // i64::MAX as a literal — must parse and store without panic
     run_source("i: max_int = 9223372036854775807; >! max_int;");
 }
 
 #[test]
 fn overflow_large_multiplication() {
-    // 999_999 * 999_999 = 999_998_000_001 — fits in i64
     run_source("i: big = 999999 * 999999; >! big;");
 }
 
 #[test]
 fn overflow_large_float() {
-    // XCX lexer does not support scientific notation (e.g. 1.7e307)
-    // Use a plain large decimal float instead.
     run_source("f: big_f = 99999999.99; >! big_f;");
 }
 
@@ -286,7 +268,6 @@ fn overflow_negative_int() {
 
 #[test]
 fn overflow_file() {
-    // Run the full overflow test file
     run_file("02_overflow.xcx");
 }
 
@@ -833,7 +814,6 @@ mod hardening_suite {
 
     #[test]
     fn hard_03_scope_integrity() {
-        // Same concern as hard_02: run in a larger-stack thread for safety.
         std::thread::Builder::new()
             .stack_size(128 * 1024 * 1024)
             .spawn(|| run_hardening_file("test_scope_integrity.xcx"))
@@ -887,7 +867,6 @@ mod feature_suite {
     #[test] fn feat_fibers() { run_feature_file("test_fibers.xcx"); }
     #[test] #[serial] fn feat_all_elements() { run_feature_file("test_all_elements.xcx"); }
     #[test] fn feat_settest() { run_feature_file("settest.xcx"); }
-    // #[test] fn feat_input_strict() { run_feature_file("input_strict_test.xcx"); }
     #[test] fn feat_map_to_json() { run_feature_file("test_map_to_json.xcx"); }
     #[test] fn feat_random_array() { run_feature_file("test_random_array.xcx"); }
     #[test] fn feat_to_json() { run_feature_file("test_to_json.xcx"); }
@@ -1103,14 +1082,16 @@ mod stability_suite {
     #[test]
     #[serial_test::serial]
     fn run_xcx_stability_suite() {
-        // Cleanup leftover .db files from project root before starting
-        let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        if let Ok(entries) = std::fs::read_dir(&project_root) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                    if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
-                        let _ = std::fs::remove_file(&p);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            if let Ok(entries) = std::fs::read_dir(&project_root) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                        if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
+                            let _ = std::fs::remove_file(&p);
+                        }
                     }
                 }
             }
@@ -1127,7 +1108,7 @@ mod stability_suite {
         let mut xcx_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         xcx_bin.push("target");
         xcx_bin.push("release");
-        xcx_bin.push("xcx-compiler.exe"); // Windows explicit
+        xcx_bin.push("xcx-compiler.exe");
 
         if !xcx_bin.exists() {
             xcx_bin.set_extension("");
@@ -1138,7 +1119,7 @@ mod stability_suite {
 
         let temp_dir = std::env::temp_dir().join(format!("xcx_v3_runner_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&temp_dir);
-        let _ = std::fs::create_dir_all(temp_dir.join("tests_tmp")); // For SEC-001c etc.
+        let _ = std::fs::create_dir_all(temp_dir.join("tests_tmp"));
 
         let mut tests = Vec::new();
         let mut stack = vec![base_dir.clone()];
@@ -1195,7 +1176,7 @@ mod stability_suite {
                 if looks_like_compile_error(rc, &stderr, &stdout) {
                     is_ok = true;
                 } else if rc != 0 && !looks_like_runtime_success(rc, &stderr, &stdout) {
-                    is_ok = true; // Fallback for unrecognized compilation exit formats
+                    is_ok = true;
                 } else {
                     reason = format!("Expected compile error but it didn't look like one.");
                 }
@@ -1206,7 +1187,7 @@ mod stability_suite {
                     reason = format!("Expected fatal exit but failed or didn't exit cleanly.");
                 }
             } else if meta.expect_regression && fail_count > 0 {
-                is_ok = true; // known regression
+                is_ok = true;
             } else if fail_count > 0 {
                 is_ok = false;
                 reason = format!("{} asserts failed.", fail_count);
@@ -1216,7 +1197,7 @@ mod stability_suite {
                 is_ok = false;
                 reason = format!("Exit {} without passes.", rc);
             } else {
-                is_ok = true; // exit 0 without passes is ok
+                is_ok = true;
             }
 
             if is_ok {

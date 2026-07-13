@@ -159,6 +159,7 @@ impl JIT {
                         emit_conditional_inc_ref(&mut ctx, &symbols, bits, tag);
                         ctx.def_local(dst, bits, tag);
                         ctx.known_types[dst as usize] = if val.is_int() {
+                            ctx.register_const[dst as usize] = Some(val.as_i64());
                             crate::vm::opcode::TypeTag::Int
                         } else if val.is_float() {
                             crate::vm::opcode::TypeTag::Float
@@ -356,8 +357,9 @@ impl JIT {
                         emit_json_bind_global_const(&mut ctx, &symbols, idx, json_reg, path);
                     }
                     TraceOp::GetMember { dst, obj_reg, ref name } => {
-                        let name_ptr = name.as_ptr() as i64;
-                        let name_len = name.len() as i64;
+                        let leaked = Box::leak(name.clone().into_boxed_str());
+                        let name_ptr = leaked.as_ptr() as i64;
+                        let name_len = leaked.len() as i64;
                         let np = ctx.b.ins().iconst(types::I64, name_ptr);
                         let nl = ctx.b.ins().iconst(types::I64, name_len);
                         let (cv_bits, cv_tag) = ctx.use_local(obj_reg);

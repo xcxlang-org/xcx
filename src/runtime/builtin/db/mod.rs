@@ -31,7 +31,7 @@ impl Executor {
                 self.handle_database_ddl(dst, db_rc, name, ip, locals)
             }
             MethodKind::Execute | MethodKind::Exec | MethodKind::Insert | MethodKind::Truncate | MethodKind::Push | MethodKind::Save => {
-                self.handle_database_write(dst, db_rc, kind, args, ip, locals)
+                self.handle_database_write(dst, db_rc, kind, args, _names, ip, locals)
             }
             MethodKind::Query | MethodKind::Fetch | MethodKind::QueryRaw => {
                 self.handle_database_read(dst, db_rc, args, ip, locals)

@@ -5,7 +5,9 @@ use crate::compiler::compiler::{FunctionCompiler, CompileContext};
 
 impl FunctionCompiler {
     pub fn compile_var_decl(&mut self, stmt: &Stmt, ctx: &mut CompileContext) {
-        if let StmtKind::VarDecl { name, value, ty, is_const: _ } = &stmt.kind {
+        // Const enforcement is handled by the semantic analysis pass;
+        // the compile pass receives only valid programs.
+        if let StmtKind::VarDecl { name, value, ty, is_const: _is_const } = &stmt.kind {
             let src = if let Some(v) = value {
                 if let ExprKind::TableLiteral { .. } = &v.kind {
                     let name_str = ctx.interner.lookup(*name).to_string();
@@ -37,6 +39,7 @@ impl FunctionCompiler {
                     }
                     s
                 };
+                self.local_types.insert(*name, ty.as_ref().clone());
                 if (slot as u8) != src {
                     self.emit(OpCode::Move { dst: slot as u8, src }, &stmt.span);
                 }

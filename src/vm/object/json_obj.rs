@@ -1,5 +1,5 @@
 use parking_lot::Mutex;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
 use super::json_val::JsonVal;
 
 // JSON object representation. 
@@ -7,7 +7,8 @@ use super::json_val::JsonVal;
 pub struct JsonObj {
     pub root: JsonVal,
     pub cached_str: Mutex<Option<std::sync::Arc<super::string_obj::StringObj>>>,
-    pub dirty: AtomicBool,
+    pub version: AtomicU64,
+    pub cached_version: AtomicU64,
 }
 
 impl JsonObj {
@@ -15,7 +16,8 @@ impl JsonObj {
         Self { 
             root: value,
             cached_str: Mutex::new(None),
-            dirty: AtomicBool::new(true),
+            version: AtomicU64::new(0),
+            cached_version: AtomicU64::new(1),
         }
     }
 }
