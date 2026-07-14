@@ -50,7 +50,7 @@ fiber handle_404(json: req -> json) {
 };
 
 serve: api {
-    host   = "[IP_ADDRESS]",
+    host   = "0.0.0.0",
     port   = 8000,
     routes = ["POST /login" :: handle_login, "*" :: handle_404]
 };
@@ -86,7 +86,7 @@ fiber handle_create(json: req -> json) {
 };
 
 serve: api {
-    host   = "[IP_ADDRESS]",
+    host   = "0.0.0.0",
     port   = 8080,
     routes = ["GET /users" :: handle_users, "POST /users" :: handle_create]
 };
