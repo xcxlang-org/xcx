@@ -34,10 +34,10 @@ cp "$PROJECT_ROOT/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || cp "$PROJECT_ROOT
 mkdir -p "$DIST_DIR/resources"
 cp -r "$PROJECT_ROOT/Windows/resources/icons" "$DIST_DIR/resources/" 2>/dev/null || cp -r "$PROJECT_ROOT/Windows/resources/icons" "$DIST_DIR/resources/" 2>/dev/null || true
 cp "$PROJECT_ROOT/Windows/resources/LICENSE.txt" "$DIST_DIR/resources/" 2>/dev/null || cp "$PROJECT_ROOT/Windows/resources/LICENSE.txt" "$DIST_DIR/resources/" 2>/dev/null || true
-cp "$PROJECT_ROOT/Windows/resources/README.txt" "$DIST_DIR/resources/" 2>/dev/null || cp "$PROJECT_ROOT/Windows/resources/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
+cp "$PROJECT_ROOT/Linux/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
 
 echo "Creating tarball..."
 cd "$SCRIPT_DIR/dist"
-tar -czvf "xcx-installer-linux-v4.1.tar.gz" "xcx-installer-linux"
+tar -czvf "xcx-installer-linux-v4.2.tar.gz" "xcx-installer-linux"
 
-echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-linux-v4.1.tar.gz"
+echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-linux-v4.2.tar.gz"

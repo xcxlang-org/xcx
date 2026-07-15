@@ -1,20 +1,21 @@
-XCX 4.2 — Runtime & Compiler
+XCX 4.2 — Runtime & Compiler (macOS)
 
-XCX is an backend programming language with a built-in runtime.
-This installer sets up the compiler and basic tooling on your system.
+XCX is a backend programming language with a built-in runtime.
+This package contains the compiler and basic tooling for macOS.
 
 --------------------------------------------------
 
 INSTALLATION
 
-1. Run: xcx-setup.exe
-2. Follow the installer steps
-3. Open a new terminal (cmd or PowerShell)
+1. Open Terminal.
+2. Navigate to the extracted folder.
+3. Run the installer:
+
+   ./install.sh
+
 4. Verify installation:
 
    xcx --version
-
-If the command is not recognized, restart your terminal or system.
 
 --------------------------------------------------
 
@@ -36,10 +37,9 @@ Example:
 
 WHAT IS INCLUDED
 
-- xcx.exe           → compiler + runtime
+- xcx               → compiler + runtime
 - PAX               → package manager (preview)
-- Basic libraries   → JSON, HTTP, SQLite, crypto, file I/O
-- File associations → .xcx files (if enabled during install)
+- Offline docs      → language reference & compiler specifications
 
 --------------------------------------------------
 
@@ -56,7 +56,8 @@ APIs and behavior may change between versions.
 
 KNOWN NOTES
 
-- Currently supported platform: Windows
+- Supported platform: macOS (11.0+)
+- Note: macOS releases are built and verified automatically via GitHub Actions. Due to the lack of dedicated Apple Silicon hardware for local testing, user feedback and bug reports are highly appreciated.
 - JIT optimizations apply mainly to loops
 - Some features (fibers, database) have known limitations
 
@@ -65,9 +66,7 @@ KNOWN NOTES
 DOCUMENTATION
 
 Online:
-https:/xcxlang.com/docs
-
-Source documentation may be included separately.
+https://xcxlang.com/docs
 
 --------------------------------------------------
 

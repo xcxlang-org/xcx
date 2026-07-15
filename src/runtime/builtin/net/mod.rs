@@ -19,7 +19,7 @@ pub fn respond(dst: u8, status_src: u8, body_src: u8, headers_src: u8, locals: &
     let body_val = locals[body_src as usize];
     let headers = locals[headers_src as usize];
     let res = respond::respond_impl(status, body_val, headers, http_req);
-    // net.respond returns true on success in XCX 4.1
+    // net.respond returns true on success in XCX 4.2
     locals[dst as usize] = Value::from_bool(true);
     res
 }

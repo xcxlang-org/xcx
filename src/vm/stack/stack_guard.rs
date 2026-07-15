@@ -1,4 +1,4 @@
-// Stack guard implementation for XCX 4.1.
+// Stack guard implementation for XCX 4.2.
 // Used to prevent stack overflow by capping call depth.
 pub struct StackGuard {
     pub max_depth: usize,

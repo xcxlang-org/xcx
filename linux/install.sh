@@ -18,7 +18,7 @@ if [ ! -f "$SCRIPT_DIR/xcx" ]; then
     exit 1
 fi
 
-whiptail --title "Setup - XCX Compiler Ecosystem" --msgbox "Welcome to the XCX Compiler Ecosystem Setup Wizard.\n\nThis will install XCX version 4.1 on your computer.\n\nIt is recommended that you close all other applications before continuing." 12 70
+whiptail --title "Setup - XCX Compiler Ecosystem" --msgbox "Welcome to the XCX Compiler Ecosystem Setup Wizard.\n\nThis will install XCX version 4.2 on your computer.\n\nIt is recommended that you close all other applications before continuing." 12 70
 
 LICENSE_FILE="$SCRIPT_DIR/resources/LICENSE.txt"
 if [ -f "$LICENSE_FILE" ]; then

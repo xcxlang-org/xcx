@@ -37,11 +37,11 @@ cp "$PROJECT_ROOT/lib/VERSION" "$DIST_DIR/lib/" 2>/dev/null || cp "$PROJECT_ROOT
 
 mkdir -p "$DIST_DIR/resources"
 cp "$PROJECT_ROOT/Windows/resources/LICENSE.txt" "$DIST_DIR/resources/" 2>/dev/null || true
-cp "$PROJECT_ROOT/Windows/resources/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
+cp "$PROJECT_ROOT/MacOS/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
 # Note: no icons folder - not used on macOS (no MIME/UTI registration)
 
 echo "Creating tarball..."
 cd "$SCRIPT_DIR/dist"
-tar -czvf "xcx-installer-macos-v4.1.tar.gz" "xcx-installer-macos"
+tar -czvf "xcx-installer-macos-v4.2.tar.gz" "xcx-installer-macos"
 
-echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-macos-v4.1.tar.gz"
+echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-macos-v4.2.tar.gz"

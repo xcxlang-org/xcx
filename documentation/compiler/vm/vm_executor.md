@@ -115,15 +115,24 @@ pub struct Executor {
     pub terminal_raw_enabled: bool,
     pub fiber_next_ip:        usize,
     pub current_bytecode_ptr: usize,
-    pub stack:                Vec<Value>,   // 64K Value slots pre-allocated
+    pub stack:                Vec<Value>,
     pub stack_ptr:            usize,
     pub call_depth:           usize,
+    pub in_fiber:             bool,
+    pub globals_raw:          *mut Value,
+    pub row_cache:            HashMap<usize, Vec<Value>>,
 }
 ```
 
 One `Executor` instance per running call stack (including fibers). Fibers get their own `Executor` created when the fiber is first resumed.
 
 `stack` is the locals array for the current call frame. The executor uses a flat frame layout: `stack[0..max_locals]` are the locals for the innermost call; on a function call, the new frame is pushed at `stack_ptr`.
+
+**Stack sizing:** `stack` is pre-allocated once in `Executor::new` at a size chosen by whether JIT is active: `64K` `Value` slots (1MB) when `vm.disable_jit` is set, favoring cache locality for the interpreter, or `512K` slots (8MB) when JIT is active, to accommodate the deeper native call chains that direct JIT-to-JIT calls can produce before falling back to the interpreter.
+
+**`globals_raw`:** A raw pointer into the backing storage of `vm.globals`, captured once in `Executor::new` (`vm.globals.read().as_ptr() as *mut Value`) instead of re-acquiring the `RwLock` read guard on every global access. This is safe only because the globals vector is fixed-size for the lifetime of the `VM` — `Executor::new` asserts this invariant with `debug_assert_eq!(vm.globals.read().len(), 65536, ...)`, since any reallocation of the backing `Vec` would silently invalidate `globals_raw`.
+
+**`row_cache`:** A map from a table's heap address (`Arc::as_ptr(&t_rc) as usize`) to a vector of previously-constructed `RowObj` values, one per row index, used by `table.where(...)` (see `compiler/runtime/runtime_collections.md`) to avoid reallocating a `RowObj` for every row on every filter invocation. `insert`, `delete`, `update`, and `clear` on a table invalidate its entry in `row_cache` so that stale row handles are never read after a structural mutation.
 
 **JIT Hotspot Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted.
 
@@ -139,6 +148,10 @@ The executor runs a `loop` over the bytecode array. On each iteration:
 6. Otherwise dispatch to the appropriate step handler.
 
 Step handlers are split into modules and called as free functions taking `(op, locals, &mut exec, vm_arc)`. This keeps the main dispatch function manageable and allows the compiler to inline hot paths.
+
+### Function Call Frames (`handle_call` / `handle_call_no_jit`)
+
+Both entry points funnel into a single private `handle_call_inner`, which checks the recursion limit, prepares the new frame (`prepare_frame`), resolves or triggers JIT compilation of the callee via `check_jit_warmup` (only from `handle_call`, which is reached from JIT-compiled code — `handle_call_no_jit` reads the callee's `jit_ptr` directly since it originates from the interpreter loop and does not need to trigger warmup), executes the frame, and tears it down (`cleanup_frame`). Consolidating frame preparation/cleanup into one function removes what was previously duplicated setup and teardown code between the two call paths. When `check_jit_warmup` triggers a fresh JIT compilation and it fails, the error is logged to stderr under `#[cfg(debug_assertions)]` and `vm.error_count` is incremented regardless of build profile.
 
 ### `dispatch_jit_call`
 

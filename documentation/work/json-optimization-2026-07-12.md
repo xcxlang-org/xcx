@@ -2,8 +2,8 @@
 
 ## Problem
 
-Benchmark `main.xcx` JSON scenario showed a regression vs XCX 4.1:
-- XCX 4.1 baseline: `json: 0.284 ms`
+Benchmark `main.xcx` JSON scenario showed a regression vs XCX 4.2:
+- XCX 4.2 baseline: `json: 0.284 ms`
 - XCX 4.2 before fix: `json: 0.346 ms`
 
 Benchmark scenario: `table.toJson()` on 1000 rows × 3 columns, then `json.get(499)` + `json.bind("name", var)`.
@@ -74,6 +74,6 @@ This bypasses the string conversion + `path.parse::<usize>()` path entirely when
 | 4   | —      | 0.296 |
 | 5   | —      | 0.340 (outlier, first run after build) |
 
-Stable results: **~0.290–0.296 ms**, which is at the XCX 4.1 baseline level of 0.284 ms. The first run after a fresh `cargo build --release` consistently shows higher latency (~0.316–0.346 ms) due to cold OS page caches and JIT warmup effects — this is not a regression.
+Stable results: **~0.290–0.296 ms**, which is at the XCX 4.2 baseline level of 0.284 ms. The first run after a fresh `cargo build --release` consistently shows higher latency (~0.316–0.346 ms) due to cold OS page caches and JIT warmup effects — this is not a regression.
 
 All other benchmarks (fib, lcg, sieve) showed no regression.

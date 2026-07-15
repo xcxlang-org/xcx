@@ -30,6 +30,7 @@ pub struct Compiler {
     pub constants: Vec<Value>,
     pub string_constants: HashMap<Vec<u8>, usize>,
     pub numeric_constants: HashMap<(u64, u64), usize>,
+    pub disable_inline: bool,
 }
 ```
 
@@ -39,6 +40,7 @@ The top-level `Compiler` orchestrates the entire translation pipeline. It owns t
 - `func_indices`: Maps function/fiber names to their index in the `functions` array.
 - `functions`: Accumulates JIT-ready `Chunk`s representing compiled functions/fibers.
 - `constants`: A deduplicated pool of compile-time constants (strings, floats, ints, maps) used by `OpCode::LoadConst`.
+- `disable_inline`: A single flag set once before compiling the whole program (not per `CompileContext`), which — when true — skips the HIR inlining pass entirely. See "Compilation Dispatch" below and `compiler/hir/hir_inline.md`.
 
 ### Pre-Registration (`globals.rs`)
 
@@ -77,22 +79,27 @@ pub struct FunctionCompiler {
     pub spans: Vec<Span>,
     pub scopes: Vec<HashMap<StringId, usize>>,
     pub next_local: usize,
-    pub loop_stack: Vec<(usize, Vec<usize>, Vec<usize>, Option<usize>)>,
+    pub loop_stack: Vec<LoopFrame>,
     pub parent_locals: Option<HashMap<StringId, usize>>,
     pub captures: Vec<StringId>,
     pub is_main: bool,
     pub is_table_lambda: bool,
     pub max_locals_used: usize,
+    pub inline_stack: Vec<usize>,
+    pub inline_result_locals: Vec<Option<u8>>,
+    pub local_regs: HashSet<usize>,
 }
 ```
 
-Compiles a single function, fiber, or the top-level main program.
+Compiles a single function, fiber, or the top-level main program. Shared identically by both the AST-to-bytecode path and the HIR-to-bytecode path (`hir::compile_hir_to_chunk`) — see `compiler/hir/hir_codegen.md`.
 
 - `bytecode` / `spans`: The parallel arrays of instructions and debug spans that will form the final `Chunk`.
 - `scopes`: A stack of lexical scopes binding variable names maps to local register indices. Pushed on `{`, popped on `}`.
 - `next_local`: The next free local register index in the current frame.
-- `max_locals_used`: The high-water mark of `next_local`, dictating the size of the runtime stack frame overhead.
-- `loop_stack`: Tracks control flow for `break` and `continue`. Tuple: `(start_ip, unresolved_breaks, unresolved_continues, step_ip)`.
+- `max_locals_used`: The high-water mark of `next_local`, dictating the size of the runtime stack frame overhead. Kept in sync via `sync_max_locals()`, called after `push_reg()` and after any operation that advances `next_local` directly.
+- `loop_stack`: Tracks control flow for `break` and `continue` as a stack of typed `LoopFrame` values (`start_pc`, `breaks`, `continues`, `fiber_reg`) — see `compiler/compiler/compiler_stmt.md` for the full structure and its fields.
+- `local_regs`: The set of register indices permanently reserved for named locals (as opposed to transient registers allocated by `push_reg`/`pop_reg` during subexpression compilation). Populated up front when compiling from HIR, where every local already has a fixed index.
+- `inline_stack` / `inline_result_locals`: Used when compiling an HIR `InlineBlock` (the result of function inlining, see `compiler/hir/hir_inline.md`) — they track, for each nested inlined call currently being compiled, which local register should receive the inlined function's return value.
 
 ### Register Allocation
 
@@ -104,7 +111,9 @@ XCX's compiler uses an unoptimized flat register allocator during this phase; de
 
 ### Compilation Dispatch
 
-`Compiler::compile` iterates over the AST, compiling main statements into the main `FunctionCompiler`, and delegating `FunctionDef` and `FiberDef` to independent `compile_function_helper` calls which spawn fresh `FunctionCompiler` instances.
+`Compiler::compile` iterates over the AST, compiling main statements into the main `FunctionCompiler`, and delegating `FunctionDef` and `FiberDef` to independent compilation calls which produce one `Chunk` per function.
+
+For top-level functions and fibers, compilation goes through an intermediate HIR stage rather than straight from AST to bytecode: after pre-registration, `Compiler::compile` calls `hir::lower_program` to lower every `FunctionDef`/`FiberDef` body to HIR, then (unless `self.disable_inline` is set) `hir::run_inliner_pass` to inline eligible call sites within that HIR. Each function is then compiled to its `Chunk` via `hir::compile_hir_to_chunk`. If a function has no corresponding entry in the lowered HIR map (which should not normally happen, but is handled defensively), compilation falls back to `compile_function_helper`, the direct AST-to-bytecode path described in `compiler/compiler/compiler_stmt.md` and `compiler/compiler/compiler_expr.md`. Both paths produce the same `OpCode` output format and share the same `FunctionCompiler`/`CompileContext` machinery — see `compiler/hir/README.md` for the HIR pipeline itself.
 
 The resulting output is a tuple: `(MainChunk, ConstantsPool, FunctionsArray)`.
 
