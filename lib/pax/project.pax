@@ -3,8 +3,8 @@ PAX Project Configuration
 *---
 /
     name        :: "pax",
-    version     :: "3.1.0",
-    author      :: "dev",
+    version     :: "4.2.0",
+    author      :: "xcx-official",
     description :: "PAX project",
     tags  :: [],
     files :: [],

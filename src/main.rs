@@ -50,7 +50,9 @@ fn main() {
         }
     }
 
-    if args.iter().any(|r| r == "--help" || r == "-h" || r == "help") {
+    let is_tool = args.len() > 1 && (args[1] == "pax" || args[1] == "doc");
+
+    if !is_tool && args.iter().any(|r| r == "--help" || r == "-h" || r == "help") {
         println!("xcx — statically typed language with JIT compilation\n");
         println!("Usage:");
         println!("  xcx                    Start REPL");
@@ -72,7 +74,7 @@ fn main() {
         return;
     }
 
-    if args.iter().any(|r| r == "--version" || r == "-v" || r == "version") {
+    if !is_tool && args.iter().any(|r| r == "--version" || r == "-v" || r == "version") {
         let mut version = env!("CARGO_PKG_VERSION");
         if version.ends_with(".0") {
             version = &version[..version.len() - 2];
@@ -94,13 +96,15 @@ fn main() {
         disable_inline = true;
         args.remove(pos);
     }
-    if let Some(pos) = args.iter().position(|r| r == "--check") {
-        check_only = true;
-        args.remove(pos);
-    }
-    if let Some(pos) = args.iter().position(|r| r == "--bytecode") {
-        dump_bytecode_only = true;
-        args.remove(pos);
+    if !is_tool {
+        if let Some(pos) = args.iter().position(|r| r == "--check") {
+            check_only = true;
+            args.remove(pos);
+        }
+        if let Some(pos) = args.iter().position(|r| r == "--bytecode") {
+            dump_bytecode_only = true;
+            args.remove(pos);
+        }
     }
 
     let mut jit_threshold = 50;

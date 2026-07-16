@@ -37,7 +37,7 @@ func main() {
     array:s: args = env.args();
     
     if (args.size() < 3) then;
-        >! "PAX Package Manager v4.2 (XCX Professional)";
+        >! "PAX Package Manager v4.2";
         >! "Usage: xcx pax <command> [args]";
         >! "";
         >! "Core Commands:";

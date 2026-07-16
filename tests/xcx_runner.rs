@@ -28,20 +28,20 @@ fn comprehensive_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("comprehensive")
 }
 
-fn professional_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("professional")
+fn core_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("core")
 }
 
 fn hardening_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("hardening")
 }
 
-fn ultimate_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("ultimate")
+fn extended_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("extended")
 }
 
-fn refactor_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("refactor")
+fn smoke_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("smoke")
 }
 
 fn sql_dir() -> PathBuf {
@@ -129,11 +129,11 @@ fn run_comprehensive_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(comprehensive_dir()))
 }
 
-fn run_professional_file(filename: &str) -> Arc<VM> {
-    let path = professional_dir().join(filename);
+fn run_core_file(filename: &str) -> Arc<VM> {
+    let path = core_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(professional_dir()))
+    run_source_with_dir(&source, Some(core_dir()))
 }
 
 fn run_hardening_file(filename: &str) -> Arc<VM> {
@@ -143,11 +143,11 @@ fn run_hardening_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(hardening_dir()))
 }
 
-fn run_ultimate_file(filename: &str) -> Arc<VM> {
-    let path = ultimate_dir().join(filename);
+fn run_extended_file(filename: &str) -> Arc<VM> {
+    let path = extended_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(ultimate_dir()))
+    run_source_with_dir(&source, Some(extended_dir()))
 }
 
 fn run_feature_file(filename: &str) -> Arc<VM> {
@@ -164,11 +164,11 @@ fn run_random_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(random_dir()))
 }
 
-fn run_refactor_file(filename: &str) -> Arc<VM> {
-    let path = refactor_dir().join(filename);
+fn run_smoke_file(filename: &str) -> Arc<VM> {
+    let path = smoke_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(refactor_dir()))
+    run_source_with_dir(&source, Some(smoke_dir()))
 }
 
 fn run_sql_file(filename: &str) -> Arc<VM> {
@@ -772,25 +772,25 @@ mod comprehensive_suite {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. PROFESSIONAL SUITE
+// 12. CORE SUITE
 // ─────────────────────────────────────────────────────────────────────────────
 
-mod professional_suite {
+mod core_suite {
     use super::*;
 
-    #[test] fn prof_01_primitives() { run_professional_file("01_primitives.xcx"); }
-    #[test] fn prof_02_operators() { run_professional_file("02_operators.xcx"); }
-    #[test] fn prof_03_control_flow() { run_professional_file("03_control_flow.xcx"); }
-    #[test] fn prof_04_functions() { run_professional_file("04_functions.xcx"); }
-    #[test] fn prof_05_arrays() { run_professional_file("05_arrays.xcx"); }
-    #[test] fn prof_06_sets() { run_professional_file("06_sets.xcx"); }
-    #[test] fn prof_07_maps() { run_professional_file("07_maps.xcx"); }
-    #[test] fn prof_08_halt_system() { run_professional_file("08_halt_system.xcx"); }
-    #[test] fn prof_09_store_module() { run_professional_file("09_store_module.xcx"); }
-    #[test] fn prof_10_date_time() { run_professional_file("10_date_time.xcx"); }
-    #[test] fn prof_11_tables() { run_professional_file("11_tables.xcx"); }
-    #[test] fn prof_12_json() { run_professional_file("12_json.xcx"); }
-    #[test] fn prof_13_fibers() { run_professional_file("13_fibers.xcx"); }
+    #[test] fn core_01_primitives() { run_core_file("01_primitives.xcx"); }
+    #[test] fn core_02_operators() { run_core_file("02_operators.xcx"); }
+    #[test] fn core_03_control_flow() { run_core_file("03_control_flow.xcx"); }
+    #[test] fn core_04_functions() { run_core_file("04_functions.xcx"); }
+    #[test] fn core_05_arrays() { run_core_file("05_arrays.xcx"); }
+    #[test] fn core_06_sets() { run_core_file("06_sets.xcx"); }
+    #[test] fn core_07_maps() { run_core_file("07_maps.xcx"); }
+    #[test] fn core_08_halt_system() { run_core_file("08_halt_system.xcx"); }
+    #[test] fn core_09_store_module() { run_core_file("09_store_module.xcx"); }
+    #[test] fn core_10_date_time() { run_core_file("10_date_time.xcx"); }
+    #[test] fn core_11_tables() { run_core_file("11_tables.xcx"); }
+    #[test] fn core_12_json() { run_core_file("12_json.xcx"); }
+    #[test] fn core_13_fibers() { run_core_file("13_fibers.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -824,29 +824,29 @@ mod hardening_suite {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13. ULTIMATE SUITE
+// 13. EXTENDED SUITE
 // ─────────────────────────────────────────────────────────────────────────────
 
-mod ultimate_suite {
+mod extended_suite {
     use super::*;
 
-    #[test] fn ult_01_fiber_generator() { run_ultimate_file("ult_01_fiber_generator.xcx"); }
-    #[test] fn ult_02_fiber_isdone() { run_ultimate_file("ult_02_fiber_isdone.xcx"); }
-    #[test] fn ult_03_fiber_drain() { run_ultimate_file("ult_03_fiber_drain.xcx"); }
-    #[test] fn ult_04_fiber_nested() { run_ultimate_file("ult_04_fiber_nested.xcx"); }
-    #[test] fn ult_05_table_where() { run_ultimate_file("ult_05_table_where.xcx"); }
-    #[test] fn ult_06_table_relational() { run_ultimate_file("ult_06_table_relational.xcx"); }
-    #[test] fn ult_07_json_binding() { run_ultimate_file("ult_07_json_binding.xcx"); }
-    #[test] fn ult_08_recursion() { run_ultimate_file("ult_08_recursion.xcx"); }
-    #[test] fn ult_09_loops() { run_ultimate_file("ult_09_loops.xcx"); }
-    #[test] fn ult_10_errors() { run_ultimate_file("ult_10_errors.xcx"); }
-    #[test] fn ult_11_modules() { run_ultimate_file("ult_11_modules.xcx"); }
-    #[test] fn ult_12_namespaces() { run_ultimate_file("ult_12_namespaces.xcx"); }
-    #[test] fn ult_13_date_time() { run_ultimate_file("ult_13_date_time.xcx"); }
-    #[test] fn ult_14_store() { run_ultimate_file("ult_14_store.xcx"); }
-    #[test] fn ult_15_json_raw() { run_ultimate_file("ult_15_json_raw.xcx"); }
-    #[test] fn ult_16_math() { run_ultimate_file("ult_16_math.xcx"); }
-    #[test] fn ult_17_math_comprehensive() { run_ultimate_file("ult_17_math_comprehensive.xcx"); }
+    #[test] fn ext_01_fiber_generator() { run_extended_file("ult_01_fiber_generator.xcx"); }
+    #[test] fn ext_02_fiber_isdone() { run_extended_file("ult_02_fiber_isdone.xcx"); }
+    #[test] fn ext_03_fiber_drain() { run_extended_file("ult_03_fiber_drain.xcx"); }
+    #[test] fn ext_04_fiber_nested() { run_extended_file("ult_04_fiber_nested.xcx"); }
+    #[test] fn ext_05_table_where() { run_extended_file("ult_05_table_where.xcx"); }
+    #[test] fn ext_06_table_relational() { run_extended_file("ult_06_table_relational.xcx"); }
+    #[test] fn ext_07_json_binding() { run_extended_file("ult_07_json_binding.xcx"); }
+    #[test] fn ext_08_recursion() { run_extended_file("ult_08_recursion.xcx"); }
+    #[test] fn ext_09_loops() { run_extended_file("ult_09_loops.xcx"); }
+    #[test] fn ext_10_errors() { run_extended_file("ult_10_errors.xcx"); }
+    #[test] fn ext_11_modules() { run_extended_file("ult_11_modules.xcx"); }
+    #[test] fn ext_12_namespaces() { run_extended_file("ult_12_namespaces.xcx"); }
+    #[test] fn ext_13_date_time() { run_extended_file("ult_13_date_time.xcx"); }
+    #[test] fn ext_14_store() { run_extended_file("ult_14_store.xcx"); }
+    #[test] fn ext_15_json_raw() { run_extended_file("ult_15_json_raw.xcx"); }
+    #[test] fn ext_16_math() { run_extended_file("ult_16_math.xcx"); }
+    #[test] fn ext_17_math_comprehensive() { run_extended_file("ult_17_math_comprehensive.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -888,10 +888,10 @@ mod random_suite {
     #[test] fn rand_assertions() { run_random_file("02_assertions.xcx"); }
 }
 
-mod refactor_baseline {
+mod smoke_suite {
     use super::*;
 
-    #[test] fn collections_smoke() { run_refactor_file("collections_smoke.xcx"); }
+    #[test] fn collections_smoke() { run_smoke_file("collections_smoke.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

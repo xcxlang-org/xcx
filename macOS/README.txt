@@ -19,6 +19,15 @@ INSTALLATION
 
 --------------------------------------------------
 
+UNINSTALLATION
+
+To uninstall XCX:
+1. Run the generated uninstaller script:
+
+   ~/.xcx/uninstall.sh
+
+--------------------------------------------------
+
 USAGE
 
 Run a file:

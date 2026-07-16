@@ -34,7 +34,7 @@ impl Executor {
                 unsafe { val.assign_to(&mut locals[dst as usize]); }
                 Some(OpResult::Continue)
             }
-            OpCode::GetVar { .. } | OpCode::SetVar { .. } | OpCode::IncVar { .. } | OpCode::DecVar { .. } | OpCode::StrAppendVar { .. } => {
+            OpCode::GetVar { .. } | OpCode::SetVar { .. } | OpCode::IncVar { .. } | OpCode::DecVar { .. } | OpCode::StrAppendVar { .. } | OpCode::StrAppendLocal { .. } => {
                 self.handle_var_op(op, locals, vm_arc)
             }
 

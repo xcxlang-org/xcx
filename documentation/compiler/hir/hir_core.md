@@ -38,7 +38,6 @@ pub struct HirExpr {
 
 Unlike AST `ExprKind`, `HirExprKind` no longer contains nodes that require resolution during the semantic phase (e.g., operator overloads or unresolved references) — this task is performed by the lowering phase, described in [hir_lower.md](hir_lower.md).
 
-Variants relevant to version 4.2 (additional support in codegen — see [hir_codegen.md](hir_codegen.md)):
 
 ```rust
 TableLiteral { columns: Vec<ColumnDef>, rows: Vec<Vec<HirExpr>> },

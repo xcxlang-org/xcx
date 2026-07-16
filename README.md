@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560">
+  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.webp" width="560">
 </p>
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
@@ -50,7 +50,7 @@ fiber handle_404(json: req -> json) {
 };
 
 serve: api {
-    host   = "[IP_ADDRESS]",
+    host   = "0.0.0.0",
     port   = 8000,
     routes = ["POST /login" :: handle_login, "*" :: handle_404]
 };
@@ -86,7 +86,7 @@ fiber handle_create(json: req -> json) {
 };
 
 serve: api {
-    host   = "[IP_ADDRESS]",
+    host   = "0.0.0.0",
     port   = 8080,
     routes = ["GET /users" :: handle_users, "POST /users" :: handle_create]
 };
@@ -107,7 +107,7 @@ The honest picture: what you gain and what you give up:
 | Type safety | strong | optional (TS) | optional (mypy) | static, compile-time |
 | Concurrency model | goroutines | event loop | async/await | cooperative fibers |
 | Ecosystem | large | very large | very large | minimal (early stage) |
-| Platform support | Windows (primary) / Linux / macOS |
+| Platform support | Win / Linux / macOS | Win / Linux / macOS | Win / Linux / macOS | Windows (primary), Linux / macOS |
 
 XCX is not trying to replace Go or Node. It occupies a different space: small backend services and tools where you want zero dependency setup and a language that knows what you're building. The trade-off is an early-stage ecosystem and a single contributor.
 
@@ -127,30 +127,30 @@ than previous releases.
 
 ### Performance Benchmarks Results Table (JSON penalty method: PROPORTIONAL)
 
-| Rank | Language | Category | fib(30) (ms) | lcg(100m) (ms) | sieve (ms) | json (ms) | Geom Mean (ms) | Rel. Slowdown |
-|---|---|---|---|---|---|---|---|---|
-| 1 | zig | AOT | 1.69 | 5.39 | 11.89 | 0.05* | 1.53 | 1.00x |
-| 2 | rust | AOT | 1.81 | 21.44 | 12.40 | 0.08* | 2.52 | 1.65x |
-| 3 | c | AOT | 1.16 | 85.87 | 8.36 | 0.10* | 3.03 | 1.98x |
-| 4 | cpp | AOT | 1.17 | 84.92 | 17.50 | 0.13* | 3.87 | 2.52x |
-| 5 | v | AOT | 1.50 | 190.50 | 12.00 | 0.16* | 4.85 | 3.17x |
-| 6 | crystal | AOT | 2.67 | 106.99 | 22.34 | 0.20* | 5.97 | 3.90x |
-| 7 | go | AOT | 3.09 | 236.66 | 12.65 | 0.22* | 6.75 | 4.41x |
-| 8 | java | JIT | 2.74 | 220.36 | 24.67 | 0.26* | 7.91 | 5.16x |
-| 9 | bun | JIT | 5.41 | 403.19 | 29.57 | 0.41 | 12.71 | 8.30x |
-| 10 | nim | AOT | 18.00 | 194.50 | 20.50 | 0.44* | 13.37 | 8.73x |
-| 11 | **xcx** | JIT | 12.48 | 108.07 | 102.26 | 0.25 | 13.60 | 8.88x |
-| 12 | pypy | JIT | 18.82 | 119.94 | 99.86 | 0.33 | 16.48 | 10.75x |
-| 13 | csharp | JIT | 5.67 | 210.67 | 16.62 | 5.64 | 18.29 | 11.94x |
-| 14 | luajit | JIT | 6.90 | 381.38 | 89.46 | 0.66* | 19.86 | 12.96x |
-| 15 | node | JIT | 7.04 | 1384.39 | 30.96 | 0.60 | 20.61 | 13.45x |
-| 16 | php | INTERPRETED | 62.71 | 1782.28 | 389.90 | 0.83 | 77.55 | 50.62x |
-| 17 | lua | INTERPRETED | 68.00 | 2337.00 | 468.00 | 4.50* | 135.27 | 88.30x |
-| 18 | python | INTERPRETED | 98.45 | 14569.10 | 1016.23 | 0.44 | 159.14 | 103.88x |
-| 19 | erlang | JIT | 5.50 | 4806.50 | 11593.50 | 7.22* | 216.86 | 141.56x |
-| 20 | ruby | INTERPRETED | 57.62 | 21827.34 | 542.82 | 10.32 | 289.72 | 189.12x |
-| 21 | perl | INTERPRETED | 349.93 | 4376.32 | 2391.05 | 16.50* | 495.77 | 323.62x |
-| 22 | R | INTERPRETED | 570.00 | 11770.00 | 930.00 | 19.71* | 592.15 | 386.54x |
+| # | LANGUAGE_PLATFORM | FIB (30) | LCG (100M) | SIEVE | JSON |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Zig [AOT] | 1.66ms | 5.28ms | 11.97ms | 0.04*ms |
+| 2 | Rust [AOT] | 1.81ms | 21.36ms | 12.70ms | 0.06*ms |
+| 3 | C [AOT] | 1.19ms | 85.34ms | 8.72ms | 0.07*ms |
+| 4 | C++ [AOT] | 1.26ms | 86.33ms | 18.27ms | 0.09*ms |
+| 5 | V [AOT] | 1.00ms | 189.00ms | 11.50ms | 0.10*ms |
+| 6 | Crystal [AOT] | 2.69ms | 107.37ms | 22.59ms | 0.14*ms |
+| 7 | Go [AOT] | 3.10ms | 242.37ms | 16.16ms | 0.17*ms |
+| 8 | Java [JIT] | 2.64ms | 217.88ms | 24.38ms | 0.18*ms |
+| 9 | Nim [AOT] | 17.50ms | 193.00ms | 19.50ms | 0.31*ms |
+| 10 | Bun [JIT] | 5.35ms | 400.84ms | 32.52ms | 0.40ms |
+| 11 | **XCX 4.2** [JIT] | 12.303ms | 106.480ms | 97.814ms | 0.238ms |
+| 12 | PyPy [JIT] | 19.47ms | 119.28ms | 101.21ms | 0.32ms |
+| 13 | LuaJIT [JIT] | 6.71ms | 378.47ms | 88.69ms | 0.46*ms |
+| 14 | C# [JIT] | 5.66ms | 208.82ms | 15.94ms | 5.58ms |
+| 15 | Node.js [JIT] | 6.70ms | 1363.96ms | 29.42ms | 0.63ms |
+| 16 | PHP [INT] | 67.54ms | 1739.70ms | 387.66ms | 1.06ms |
+| 17 | Lua [INT] | 69.00ms | 2346.00ms | 531.00ms | 3.33*ms |
+| 18 | Python [INT] | 96.67ms | 16573.77ms | 1045.21ms | 0.49ms |
+| 19 | Ruby [INT] | 59.27ms | 20938.24ms | 557.13ms | 1.39ms |
+| 20 | Erlang [JIT] | 6.00ms | 4891.00ms | 12353.50ms | 5.39*ms |
+| 21 | Perl [INT] | 351.03ms | 4506.39ms | 2379.04ms | 11.75*ms |
+| 22 | R [INT] | 560.00ms | 11220.00ms | 860.00ms | 13.26*ms |
 
 `*` = JSON value is a computed stdlib penalty, not a direct measurement (see methodology).
 
@@ -189,7 +189,7 @@ Source (.xcx)
 
 **Value representation:** every value is a 16-byte `{ bits: u64, tag: u64 }` struct. The explicit integer tag means zero bitwise operations when reading the type in the interpreter. Scalars (int, float, bool, date) require zero heap allocation. Pointers to heap objects (strings, arrays, JSON, tables, fibers) are packed into `bits`. The JIT uses NaN-boxing internally (Cranelift registers hold a single NaN-boxed `u64`), with `pack_value`/`unpack_value` adapters at the boundary, which keeps CPU register usage lower and block signatures simpler in compiled traces.
 
-**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`. Fiber scoping works correctly on all platforms.
+**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`.
 
 **JIT**: backward jumps (loop edges) are counted per instruction pointer. After 50 visits to a given IP, trace recording starts. The threshold is configurable via `--threshold` / `--th`. The trace is specialized for the runtime types seen (integer guards, float guards), then compiled by Cranelift to native code. Functions have a separate threshold: compiled from the 5th call onward. Recursive calls compile to direct native `call` instructions. After 3 guard failures at a given IP, the trace is blacklisted to prevent re-compilation of unstable paths. General string operations are not JIT-compiled, with one exception: the self-concatenation pattern (`x = x + expr`) is recognized and compiled to a dedicated in-place-append fast path.
 
@@ -203,9 +203,7 @@ XCX 4.2 is best treated as an experimental platform. It is not production-ready,
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
-**Known rough edges:** 
-
-**Linux and macOS**: XCX 4.2 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+**macOS support:** builds and the full test suite pass on macOS via GitHub Actions CI. However, without access to physical Mac hardware, parity with the Linux and Windows experience can't be fully confirmed. If you hit anything macOS-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -260,9 +258,9 @@ xcx hello.xcx
 **3. Try the REPL:**
 
 ```bash
-xcx
 xcx> i: x = 2 ^ 10;
-xcx> >! x;
+...  >! x;
+...  !exec
 1024
 xcx> !exit
 ```
@@ -275,7 +273,11 @@ fiber handle(json: req -> json) {
     return <<< {} >>>;
 };
 
-serve: api { host = "[IP_ADDRESS]", port = 8080, routes = ["*" :: handle] };
+serve: api { 
+    host = "0.0.0.0", 
+    port = 8080, 
+    routes = ["*" :: handle] 
+};
 ```
 
 ```bash
