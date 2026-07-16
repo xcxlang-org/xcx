@@ -1,1 +1,0 @@
-tutaj umieszczam rózenmgo rodzjau pliki które prezentują słabe strony konwercnje które jeszcze nid do końca są wydajne
