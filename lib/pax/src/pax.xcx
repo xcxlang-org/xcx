@@ -694,6 +694,10 @@ func detectOS(-> s) {
             return "windows";
         end;
     end;
+    s: home = env.get("HOME");
+    if (home.startsWith("/Users") OR home.startsWith("/var/root")) then;
+        return "macos";
+    end;
     return "linux";
 };
 
@@ -756,10 +760,22 @@ func upgradeXcxBinary(s: installDir, s: os) {
         return;
     end;
     s: base = "https://github.com/xcxlang-org/xcx/releases/download/" + tag + "/";
-    s: assetName = "xcx";
-    if (os == "windows") then; assetName = "xcx.exe"; end;
-    s: url = base + assetName;
-    >! "Downloading " + assetName + " version " + tag + "...";
+    s: downloadName = "xcx";
+    s: localName = "xcx";
+    
+    if (os == "windows") then;
+        downloadName = "xcx.exe";
+        localName = "xcx.exe";
+    elif (os == "macos") then;
+        downloadName = "xcx-macos";
+        localName = "xcx";
+    elif (os == "linux") then;
+        downloadName = "xcx-linux";
+        localName = "xcx";
+    end;
+    
+    s: url = base + downloadName;
+    >! "Downloading " + downloadName + " version " + tag + "...";
     map: headers {
         schema = [s <-> s]
         data = ["User-Agent" :: "xcx-pax"]
@@ -775,10 +791,13 @@ func upgradeXcxBinary(s: installDir, s: os) {
         if (NOT store.exists(destBinDir)) then;
             store.mkdir(destBinDir);
         end;
-        s: dest = destBinDir + "/" + assetName;
+        s: dest = destBinDir + "/" + localName;
         s: body = s(resp.body);
         if (store.write(dest, body)) then;
             >! "OK: xcx binary updated at " + dest;
+            if (os != "windows") then;
+                .terminal !run "chmod +x " + dest;
+            end;
         else;
             >! "Error: Permission denied. Could not write to " + dest;
             if (os == "windows") then;
