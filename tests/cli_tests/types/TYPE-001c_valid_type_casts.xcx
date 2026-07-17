@@ -1,10 +1,10 @@
 --- TEST: TYPE-001c
 --- Area: Types
 --- Priority: high
---- Name: Poprawne rzutowania typów — f→i, i→f, i→s, f→s
+--- Name: Valid type casts — f→i, i→f, i→s, f→s
 --- Expect:
 ---   f→i: truncate toward zero.
----   i→f: poprawna konwersja.
+---   i→f: correct conversion.
 ---   i→s, f→s: string representation.
 
 --- ── f → i (truncate toward zero) ──────────────────────────────────────
@@ -45,7 +45,7 @@ end;
 --- ── string concat auto-converts numbers ─────────────────────────────
 s: msg = "Value: " + 42;
 if (msg == "Value: 42") then;
-    >! "[TYPE-001c] PASS — string concat auto-konwertuje liczby";
+    >! "[TYPE-001c] PASS — string concat auto-converts numbers";
 else;
     >! "[TYPE-001c] FAIL — concat = '" + msg + "'";
 end;

@@ -1219,7 +1219,7 @@ mod stability_suite {
 
             let pass_count = stdout.lines().filter(|l| l.contains("] PASS")).count();
             let fail_count = stdout.lines()
-                .filter(|l| l.contains("] FAIL") && !l.contains("FAIL — znaleziono 0 sesji"))
+                .filter(|l| l.contains("] FAIL") && !l.contains("FAIL — found 0 sessions"))
                 .count();
 
             let mut is_ok = false;

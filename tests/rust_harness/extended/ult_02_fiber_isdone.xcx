@@ -7,7 +7,7 @@ fiber gen(i: max -> i) {
 
 fiber:i: f = gen(3);
 b: started = f.isDone();   
->! "isDone przed pętlą: " + started;
+>! "isDone before loop: " + started;
 
 i: count = 0;
 for val in f do;

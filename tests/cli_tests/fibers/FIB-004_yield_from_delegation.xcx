@@ -1,11 +1,11 @@
 --- TEST: FIB-004
 --- Area: Fibers
 --- Priority: high
---- Name: yield from — delegacja do sub-fiber
+--- Name: yield from — delegation to sub-fiber
 --- Expect:
----   yield from przekazuje WSZYSTKIE wartości z sub-fibera w kolejności.
----   Po wyczerpaniu sub-fibera, delegator kontynuuje własne yieldy.
----   Sekwencja: 0, 1, 2, 100.
+---   yield from propagates ALL values from sub-fiber in order.
+---   After exhausting the sub-fiber, the delegator continues its own yields.
+---   Sequence: 0, 1, 2, 100.
 
 fiber:i: count_sub(i: n -> i) {
     i: x = 0;
@@ -19,7 +19,7 @@ fiber:i: count_sub(i: n -> i) {
 fiber:i: delegator(-> i) {
     fiber:i: sub = count_sub(3);
     yield from sub;   --- yields: 0, 1, 2
-    yield 100;        --- następnie: 100
+    yield 100;        --- then: 100
     return 0;
 };
 
@@ -33,25 +33,25 @@ while (NOT fd.isDone()) do;
     end;
 end;
 
---- ── Subtest 1: liczba wyników ─────────────────────────────────────────
+--- ── Subtest 1: number of results ─────────────────────────────────────────
 if (results.size() == 4) then;
-    >! "[FIB-004-1] PASS — delegator yielded 4 wartości";
+    >! "[FIB-004-1] PASS — delegator yielded 4 values";
 else;
-    >! "[FIB-004-1] FAIL — delegator yielded " + s(results.size()) + " wartości (oczekiwane 4)";
+    >! "[FIB-004-1] FAIL — delegator yielded " + s(results.size()) + " values (expected 4)";
 end;
 
---- ── Subtest 2: sekwencja ───────────────────────────────────────────────
+--- ── Subtest 2: sequence ───────────────────────────────────────────────
 if (results.get(0) == 0 AND results.get(1) == 1 AND results.get(2) == 2 AND results.get(3) == 100) then;
-    >! "[FIB-004-2] PASS — sekwencja: 0, 1, 2, 100";
+    >! "[FIB-004-2] PASS — sequence: 0, 1, 2, 100";
 else;
-    >! "[FIB-004-2] FAIL — sekwencja: "
+    >! "[FIB-004-2] FAIL — sequence: "
         + s(results.get(0)) + ", "
         + s(results.get(1)) + ", "
         + s(results.get(2)) + ", "
         + s(results.get(3));
 end;
 
---- ── Subtest 3: delegator isDone po wyczerpaniu ─────────────────────────
+--- ── Subtest 3: delegator isDone after exhaustion ─────────────────────────
 if (fd.isDone()) then;
     >! "[FIB-004-3] PASS — delegator.isDone() = true";
 else;

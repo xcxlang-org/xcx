@@ -3,7 +3,7 @@
 --- Priority: high
 --- Name: R307 Empty replace pattern
 --- Expect:
----   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+---   File returns 1 and exits with an error, runner treats it as success.
 --- Runner: expect_fatal_exit = true
 
 func trigger_replace(s: target) {

@@ -2,19 +2,19 @@
 --- Runner: expect_compile_error = true
 --- Area: Control Flow
 --- Priority: high
---- Name: Brak variable shadowing — RedefinedVariable → compile error
+--- Name: No variable shadowing — RedefinedVariable → compile error
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Redeclaracja zmiennej 'x' w zagnieżdżonym scope → compile error RedefinedVariable.
---- j
---- Runner: oczekiwany exit code kompilacji niezerowy,
----         stderr zawiera "RedefinedVariable" lub równoważny komunikat.
+---   This file SHOULD NOT compile.
+---   Redeclaration of variable 'x' in nested scope → compile error RedefinedVariable.
+--- .
+--- Runner: expected non-zero compilation exit code,
+---         stderr contains "RedefinedVariable" or equivalent message.
 
 i: x = 10;
 
 if (true) then;
-    --- LINIA KRYTYCZNA — shadowing niedozwolony:
+    --- CRITICAL LINE — shadowing not allowed:
     i: x = 20;
 end;
 
->! "FAIL — RedefinedVariable nie został wykryty";
+>! "FAIL — RedefinedVariable was not detected";

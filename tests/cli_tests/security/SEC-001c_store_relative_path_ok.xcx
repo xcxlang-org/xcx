@@ -1,10 +1,10 @@
 --- TEST: SEC-001c
 --- Area: Security
 --- Priority: critical
---- Name: store — poprawna ścieżka względna → OK
+--- Name: store — valid relative path → OK
 --- Expect:
----   store.write(), store.read(), store.exists() z ścieżką względną działają.
----   Treść zapisana = treść odczytana.
+---   store.write(), store.read(), store.exists() with relative path work.
+---   Written content = read content.
 
 s: path = "tests_tmp/sec001c_test.txt";
 s: content = "XCX 4.1 security test\nLine 2";
@@ -12,14 +12,14 @@ s: content = "XCX 4.1 security test\nLine 2";
 store.write(path, content);
 
 if (store.exists(path)) then;
-    >! "[SEC-001c] PASS — store.exists() = true po write()";
+    >! "[SEC-001c] PASS — store.exists() = true after write()";
 else;
-    >! "[SEC-001c] FAIL — store.exists() = false po write()";
+    >! "[SEC-001c] FAIL — store.exists() = false after write()";
 end;
 
 s: read_back = store.read(path);
 if (read_back == content) then;
-    >! "[SEC-001c] PASS — store.read() zwrócił zapisaną treść";
+    >! "[SEC-001c] PASS — store.read() returned the written content";
 else;
     >! "[SEC-001c] FAIL — read_back ≠ content";
 end;
@@ -27,7 +27,7 @@ end;
 store.delete(path);
 
 if (NOT store.exists(path)) then;
-    >! "[SEC-001c] PASS — store.delete() usunął plik";
+    >! "[SEC-001c] PASS — store.delete() deleted the file";
 else;
-    >! "[SEC-001c] FAIL — plik nadal istnieje po delete()";
+    >! "[SEC-001c] FAIL — file still exists after delete()";
 end;

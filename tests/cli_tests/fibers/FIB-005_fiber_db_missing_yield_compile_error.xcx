@@ -2,12 +2,12 @@
 --- Runner: expect_compile_error = true
 --- Area: Fibers
 --- Priority: medium
---- Name: Fiber — DB operacje wymagają yield (brak yield → compile error)
+--- Name: Fiber — DB operations require yield (missing yield → compile error)
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Wywołanie db.fetch() bez yield wewnątrz fibera → compile error.
+---   This file SHOULD NOT compile.
+---   Calling db.fetch() without yield inside fiber → compile error.
 --- .
---- Runner: oczekiwany exit code kompilacji niezerowy.
+--- Runner: expected non-zero compilation exit code.
 
 database: app { engine = "sqlite", path = "tests_tmp/fib005.db" };
 
@@ -17,9 +17,9 @@ table: users {
 };
 
 fiber run(-> b) {
-    --- LINIA KRYTYCZNA — brak yield:
+    --- CRITICAL LINE — missing yield:
     table: bad = app.fetch(users);
     return false;
 };
 
->! "FAIL — brak yield przed DB operation nie wywołał błędu kompilacji";
+>! "FAIL — missing yield before DB operation did not trigger compile error";

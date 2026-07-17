@@ -1,18 +1,18 @@
 --- TEST: TYPE-002
 --- Area: Types
 --- Priority: medium
---- Name: String — immutability, metody zwracają nowy string
+--- Name: String — immutability, methods return new string
 --- Expect:
----   Metody string nie modyfikują oryginału.
----   Każda metoda zwraca nowy string.
----   Łańcuchowanie metod działa.
+---   String methods do not modify the original.
+---   Each method returns a new string.
+---   Method chaining works.
 
---- ── Subtest 1: trim() nie zmienia oryginału ────────────────────────────
+--- ── Subtest 1: trim() does not change original ────────────────────────────
 s: raw = "  XCX Language  ";
 s: trimmed = raw.trim();
 
 if (raw == "  XCX Language  ") then;
-    >! "[TYPE-002-1] PASS — raw niezmieniony po trim()";
+    >! "[TYPE-002-1] PASS — raw unchanged after trim()";
 else;
     >! "[TYPE-002-1] FAIL — raw = '" + raw + "'";
 end;
@@ -23,12 +23,12 @@ else;
     >! "[TYPE-002-1] FAIL — trimmed = '" + trimmed + "'";
 end;
 
---- ── Subtest 2: lower() nie zmienia oryginału ───────────────────────────
+--- ── Subtest 2: lower() does not change original ───────────────────────────
 s: original = "HELLO WORLD";
 s: lowered = original.lower();
 
 if (original == "HELLO WORLD") then;
-    >! "[TYPE-002-2] PASS — original niezmieniony po lower()";
+    >! "[TYPE-002-2] PASS — original unchanged after lower()";
 else;
     >! "[TYPE-002-2] FAIL — original = '" + original + "'";
 end;
@@ -39,7 +39,7 @@ else;
     >! "[TYPE-002-2] FAIL — lowered = '" + lowered + "'";
 end;
 
---- ── Subtest 3: łańcuchowanie trim().lower().replace() ─────────────────
+--- ── Subtest 3: method chaining trim().lower().replace() ─────────────────
 s: chained = "  XCX-Language  ".trim().lower().replace("-", "_");
 if (chained == "xcx_language") then;
     >! "[TYPE-002-3] PASS — trim().lower().replace() = 'xcx_language'";
@@ -47,11 +47,11 @@ else;
     >! "[TYPE-002-3] FAIL — chain result = '" + chained + "'";
 end;
 
---- ── Subtest 4: replace() nie zmienia źródła ───────────────────────────
+--- ── Subtest 4: replace() does not change source ───────────────────────────
 s: src = "aabbcc";
 s: replaced = src.replace("bb", "XX");
 if (src == "aabbcc") then;
-    >! "[TYPE-002-4] PASS — src niezmieniony po replace()";
+    >! "[TYPE-002-4] PASS — src unchanged after replace()";
 else;
     >! "[TYPE-002-4] FAIL — src = '" + src + "'";
 end;
@@ -61,7 +61,7 @@ else;
     >! "[TYPE-002-4] FAIL — replaced = '" + replaced + "'";
 end;
 
---- ── Subtest 5: .length (bez nawiasów) ─────────────────────────────────
+--- ── Subtest 5: .length (without parentheses) ─────────────────────────────────
 s: word = "hello";
 i: len = word.length;
 if (len == 5) then;
@@ -73,14 +73,14 @@ end;
 --- ── Subtest 6: split() ─────────────────────────────────────────────────
 array:s: parts = "a,b,c".split(",");
 if (parts.size() == 3) then;
-    >! "[TYPE-002-6] PASS — split() daje 3 części";
+    >! "[TYPE-002-6] PASS — split() gives 3 parts";
 else;
-    >! "[TYPE-002-6] FAIL — split() daje " + s(parts.size()) + " części";
+    >! "[TYPE-002-6] FAIL — split() gives " + s(parts.size()) + " parts";
 end;
 if (parts.get(0) == "a" AND parts.get(1) == "b" AND parts.get(2) == "c") then;
     >! "[TYPE-002-6] PASS — split() = ['a','b','c']";
 else;
-    >! "[TYPE-002-6] FAIL — split() części niepoprawne";
+    >! "[TYPE-002-6] FAIL — split() parts incorrect";
 end;
 
 --- ── Subtest 7: indexOf / slice ────────────────────────────────────────

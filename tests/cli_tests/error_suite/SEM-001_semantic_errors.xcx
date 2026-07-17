@@ -1,9 +1,9 @@
 --- TEST: SEM-001
 --- Area: Error Handling
 --- Priority: high
---- Name: Błędy Semantyczne - Kompilacja
+--- Name: Semantic Errors - Compilation
 --- Expect:
----   Fail podczas analizy semantycznej.
+---   Failure during semantic analysis.
 --- Runner: expect_compile_error = true
 
 --- S101
@@ -43,4 +43,4 @@ func not_fiber() {
     yield 1;
 };
 
->! "Jeśli to się kompiluje, to test oblał!";
+>! "If this compiles, the test failed!";

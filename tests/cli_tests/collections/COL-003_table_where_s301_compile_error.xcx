@@ -2,12 +2,12 @@
 --- Runner: expect_compile_error = true
 --- Area: Collections
 --- Priority: high
---- Name: Table — .where() conflict S301 (kolumna vs zmienna lokalna)
+--- Name: Table — .where() conflict S301 (column vs local variable)
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Kompilator musi zgłosić S301 gdy nazwa kolumny = nazwa parametru.
+---   This file SHOULD NOT compile.
+---   Compiler must report S301 when column name = parameter name.
 --- .
---- Runner: oczekiwany exit code kompilacji niezerowy, stderr zawiera "S301".
+--- Runner: expected non-zero compilation exit code, stderr contains "S301".
 
 database: db { engine = "sqlite", path = "tests_tmp/col003.db" };
 
@@ -16,10 +16,10 @@ table: sessions {
     rows = [EMPTY]
 };
 
---- LINIA KRYTYCZNA — parametr 'token' koliduje z kolumną 'token':
+--- CRITICAL LINE — parameter 'token' conflicts with column 'token':
 fiber verify(s: token) {
     table: sess = sessions.where(token == token);
     return;
 };
 
->! "FAIL — S301 nie został wykryty przez kompilator";
+>! "FAIL — S301 was not detected by the compiler";

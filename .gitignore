@@ -35,3 +35,6 @@ TODO.md
 # macOS and Linux installer build output
 /MacOS/dist/
 /Linux/dist/
+
+xcx-linux
+xcx-macos

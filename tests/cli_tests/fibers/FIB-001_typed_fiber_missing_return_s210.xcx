@@ -2,18 +2,18 @@
 --- Runner: expect_compile_error = true
 --- Area: Fibers
 --- Priority: critical
---- Name: Fiber typed — brak return na końcu → compile error S210
+--- Name: Typed fiber — missing return at the end → compile error S210
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Typed fiber bez return na końcu → S210.
+---   This file SHOULD NOT compile.
+---   Typed fiber without return at the end → S210.
 --- .
---- Runner: oczekiwany exit code kompilacji niezerowy, stderr zawiera "S210".
+--- Runner: expected non-zero compilation exit code, stderr contains "S210".
 
---- LINIA KRYTYCZNA — typed fiber bez return:
+--- CRITICAL LINE — typed fiber without return:
 fiber:i gen(-> i) {
     yield 1;
     yield 2;
-    --- brak return — musi być S210
+    --- missing return — must be S210
 };
 
->! "FAIL — S210 nie został wykryty";
+>! "FAIL — S210 was not detected";

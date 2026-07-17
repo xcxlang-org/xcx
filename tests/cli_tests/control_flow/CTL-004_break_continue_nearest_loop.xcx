@@ -1,12 +1,12 @@
 --- TEST: CTL-004
 --- Area: Control Flow
 --- Priority: medium
---- Name: break i continue — tylko nearest loop
+--- Name: break and continue — only nearest loop
 --- Expect:
----   break/continue wpływają wyłącznie na bezpośrednio otaczający loop.
----   Zewnętrzny loop kontynuuje po break wewnętrznym.
+---   break/continue only affect the directly surrounding loop.
+---   The outer loop continues after inner break.
 
---- ── Subtest 1: break w zagnieżdżonej pętli ─────────────────────────────
+--- ── Subtest 1: break in nested loop ─────────────────────────────
 i: outer_count = 0;
 i: inner_total = 0;
 
@@ -14,51 +14,51 @@ for i in 1 to 3 do;
     outer_count = outer_count + 1;
     for j in 1 to 5 do;
         if (j == 3) then;
-            break;   --- przerywa tylko wewnętrzną pętlę
+            break;   --- breaks only the inner loop
         end;
         inner_total = inner_total + 1;
     end;
 end;
 
 if (outer_count == 3) then;
-    >! "[CTL-004-1] PASS — outer loop wykonał się 3 razy";
+    >! "[CTL-004-1] PASS — outer loop executed 3 times";
 else;
-    >! "[CTL-004-1] FAIL — outer_count = " + s(outer_count) + " (oczekiwane 3)";
+    >! "[CTL-004-1] FAIL — outer_count = " + s(outer_count) + " (expected 3)";
 end;
 
---- Wewnętrzna pętla zbiera j=1, j=2 (break przy j=3), 3 razy → 6
+--- The inner loop collects j=1, j=2 (break on j=3), 3 times → 6
 if (inner_total == 6) then;
-    >! "[CTL-004-1] PASS — inner_total = 6 (2 iteracje × 3)";
+    >! "[CTL-004-1] PASS — inner_total = 6 (2 iterations * 3)";
 else;
-    >! "[CTL-004-1] FAIL — inner_total = " + s(inner_total) + " (oczekiwane 6)";
+    >! "[CTL-004-1] FAIL — inner_total = " + s(inner_total) + " (expected 6)";
 end;
 
---- ── Subtest 2: continue w zagnieżdżonej pętli ──────────────────────────
+--- ── Subtest 2: continue in nested loop ──────────────────────────
 array:i: collected {};
 
 for a in 1 to 3 do;
     for b in 1 to 3 do;
         if (b == 2) then;
-            continue;   --- skacze do następnej iteracji wewnętrznej
+            continue;   --- jumps to next inner iteration
         end;
         collected.push(a * 10 + b);
     end;
 end;
 
---- Oczekiwane: 11, 13, 21, 23, 31, 33 (b=2 pominięte)
+--- Expected: 11, 13, 21, 23, 31, 33 (b=2 skipped)
 if (collected.size() == 6) then;
-    >! "[CTL-004-2] PASS — continue pominął b=2, zebrano 6 elementów";
+    >! "[CTL-004-2] PASS — continue skipped b=2, collected 6 elements";
 else;
-    >! "[CTL-004-2] FAIL — zebrano " + s(collected.size()) + " elementów (oczekiwane 6)";
+    >! "[CTL-004-2] FAIL — collected " + s(collected.size()) + " elements (expected 6)";
 end;
 
 if (collected.get(0) == 11 AND collected.get(1) == 13) then;
-    >! "[CTL-004-2] PASS — pierwsza para: 11, 13";
+    >! "[CTL-004-2] PASS — first pair: 11, 13";
 else;
-    >! "[CTL-004-2] FAIL — pierwsza para: " + s(collected.get(0)) + ", " + s(collected.get(1));
+    >! "[CTL-004-2] FAIL — first pair: " + s(collected.get(0)) + ", " + s(collected.get(1));
 end;
 
---- ── Subtest 3: continue w pojedynczej pętli ────────────────────────────
+--- ── Subtest 3: continue in single loop ────────────────────────────
 array:i: odds {};
 for n in 1 to 10 do;
     if (n % 2 == 0) then; continue; end;
@@ -66,7 +66,7 @@ for n in 1 to 10 do;
 end;
 
 if (odds.size() == 5) then;
-    >! "[CTL-004-3] PASS — zebrano 5 nieparzystych (1,3,5,7,9)";
+    >! "[CTL-004-3] PASS — collected 5 odds (1,3,5,7,9)";
 else;
-    >! "[CTL-004-3] FAIL — zebrano " + s(odds.size()) + " (oczekiwane 5)";
+    >! "[CTL-004-3] FAIL — collected " + s(odds.size()) + " (expected 5)";
 end;

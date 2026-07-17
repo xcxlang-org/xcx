@@ -1,10 +1,10 @@
 --- TEST: FIB-001c
 --- Area: Fibers
 --- Priority: critical
---- Name: Fiber — poprawne definicje typed i void
+--- Name: Fiber — valid typed and void definitions
 --- Expect:
----   Typed fiber z return → kompiluje się i działa.
----   Void fiber z bare return → kompiluje się i działa.
+---   Typed fiber with return → compiles and works.
+---   Void fiber with bare return → compiles and works.
 
 --- ── Typed fiber ──────────────────────────────────────────────────────
 fiber:i counter(i: max -> i) {
@@ -33,17 +33,17 @@ else;
 end;
 
 if (cf.isDone()) then;
-    >! "[FIB-001c] PASS — isDone() = true po wyczerpaniu";
+    >! "[FIB-001c] PASS — isDone() = true after exhaustion";
 else;
-    >! "[FIB-001c] FAIL — isDone() = false po wyczerpaniu";
+    >! "[FIB-001c] FAIL — isDone() = false after exhaustion";
 end;
 
---- ── Void fiber z early return ──────────────────────────────────────
+--- ── Void fiber with early return ──────────────────────────────────────
 fiber void_early(s: msg) {
     if (msg == "") then;
         return;
     end;
-    >! "[FIB-001c] PASS — void fiber wydrukował: " + msg;
+    >! "[FIB-001c] PASS — void fiber printed: " + msg;
 };
 
 fiber: vf1 = void_early("hello");
@@ -51,4 +51,4 @@ vf1.run();
 
 fiber: vf2 = void_early("");
 vf2.run();
->! "[FIB-001c] PASS — void fiber z early return nie wydrukował nic dla pustego msg";
+>! "[FIB-001c] PASS — void fiber with early return printed nothing for empty msg";

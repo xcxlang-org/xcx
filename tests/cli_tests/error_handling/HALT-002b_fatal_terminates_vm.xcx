@@ -1,14 +1,14 @@
 --- TEST: HALT-002b
 --- Area: Error Handling
 --- Priority: critical
---- Name: halt.fatal — terminacja całego VM
+--- Name: halt.fatal — termination of entire VM
 --- Expect:
----   halt.fatal natychmiastowo terminuje VM.
----   Linia PO halt.fatal się NIE wykona.
----   Exit code procesu: niezerowy.
+---   halt.fatal immediately terminates the VM.
+---   Line AFTER halt.fatal will NOT execute.
+---   Process exit code: non-zero.
 --- Runner: expect_fatal_exit = true
 
->! "[HALT-002b] Przed halt.fatal";
-halt.fatal >! "HALT-FATAL: krytyczna awaria — VM musi się zakończyć";
+>! "[HALT-002b] Before halt.fatal";
+halt.fatal >! "HALT-FATAL: critical failure — VM must terminate";
 
->! "[HALT-002b] FAIL — halt.fatal nie zakończył VM";
+>! "[HALT-002b] FAIL — halt.fatal did not terminate VM";

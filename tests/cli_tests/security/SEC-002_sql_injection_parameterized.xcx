@@ -1,11 +1,11 @@
 --- TEST: SEC-002
 --- Area: Security
 --- Priority: critical
---- Name: SQL injection — parametryzowane zapytania są bezpieczne
+--- Name: SQL injection — parameterized queries are safe
 --- Expect:
----   Parametryzowane zapytania (?) poprawnie escapują wartości.
----   Payload SQL injection nie niszczy danych.
----   Wynik: tylko wiersze pasujące dosłownie do payloadu (0 wierszy dla ataku).
+---   Parameterized queries (?) correctly escape values.
+---   SQL injection payload does not destroy data.
+---   Result: only rows matching the payload literally (0 rows for attack).
 
 database: app { engine = "sqlite", path = "tests_tmp/sec002.db" };
 
@@ -20,34 +20,34 @@ yield app.truncate(users);
 yield app.insert(users, "Alice", "admin");
 yield app.insert(users, "Bob", "user");
 
---- ── Subtest 1: SQL injection payload jako wartość parametru ─────────────
+--- ── Subtest 1: SQL injection payload as parameter value ─────────────────
 s: malicious = "' OR '1'='1";
 
---- Bezpieczne zapytanie z ? — payload traktowany jako dosłowny string
+--- Safe query with ? — payload treated as literal string
 json: result = yield app.queryRaw(
     "SELECT * FROM users WHERE name = ?",
     [malicious]
 );
 
 if (result.size() == 0) then;
-    >! "[SEC-002-1] PASS — SQL injection payload nie zwrócił wierszy (0 matches)";
+    >! "[SEC-002-1] PASS — SQL injection payload did not return rows (0 matches)";
 else;
-    >! "[SEC-002-1] FAIL — SQL injection zwrócił " + s(result.size()) + " wierszy (oczekiwane 0)";
+    >! "[SEC-002-1] FAIL — SQL injection returned " + s(result.size()) + " rows (expected 0)";
 end;
 
---- ── Subtest 2: parametryzowane zapytanie z poprawną wartością ──────────
+--- ── Subtest 2: parameterized query with valid value ──────────
 json: alice_result = yield app.queryRaw(
     "SELECT * FROM users WHERE name = ?",
     ["Alice"]
 );
 
 if (alice_result.size() == 1) then;
-    >! "[SEC-002-2] PASS — parametryzowane zapytanie działa poprawnie dla 'Alice'";
+    >! "[SEC-002-2] PASS — parameterized query works correctly for 'Alice'";
 else;
-    >! "[SEC-002-2] FAIL — zapytanie dla 'Alice' zwróciło " + s(alice_result.size()) + " wierszy";
+    >! "[SEC-002-2] FAIL — query for 'Alice' returned " + s(alice_result.size()) + " rows";
 end;
 
---- ── Subtest 3: DROP TABLE payload — nie niszczy danych ─────────────────
+--- ── Subtest 3: DROP TABLE payload — does not destroy data ─────────────────
 s: drop_payload = "Alice'; DROP TABLE users; --";
 json: drop_result = yield app.queryRaw(
     "SELECT * FROM users WHERE name = ?",
@@ -55,18 +55,18 @@ json: drop_result = yield app.queryRaw(
 );
 
 if (drop_result.size() == 0) then;
-    >! "[SEC-002-3] PASS — DROP TABLE payload nie wykonał DDL (0 matches)";
+    >! "[SEC-002-3] PASS — DROP TABLE payload did not execute DDL (0 matches)";
 else;
-    >! "[SEC-002-3] FAIL — nieprawidłowy wynik: " + s(drop_result.size()) + " wierszy";
+    >! "[SEC-002-3] FAIL — incorrect result: " + s(drop_result.size()) + " rows";
 end;
 
---- Weryfikacja że tabela nadal istnieje
+--- Verify that the table still exists
 b: still_exists;
 still_exists = app.has(users);
 if (still_exists) then;
-    >! "[SEC-002-3] PASS — tabela users nadal istnieje po ataku DROP TABLE";
+    >! "[SEC-002-3] PASS — table users still exists after DROP TABLE attack";
 else;
-    >! "[SEC-002-3] FAIL — tabela users została zniszczona!";
+    >! "[SEC-002-3] FAIL — table users was destroyed!";
 end;
 
 app.close();
