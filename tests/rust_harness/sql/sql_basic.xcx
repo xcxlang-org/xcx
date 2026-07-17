@@ -31,15 +31,45 @@ fiber run(-> b) {
     end;
     >! "PASS: named INSERT, ID=" + s(r2.insertId);
 
+    yield db.insert(users, age = 35, name = "Dave") as r2_out;
+    >! "PASS: out-of-order named INSERT, ID=" + s(r2_out.insertId);
+
+    json: body = <<< {"name": "Eve", "age": 28} >>>;
+    s: eve_name; body.bind("name", eve_name);
+    i: eve_age; body.bind("age", eve_age);
+    yield db.insert(users, name = eve_name, age = eve_age) as r2_json;
+    >! "PASS: JSON-bound named INSERT, ID=" + s(r2_json.insertId);
+
     yield db.insert(users, "Charlie", age = 22) as r3;
     >! "PASS: mixed INSERT, ID=" + s(r3.insertId);
 
     table: all = yield db.fetch(users);
-    if (all.count() != 3) then;
-        >! "FAIL: expected 3 rows, got " + s(all.count());
+    if (all.count() != 5) then;
+        >! "FAIL: expected 5 rows, got " + s(all.count());
         return false;
     end;
-    >! "PASS: FETCH returned 3 rows";
+    >! "PASS: FETCH returned 5 rows";
+
+    table: daves = yield db.fetch(users).where(name == "Dave");
+    if (daves.count() != 1) then;
+        >! "FAIL: expected 1 Dave, got " + s(daves.count());
+        return false;
+    end;
+    >! "PASS: Dave inserted correctly";
+
+    table: eves = yield db.fetch(users).where(name == "Eve");
+    if (eves.count() != 1) then;
+        >! "FAIL: expected 1 Eve, got " + s(eves.count());
+        return false;
+    end;
+    >! "PASS: Eve inserted correctly";
+
+    json: qr_check = yield db.queryRaw("SELECT name, age FROM users WHERE name = ?", ["Eve"]);
+    if (qr_check.size() != 1) then;
+        >! "FAIL: expected queryRaw to return 1 Eve, got " + s(qr_check.size());
+        return false;
+    end;
+    >! "PASS: queryRaw parameter binding works";
 
     table: young = yield db.fetch(users).where(age < 28);
     if (young.count() != 2) then;

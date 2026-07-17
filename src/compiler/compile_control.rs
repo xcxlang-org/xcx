@@ -1,7 +1,7 @@
 use crate::frontend::ast::{Stmt, StmtKind, ForIterType};
 use crate::vm::value::Value;
 use crate::vm::opcode::{OpCode, MethodKind};
-use crate::compiler::compiler::{FunctionCompiler, CompileContext};
+use crate::compiler::compiler::{FunctionCompiler, CompileContext, LoopFrame};
 
 impl FunctionCompiler {
     pub(crate) fn compile_if(&mut self, stmt: &Stmt, ctx: &mut CompileContext) {
@@ -83,7 +83,7 @@ impl FunctionCompiler {
                 }
             }
 
-            self.loop_stack.push((0, Vec::new(), Vec::new(), None));
+            self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: None });
             let is_downward = is_greater || is_greater_equal;
 
             if is_opt_candidate {
@@ -110,7 +110,7 @@ impl FunctionCompiler {
                 };
 
                 let start_p = self.bytecode.len();
-                if let Some(l) = self.loop_stack.last_mut() { l.0 = start_p; }
+                if let Some(l) = self.loop_stack.last_mut() { l.start_pc = start_p; }
 
                 let test_reg = self.push_reg();
                 if is_downward {
@@ -158,7 +158,9 @@ impl FunctionCompiler {
                 let exit_target = self.bytecode.len() as u32;
                 if let OpCode::JumpIfFalse { ref mut target, .. } = self.bytecode[exit_jmp] { *target = exit_target; }
 
-                let (_, breaks, continues, _) = self.loop_stack.pop().unwrap();
+                let frame = self.loop_stack.pop().unwrap();
+                let breaks = frame.breaks;
+                let continues = frame.continues;
                 let end_label = self.bytecode.len() as u32;
                 for b in breaks { if let OpCode::Jump { ref mut target } = self.bytecode[b] { *target = end_label; } }
                 for c in continues { if let OpCode::Jump { ref mut target } = self.bytecode[c] { *target = start_p as u32; } }
@@ -166,7 +168,7 @@ impl FunctionCompiler {
                 self.pop_reg(); // free limit_reg
             } else {
                 let start_p = self.bytecode.len();
-                if let Some(l) = self.loop_stack.last_mut() { l.0 = start_p; }
+                if let Some(l) = self.loop_stack.last_mut() { l.start_pc = start_p; }
                 let cond_reg = self.compile_expr(condition, ctx);
                 let exit_jmp = self.bytecode.len();
                 self.emit(OpCode::JumpIfFalse { src: cond_reg, target: 0 }, &stmt.span);
@@ -177,7 +179,9 @@ impl FunctionCompiler {
                 self.emit(OpCode::Jump { target: start_p as u32 }, &stmt.span);
                 let exit_target = self.bytecode.len() as u32;
                 if let OpCode::JumpIfFalse { ref mut target, .. } = self.bytecode[exit_jmp] { *target = exit_target; }
-                let (_, breaks, continues, _) = self.loop_stack.pop().unwrap();
+                let frame = self.loop_stack.pop().unwrap();
+                let breaks = frame.breaks;
+                let continues = frame.continues;
                 let end_label = self.bytecode.len() as u32;
                 for b in breaks { if let OpCode::Jump { ref mut target } = self.bytecode[b] { *target = end_label; } }
                 for c in continues { if let OpCode::Jump { ref mut target } = self.bytecode[c] { *target = start_p as u32; } }
@@ -209,9 +213,9 @@ impl FunctionCompiler {
                         let s = self.push_reg(); self.define_local(*var_name, s as usize); s
                     };
                     let saved_for = self.enter_scope();
-                    self.loop_stack.push((0, Vec::new(), Vec::new(), None));
+                    self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: None });
                     let start_label = self.bytecode.len();
-                    if let Some(l) = self.loop_stack.last_mut() { l.0 = start_label; }
+                    if let Some(l) = self.loop_stack.last_mut() { l.start_pc = start_label; }
                     let saved_next_local = self.next_local;
                     let test_reg = self.push_reg();
                     self.emit(OpCode::Less { dst: test_reg, src1: index_reg, src2: size_reg }, &stmt.span);
@@ -231,7 +235,9 @@ impl FunctionCompiler {
                     self.emit(OpCode::ArrayLoopNext { idx_reg: index_reg, size_reg, target: body_start as u32 }, &stmt.span);
                     let end_label = self.bytecode.len() as u32;
                     if let OpCode::JumpIfFalse { ref mut target, .. } = self.bytecode[exit_jmp] { *target = end_label; }
-                    let (_, breaks, continues, _) = self.loop_stack.pop().unwrap();
+                    let frame = self.loop_stack.pop().unwrap();
+                    let breaks = frame.breaks;
+                    let continues = frame.continues;
                     self.exit_scope(saved_for);
                     for b in breaks { if let OpCode::Jump { ref mut target } = self.bytecode[b] { *target = end_label; } }
                     for c in continues { if let OpCode::Jump { ref mut target } = self.bytecode[c] { *target = cont_label as u32; } }
@@ -245,9 +251,9 @@ impl FunctionCompiler {
                     self.define_local(*var_name, loop_var_reg as usize);
                     let limit_reg = self.compile_expr(end, ctx);
                     let saved_for = self.enter_scope();
-                    self.loop_stack.push((0, Vec::new(), Vec::new(), None));
+                    self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: None });
                     let start_p = self.bytecode.len();
-                    if let Some(l) = self.loop_stack.last_mut() { l.0 = start_p; }
+                    if let Some(l) = self.loop_stack.last_mut() { l.start_pc = start_p; }
                     let saved_next_local = self.next_local;
                     let test_reg = self.push_reg();
                     self.emit(OpCode::LessEqual { dst: test_reg, src1: loop_var_reg, src2: limit_reg }, &stmt.span);
@@ -267,7 +273,7 @@ impl FunctionCompiler {
                         let len = self.bytecode.len();
                         let mut fused = false;
                         let has_continues = if let Some(l) = self.loop_stack.last() {
-                            !l.2.is_empty()
+                            !l.continues.is_empty()
                         } else {
                             false
                         };
@@ -297,7 +303,9 @@ impl FunctionCompiler {
                     }
                     let end_label = self.bytecode.len() as u32;
                     if let OpCode::JumpIfFalse { ref mut target, .. } = self.bytecode[exit_jmp] { *target = end_label; }
-                    let (_, breaks, continues, _) = self.loop_stack.pop().unwrap();
+                    let frame = self.loop_stack.pop().unwrap();
+                    let breaks = frame.breaks;
+                    let continues = frame.continues;
                     self.exit_scope(saved_for);
                     for b in breaks { if let OpCode::Jump { ref mut target } = self.bytecode[b] { *target = end_label; } }
                     for c in continues { if let OpCode::Jump { ref mut target } = self.bytecode[c] { *target = cont_label as u32; } }
@@ -311,9 +319,9 @@ impl FunctionCompiler {
                         let s = self.push_reg(); self.define_local(*var_name, s as usize); s
                     };
                     let saved_for = self.enter_scope();
-                    self.loop_stack.push((0, Vec::new(), Vec::new(), Some(fiber_reg as usize)));
+                    self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: Some(fiber_reg as usize) });
                     let start_label = self.bytecode.len();
-                    if let Some(l) = self.loop_stack.last_mut() { l.0 = start_label; }
+                    if let Some(l) = self.loop_stack.last_mut() { l.start_pc = start_label; }
                     let saved_next_local = self.next_local;
                     let test_reg = self.push_reg();
                     self.emit(OpCode::MethodCall { dst: test_reg, kind: MethodKind::IsDone, base: fiber_reg, arg_count: 0 }, &stmt.span);
@@ -327,7 +335,9 @@ impl FunctionCompiler {
                     self.emit(OpCode::Jump { target: start_label as u32 }, &stmt.span);
                     let end_label = self.bytecode.len() as u32;
                     if let OpCode::JumpIfTrue { ref mut target, .. } = self.bytecode[exit_jmp] { *target = end_label; }
-                    let (_, breaks, continues, _) = self.loop_stack.pop().unwrap();
+                    let frame = self.loop_stack.pop().unwrap();
+                    let breaks = frame.breaks;
+                    let continues = frame.continues;
                     self.exit_scope(saved_for);
                     for b in breaks { if let OpCode::Jump { ref mut target } = self.bytecode[b] { *target = end_label; } }
                     for c in continues { if let OpCode::Jump { ref mut target } = self.bytecode[c] { *target = cont_label as u32; } }
@@ -338,19 +348,19 @@ impl FunctionCompiler {
     }
 
     pub(crate) fn compile_break(&mut self, stmt: &Stmt) {
-        if let Some(&(_, _, _, Some(fiber_reg_idx))) = self.loop_stack.last() {
+        if let Some(&LoopFrame { fiber_reg: Some(fiber_reg_idx), .. }) = self.loop_stack.last() {
             let tmp = self.push_reg();
             self.emit(OpCode::MethodCall { dst: tmp, kind: MethodKind::Close, base: fiber_reg_idx as u8, arg_count: 0 }, &stmt.span);
             self.pop_reg();
         }
         let jmp = self.bytecode.len();
         self.emit(OpCode::Jump { target: 0 }, &stmt.span);
-        if let Some(l) = self.loop_stack.last_mut() { l.1.push(jmp); }
+        if let Some(l) = self.loop_stack.last_mut() { l.breaks.push(jmp); }
     }
 
     pub(crate) fn compile_continue(&mut self, stmt: &Stmt) {
         let jmp = self.bytecode.len();
         self.emit(OpCode::Jump { target: 0 }, &stmt.span);
-        if let Some(l) = self.loop_stack.last_mut() { l.2.push(jmp); }
+        if let Some(l) = self.loop_stack.last_mut() { l.continues.push(jmp); }
     }
 }

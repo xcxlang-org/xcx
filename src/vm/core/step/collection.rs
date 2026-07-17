@@ -13,6 +13,11 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = res;
         }
+        OpCode::BoolArrayInit { dst } => {
+            let res = crate::vm::core::runtime_ops::RuntimeOps::bool_array_init();
+            unsafe { locals[dst as usize].dec_ref(); }
+            locals[dst as usize] = res;
+        }
         OpCode::SetInit { dst, base, count } => {
             let res = crate::vm::core::runtime_ops::RuntimeOps::set_init(&locals[base as usize..(base as usize + count as usize)]);
             unsafe { locals[dst as usize].dec_ref(); }
@@ -155,6 +160,37 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                     } else {
                         obj.push((std::sync::Arc::new(key), crate::vm::utils::value_to_json(&val)));
                     }
+                }
+            }
+        }
+        OpCode::StrAppendElement { container, index, src } => {
+            let c = locals[container as usize];
+            let idx = locals[index as usize];
+            let val = locals[src as usize];
+
+            if c.is_array() {
+                if idx.is_int() {
+                    let i = idx.as_i64();
+                    if i >= 0 {
+                        let idx_usize = i as usize;
+                        let arr = c.as_array();
+                        let len = arr.read().len();
+                        if idx_usize < len {
+                            crate::vm::core::runtime_ops::RuntimeOps::str_append_element(c, idx_usize, val);
+                        } else {
+                            exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            eprintln!("R303: Array update index out of bounds: {}", i);
+                            return Some(OpResult::Halt);
+                        }
+                    } else {
+                        exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        eprintln!("R303: Array update index out of bounds: {}", i);
+                        return Some(OpResult::Halt);
+                    }
+                } else {
+                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    eprintln!("R303: Array update index is not an integer");
+                    return Some(OpResult::Halt);
                 }
             }
         }

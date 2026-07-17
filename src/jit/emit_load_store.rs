@@ -19,6 +19,14 @@ pub fn emit_load_const(
         let bits = ctx.b.ins().iconst(types::I64, val.bits as i64);
         let tag  = ctx.b.ins().iconst(types::I64, val.tag as i64);
         ctx.def_local(dst, bits, tag);
+        if val.is_int() {
+            ctx.register_const[dst as usize] = Some(val.as_i64());
+            ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Int;
+        } else if val.is_bool() {
+            ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Bool;
+        } else if val.is_float() {
+            ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Float;
+        }
     } else {
         let (c_bits, c_tag) = ctx.load_const(val_idx);
         emit_conditional_inc_ref(ctx, symbols, c_bits, c_tag);
@@ -43,7 +51,11 @@ pub fn emit_move(
         emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
     }
 
+    let c = ctx.register_const[src as usize];
+    let ty = ctx.known_types[src as usize];
     ctx.def_local(dst, sv_bits, sv_tag);
+    ctx.register_const[dst as usize] = c;
+    ctx.known_types[dst as usize] = ty;
 }
 
 pub fn emit_get_var(
@@ -202,8 +214,9 @@ pub fn emit_json_bind_local_const(
 ) {
     let (jv_bits, jv_tag) = ctx.use_local(json_reg);
 
-    let path_ptr = path.as_ptr() as i64;
-    let path_len = path.len() as i64;
+    let leaked = Box::leak(path.to_string().into_boxed_str());
+    let path_ptr = leaked.as_ptr() as i64;
+    let path_len = leaked.len() as i64;
     
     let ptr_val = ctx.b.ins().iconst(types::I64, path_ptr);
     let len_val = ctx.b.ins().iconst(types::I64, path_len);
@@ -245,8 +258,9 @@ pub fn emit_json_bind_global_const(
 ) {
     let (jv_bits, jv_tag) = ctx.use_local(json_reg);
 
-    let path_ptr = path.as_ptr() as i64;
-    let path_len = path.len() as i64;
+    let leaked = Box::leak(path.to_string().into_boxed_str());
+    let path_ptr = leaked.as_ptr() as i64;
+    let path_len = leaked.len() as i64;
     
     let ptr_val = ctx.b.ins().iconst(types::I64, path_ptr);
     let len_val = ctx.b.ins().iconst(types::I64, path_len);

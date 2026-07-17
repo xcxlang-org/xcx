@@ -1,23 +1,23 @@
 --- TEST: HALT-002
 --- Area: Error Handling
 --- Priority: critical
---- Name: halt.error — przerywa ramkę, VM żyje po powrocie
+--- Name: halt.error — interrupts frame, VM alive after return
 --- Expect:
----   halt.error w funkcji przerywa tę funkcję.
----   Linia po wywołaniu funkcji (w main scope) MUSI się wykonać — VM żyje.
----   Brak nonzero exit — halt.error nie kończy VM.
+---   halt.error inside function interrupts that function.
+---   Line after function call (in main scope) MUST execute — VM alive.
+---   No non-zero exit — halt.error does not terminate VM.
 
---- ── Subtest 1: halt.error w funkcji — VM żyje ─────────────────────────
+--- ── Subtest 1: halt.error in function — VM alive ─────────────────────────
 func will_error(i: n -> i) {
     if (n == 0) then;
-        halt.error >! "HALT-ERROR: podano zero!";
+        halt.error >! "HALT-ERROR: zero provided!";
         return -1;
     end;
     return n * 2;
 };
 
 will_error(0);
->! "[HALT-002-1] PASS — VM żyje po halt.error w funkcji";
+>! "[HALT-002-1] PASS — VM alive after halt.error in function";
 
 i: r2 = will_error(5);
 if (r2 == 10) then;
@@ -26,10 +26,10 @@ else;
     >! "[HALT-002-2] FAIL — will_error(5) = " + s(r2);
 end;
 
---- ── Subtest 2: halt.error w fiberze — fiber kończy się, VM żyje ────────
+--- ── Subtest 2: halt.error in fiber — fiber terminates, VM alive ────────
 fiber:i err_fiber(-> i) {
     yield 1;
-    halt.error >! "HALT-ERROR: błąd w fiberze";
+    halt.error >! "HALT-ERROR: error in fiber";
     yield 2;
     return 0;
 };
@@ -38,11 +38,11 @@ fiber:i: fe = err_fiber();
 i: v1 = fe.next();
 
 if (v1 == 1) then;
-    >! "[HALT-002-3] PASS — fiber wyemitował 1 przed błędem";
+    >! "[HALT-002-3] PASS — fiber emitted 1 before error";
 else;
-    >! "[HALT-002-3] FAIL — fiber wyemitował " + s(v1);
+    >! "[FIB-002-3] FAIL — fiber emitted " + s(v1);
 end;
 
 fe.next();
->! "[HALT-002-4] PASS — VM żyje po halt.error w fiberze";
->! "[HALT-002] Wszystkie subtesty zakończone";
+>! "[HALT-002-4] PASS — VM alive after halt.error in fiber";
+>! "[HALT-002] All subtests completed";

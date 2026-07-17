@@ -1,15 +1,15 @@
 --- TEST: TYPE-001
 --- Area: Types
 --- Priority: high
---- Name: Rzutowanie b→i zablokowane — type error
+--- Name: Casting b→i blocked — type error
 --- Expect:
----   i(bool) → type error (compile lub runtime).
+---   i(bool) → type error (compile or runtime).
 ---   bool + int → type error.
 --- Runner: expect_compile_error = true
 
 b: flag = true;
 
---- LINIA KRYTYCZNA — zablokowane rzutowanie:
+--- CRITICAL LINE — blocked cast:
 i: n = i(flag);
 
->! "FAIL — b→i rzutowanie nie wywołało błędu";
+>! "FAIL — b→i casting did not trigger error";

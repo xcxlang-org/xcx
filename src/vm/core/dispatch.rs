@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::vm::core::vm::{OpResult, VM};
-use crate::vm::value::{Value, TAG_DB, TAG_TBL, TAG_ARR, TAG_MAP, TAG_SET, TAG_STR, TAG_DATE, TAG_JSON, TAG_FIB, TAG_ROW};
+use crate::vm::value::{Value, TAG_DB, TAG_TBL, TAG_ARR, TAG_MAP, TAG_SET, TAG_STR, TAG_DATE, TAG_JSON, TAG_FIB, TAG_ROW, TAG_BOOL_ARR};
 use crate::vm::core::executor::Executor;
 use crate::vm::opcode::MethodKind;
 
@@ -34,6 +34,7 @@ impl Executor {
         }
 
         if !receiver.is_ptr() && !receiver.is_date() {
+            eprintln!("DEBUG: receiver is not ptr/date. Tag: {}, bits: {}, kind: {:?}", receiver.tag, receiver.bits, kind);
             self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return OpResult::Halt;
         }
@@ -43,6 +44,7 @@ impl Executor {
             TAG_DB   => self.handle_database_method(dst, receiver.as_database(), kind, args, names, ip, locals, vm_arc),
             TAG_TBL  => self.handle_table_method(dst, receiver.as_table(), kind, args, names, ip, locals, vm_arc),
             TAG_ARR  => self.handle_array_method(dst, receiver.as_array(), kind, args, names, ip, locals, vm_arc),
+            TAG_BOOL_ARR => self.handle_bool_array_method(dst, receiver.as_bool_array(), kind, args, names, ip, locals, vm_arc),
             TAG_MAP  => self.handle_map_method(dst, receiver.as_map(), kind, args, names, ip, locals, vm_arc),
             TAG_SET  => self.handle_set_method(dst, receiver.as_set(), kind, args, names, ip, locals, vm_arc),
             TAG_STR  => {
@@ -56,6 +58,7 @@ impl Executor {
             TAG_FIB  => self.handle_fiber_method(dst, receiver.as_fiber(), kind, args, names, ip, locals, vm_arc),
             TAG_ROW  => self.handle_row_method(dst, receiver.as_row(), kind, args, names, ip, locals, vm_arc),
             _ => {
+                eprintln!("DEBUG: unknown tag {} in dispatch_method for kind: {:?}", tag, kind);
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 OpResult::Halt
             }

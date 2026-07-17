@@ -26,6 +26,28 @@ impl Executor {
     ) -> OpResult {
         match kind {
             MethodKind::Get => {
+                if args[0].is_int() {
+                    if let crate::vm::object::JsonVal::Array(a) = &json_rc.root {
+                        let idx = args[0].as_i64();
+                        if idx >= 0 {
+                            let idx_u = idx as usize;
+                            let a_read = unsafe { &*(*a).data_ptr() };
+                            if idx_u < a_read.len() {
+                                let val = crate::vm::utils::json_val_to_value(&a_read[idx_u]);
+                                unsafe { val.inc_ref(); }
+                                unsafe { locals[dst as usize].dec_ref(); }
+                                locals[dst as usize] = val;
+                            } else {
+                                unsafe { locals[dst as usize].dec_ref(); }
+                                locals[dst as usize] = Value::from_bool(false);
+                            }
+                        } else {
+                            unsafe { locals[dst as usize].dec_ref(); }
+                            locals[dst as usize] = Value::from_bool(false);
+                        }
+                        return OpResult::Continue;
+                    }
+                }
                 let path_borrow = unsafe { args[0].as_str_borrow() };
                 let path_temp;
                 let path = match path_borrow {
@@ -35,6 +57,45 @@ impl Executor {
                         &path_temp
                     }
                 };
+                let is_simple = !path.is_empty() && path.bytes().all(|b| b != b'.' && b != b'[' && b != b']' && b != b'/');
+                if is_simple {
+                    match &json_rc.root {
+                        crate::vm::object::JsonVal::Object(o) => {
+                            let o_read = unsafe { &*(*o).data_ptr() };
+                            if let Some((_, v)) = o_read.iter().find(|(k, _)| k.as_str() == path) {
+                                let val = crate::vm::utils::json_val_to_value(v);
+                                unsafe { val.inc_ref(); }
+                                unsafe { locals[dst as usize].dec_ref(); }
+                                locals[dst as usize] = val;
+                            } else {
+                                unsafe { locals[dst as usize].dec_ref(); }
+                                locals[dst as usize] = Value::from_bool(false);
+                            }
+                        }
+                        crate::vm::object::JsonVal::Array(a) => {
+                            if let Ok(idx) = path.parse::<usize>() {
+                                let a_read = unsafe { &*(*a).data_ptr() };
+                                if idx < a_read.len() {
+                                    let val = crate::vm::utils::json_val_to_value(&a_read[idx]);
+                                    unsafe { val.inc_ref(); }
+                                    unsafe { locals[dst as usize].dec_ref(); }
+                                    locals[dst as usize] = val;
+                                } else {
+                                    unsafe { locals[dst as usize].dec_ref(); }
+                                    locals[dst as usize] = Value::from_bool(false);
+                                }
+                            } else {
+                                unsafe { locals[dst as usize].dec_ref(); }
+                                locals[dst as usize] = Value::from_bool(false);
+                            }
+                        }
+                        _ => {
+                            unsafe { locals[dst as usize].dec_ref(); }
+                            locals[dst as usize] = Value::from_bool(false);
+                        }
+                    }
+                    return OpResult::Continue;
+                }
                 let pointer = crate::runtime::builtin::json::access::normalize_json_path(path);
                 if let Some(v) = json_rc.root.pointer(&pointer) {
                     let val = crate::vm::utils::json_val_to_value(&v);
@@ -59,7 +120,7 @@ impl Executor {
                 let val = args[1];
                 let is_simple = !path.starts_with('/') && !path.contains('.') && !path.contains('[') && !path.contains(']');
                 if is_simple {
-                    json_rc.dirty.store(true, std::sync::atomic::Ordering::Release);
+                    json_rc.version.fetch_add(1, std::sync::atomic::Ordering::Release);
                     if let crate::vm::object::JsonVal::Object(o) = &json_rc.root {
                         let mut obj = o.write();
                         if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == path) {
@@ -69,6 +130,7 @@ impl Executor {
                         }
                     }
                 } else {
+                    json_rc.version.fetch_add(1, std::sync::atomic::Ordering::Release);
                     let mut root_copy = json_rc.root.clone();
                     crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));
                 }
@@ -80,7 +142,9 @@ impl Executor {
                 locals[dst as usize] = res;
             }
             MethodKind::ToStr => {
-                if !json_rc.dirty.load(std::sync::atomic::Ordering::Acquire) {
+                let ver = json_rc.version.load(std::sync::atomic::Ordering::Acquire);
+                let cached_ver = json_rc.cached_version.load(std::sync::atomic::Ordering::Acquire);
+                if ver == cached_ver {
                     if let Some(s) = json_rc.cached_str.lock().as_ref() {
                         let res = Value::from_string(s.clone());
                         unsafe { locals[dst as usize].dec_ref(); }
@@ -92,14 +156,20 @@ impl Executor {
                 json_rc.root.to_string_buf(&mut buf);
                 let s = buf;
                 let string_obj = Arc::new(StringObj::new(s.into_bytes()));
-                *json_rc.cached_str.lock() = Some(string_obj.clone());
-                json_rc.dirty.store(false, std::sync::atomic::Ordering::Release);
+                
+                let mut lock = json_rc.cached_str.lock();
+                if json_rc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
+                    *lock = Some(string_obj.clone());
+                    json_rc.cached_version.store(ver, std::sync::atomic::Ordering::Release);
+                }
                 let res = Value::from_string(string_obj);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
             MethodKind::Show => {
-                if !json_rc.dirty.load(std::sync::atomic::Ordering::Acquire) {
+                let ver = json_rc.version.load(std::sync::atomic::Ordering::Acquire);
+                let cached_ver = json_rc.cached_version.load(std::sync::atomic::Ordering::Acquire);
+                if ver == cached_ver {
                     let cached_opt = json_rc.cached_str.lock().clone();
                     if let Some(s_obj) = cached_opt {
                         println!("{}", String::from_utf8_lossy(&s_obj.data));
@@ -114,8 +184,12 @@ impl Executor {
                 let s = buf;
                 println!("{}", s);
                 let string_obj = Arc::new(StringObj::new(s.into_bytes()));
-                *json_rc.cached_str.lock() = Some(string_obj);
-                json_rc.dirty.store(false, std::sync::atomic::Ordering::Release);
+                
+                let mut lock = json_rc.cached_str.lock();
+                if json_rc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
+                    *lock = Some(string_obj);
+                    json_rc.cached_version.store(ver, std::sync::atomic::Ordering::Release);
+                }
                 
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }
@@ -186,15 +260,33 @@ impl Executor {
                         &path_temp
                     }
                 };
-                let pointer = crate::runtime::builtin::json::access::normalize_json_path(path);
-                let exists = json_rc.root.pointer(&pointer).is_some();
+                let is_simple = !path.is_empty() && path.bytes().all(|b| b != b'.' && b != b'[' && b != b']' && b != b'/');
+                let exists = if is_simple {
+                    match &json_rc.root {
+                        crate::vm::object::JsonVal::Object(o) => {
+                            let o_read = unsafe { &*(*o).data_ptr() };
+                            o_read.iter().any(|(k, _)| k.as_str() == path)
+                        }
+                        crate::vm::object::JsonVal::Array(a) => {
+                            if let Ok(idx) = path.parse::<usize>() {
+                                idx < unsafe { &*(*a).data_ptr() }.len()
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    }
+                } else {
+                    let pointer = crate::runtime::builtin::json::access::normalize_json_path(path);
+                    json_rc.root.pointer(&pointer).is_some()
+                };
                 let res = Value::from_bool(exists);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
             MethodKind::Keys => {
                 let keys: Vec<Value> = if let crate::vm::object::JsonVal::Object(obj) = &json_rc.root {
-                    let obj_read = obj.read();
+                    let obj_read = unsafe { &*(*obj).data_ptr() };
                     obj_read.iter().map(|(k, _)| Value::from_string(Arc::new(StringObj::new(k.as_bytes().to_vec())))).collect()
                 } else {
                     vec![]
@@ -205,8 +297,8 @@ impl Executor {
             }
             MethodKind::Len | MethodKind::Count | MethodKind::Size => {
                 let len = match &json_rc.root {
-                    crate::vm::object::JsonVal::Array(a) => a.read().len(),
-                    crate::vm::object::JsonVal::Object(o) => o.read().len(),
+                    crate::vm::object::JsonVal::Array(a) => unsafe { &*(*a).data_ptr() }.len(),
+                    crate::vm::object::JsonVal::Object(o) => unsafe { &*(*o).data_ptr() }.len(),
                     _ => 0,
                 };
                 let res = Value::from_i64(len as i64);
@@ -214,6 +306,7 @@ impl Executor {
                 locals[dst as usize] = res;
             }
             _ => { 
+                eprintln!("DEBUG: Method {:?} not supported for JSON", kind);
                 // eprintln!("Method {:?} not supported for JSON{}", kind, self.current_span_info(ip)); 
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 return OpResult::Halt; 
@@ -242,19 +335,48 @@ impl Executor {
             }
         };
         if args.is_empty() {
-            // Getter: res.member
-            let pointer = format!("/{}", path);
-            if let Some(v) = json_rc.root.pointer(&pointer) {
-                let val = crate::vm::utils::json_val_to_value(&v);
+            let is_simple = !path.contains('.') && !path.contains('[') && !path.contains(']') && !path.contains('/') && !path.is_empty();
+            let mut found_val = None;
+            if is_simple {
+                match &json_rc.root {
+                    crate::vm::object::JsonVal::Object(o) => {
+                        let o_read = unsafe { &*(*o).data_ptr() };
+                        if let Some((_, v)) = o_read.iter().find(|(k, _)| k.as_str() == path) {
+                            found_val = Some(v.clone());
+                        }
+                    }
+                    crate::vm::object::JsonVal::Array(a) => {
+                        if let Ok(idx) = path.parse::<usize>() {
+                            let a_read = unsafe { &*(*a).data_ptr() };
+                            if idx < a_read.len() {
+                                found_val = Some(a_read[idx].clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(ref v) = found_val {
+                let val = crate::vm::utils::json_val_to_value(v);
                 unsafe { val.inc_ref(); }
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = val;
-            } else {
+            } else if is_simple {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = Value::from_bool(false);
+            } else {
+                let pointer = format!("/{}", path);
+                if let Some(v) = json_rc.root.pointer(&pointer) {
+                    let val = crate::vm::utils::json_val_to_value(&v);
+                    unsafe { val.inc_ref(); }
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = val;
+                } else {
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = Value::from_bool(false);
+                }
             }
         } else {
-            // Setter: res.member = val
             let val = args[0];
             let mut root_copy = json_rc.root.clone();
             crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));

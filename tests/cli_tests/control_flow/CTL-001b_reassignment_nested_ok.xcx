@@ -1,10 +1,10 @@
 --- TEST: CTL-001b
 --- Area: Control Flow
 --- Priority: high
---- Name: Reassignment w zagnieżdżonym scope — poprawne
+--- Name: Reassignment in nested scope — valid
 --- Expect:
----   Reassignment (bez redeclaracji) jest dozwolony.
----   Modyfikacja zewnętrznej zmiennej wewnątrz bloku jest widoczna na zewnątrz.
+---   Reassignment (without redeclaration) is allowed.
+---   Modification of outer variable inside block is visible outside.
 
 i: x = 10;
 i: y = 5;
@@ -15,25 +15,25 @@ if (true) then;
 end;
 
 if (x == 20) then;
-    >! "[CTL-001b] PASS — reassignment x = 20 widoczne po bloku";
+    >! "[CTL-001b] PASS — reassignment x = 20 visible after block";
 else;
-    >! "[CTL-001b] FAIL — x = " + s(x) + " (oczekiwane 20)";
+    >! "[CTL-001b] FAIL — x = " + s(x) + " (expected 20)";
 end;
 
 if (y == 6) then;
-    >! "[CTL-001b] PASS — reassignment y = 6 widoczne po bloku";
+    >! "[CTL-001b] PASS — reassignment y = 6 visible after block";
 else;
-    >! "[CTL-001b] FAIL — y = " + s(y) + " (oczekiwane 6)";
+    >! "[CTL-001b] FAIL — y = " + s(y) + " (expected 6)";
 end;
 
---- Zagnieżdżone bloki
+--- Nested blocks
 i: counter = 0;
 for i in 1 to 5 do;
     counter = counter + i;
 end;
 
 if (counter == 15) then;
-    >! "[CTL-001b] PASS — counter po for = 15";
+    >! "[CTL-001b] PASS — counter after for = 15";
 else;
     >! "[CTL-001b] FAIL — counter = " + s(counter);
 end;

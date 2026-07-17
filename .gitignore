@@ -2,17 +2,6 @@
 /target/
 # Cargo.lock
 
-# XCX Releases
-/XCX_Ecosystem_v*/
-/XCX_Ecosystem_v*.zip
-
-
-/xcx-installer/target/
-/xcx-installer/resources.o
-/xcx-vscode/*.vsix
-/xcx-vscode/node_modules/
-/xcx-installer-pkg/Output/
-
 # IDEs and OS
 .vscode/
 .DS_Store
@@ -26,6 +15,8 @@ Thumbs.db
 *.tmp
 *.log
 /Benchmarks/
+/temp/
+
 
 # AI/Agent metadata
 .agents/
@@ -36,3 +27,14 @@ Thumbs.db
 
 #other
 TODO.md
+
+# Windows installer build and binaries
+/Windows/bin/
+/Windows/Output/
+
+# macOS and Linux installer build output
+/MacOS/dist/
+/Linux/dist/
+
+xcx-linux
+xcx-macos

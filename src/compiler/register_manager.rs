@@ -161,6 +161,7 @@ impl RegisterManager {
             OpCode::TableCloneSkeleton { dst, src } => { map(dst); map(src); }
 
             OpCode::GetVar { dst, .. } |
+            OpCode::BoolArrayInit { dst } |
             OpCode::Input { dst, .. } |
             OpCode::TerminalExit { dst, .. } |
             OpCode::TerminalClear { dst, .. } |

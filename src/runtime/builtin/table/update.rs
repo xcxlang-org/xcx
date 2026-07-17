@@ -24,6 +24,14 @@ impl Executor {
         let vals = &args[1];
         if idx >= 0 {
             let mut t_mut = t_rc.write();
+            let key = Arc::as_ptr(&t_rc) as usize;
+            if let Some(cache_vec) = self.row_cache.remove(&key) {
+                for v in cache_vec {
+                    if v.is_row() {
+                        unsafe { v.dec_ref(); }
+                    }
+                }
+            }
             if (idx as usize) < t_mut.rows.len() {
                 if vals.is_ptr() && vals.tag == TAG_ARR {
                     let arr_rc = vals.as_array();

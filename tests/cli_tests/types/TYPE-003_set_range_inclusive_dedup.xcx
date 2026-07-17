@@ -1,61 +1,61 @@
 --- TEST: TYPE-003
 --- Area: Types
 --- Priority: medium
---- Name: Set range — inclusive obustronne, deduplication, typy domenowe
+--- Name: Set range — double-sided inclusive, deduplication, domain types
 --- Expect:
 ---   set:N: {1,,5} → size = 5.
 ---   set:C: {'A',,'Z'} → size = 26 (all uppercase letters).
----   set:Q: z @step → poprawna liczba elementów.
----   random.choice zwraca element należący do setu.
+---   set:Q: with @step → correct number of elements.
+---   random.choice returns an item belonging to the set.
 
 --- ── Subtest 1: set:N range {1,,5} ──────────────────────────────────────
 set:N: s1 {1,,5};
 if (s1.size() == 5) then;
     >! "[TYPE-003-1] PASS — set:N {1,,5} size = 5";
 else;
-    >! "[TYPE-003-1] FAIL — size = " + s(s1.size()) + " (oczekiwane 5) [BUG]";
+    >! "[TYPE-003-1] FAIL — size = " + s(s1.size()) + " (expected 5) [BUG]";
 end;
 
 if (s1.contains(1) AND s1.contains(3) AND s1.contains(5)) then;
-    >! "[TYPE-003-1] PASS — set zawiera 1, 3, 5 (inclusive obustronne)";
+    >! "[TYPE-003-1] PASS — set contains 1, 3, 5 (double-sided inclusive)";
 else;
-    >! "[TYPE-003-1] FAIL — brakuje elementu z {1,,5} [BUG]";
+    >! "[TYPE-003-1] FAIL — missing element from {1,,5} [BUG]";
 end;
 
 if (NOT s1.contains(0) AND NOT s1.contains(6)) then;
-    >! "[TYPE-003-1] PASS — set nie zawiera 0 ani 6 (granice wyłączone)";
+    >! "[TYPE-003-1] PASS — set does not contain 0 or 6 (boundaries excluded)";
 else;
-    >! "[TYPE-003-1] FAIL — set zawiera element spoza zakresu [BUG]";
+    >! "[TYPE-003-1] FAIL — set contains element out of range [BUG]";
 end;
 
---- ── Subtest 2: set:C {'A',,'Z'} → 26 liter ────────────────────────────
+--- ── Subtest 2: set:C {'A',,'Z'} → 26 letters ────────────────────────────
 set:C: alpha {"A",,"Z"};
 if (alpha.size() == 26) then;
     >! "[TYPE-003-2] PASS — set:C {'A',,'Z'} size = 26";
 else;
-    >! "[TYPE-003-2] FAIL — size = " + s(alpha.size()) + " (oczekiwane 26) [BUG set:C range]";
+    >! "[TYPE-003-2] FAIL — size = " + s(alpha.size()) + " (expected 26) [BUG set:C range]";
 end;
 
 if (alpha.contains("A") AND alpha.contains("Z") AND alpha.contains("M")) then;
-    >! "[TYPE-003-2] PASS — alpha zawiera A, M, Z";
+    >! "[TYPE-003-2] PASS — alpha contains A, M, Z";
 else;
-    >! "[TYPE-003-2] FAIL — brakuje elementu w alpha [BUG set:C range]";
+    >! "[TYPE-003-2] FAIL — missing element in alpha [BUG set:C range]";
 end;
 
 if (NOT alpha.contains("a")) then;
-    >! "[TYPE-003-2] PASS — alpha nie zawiera małych liter";
+    >! "[TYPE-003-2] PASS — alpha does not contain lowercase letters";
 else;
-    >! "[TYPE-003-2] FAIL — alpha zawiera 'a' (nie powinno) [BUG]";
+    >! "[TYPE-003-2] FAIL – alpha contains 'a' (should not) [BUG]";
 end;
 
---- ── Subtest 3: set:Q z @step ──────────────────────────────────────────
---- Oczekiwane: 0.0, 0.33, 0.66, 0.99 → 3 lub 4 elementy
+--- ── Subtest 3: set:Q with @step ──────────────────────────────────────────
+--- Expected: 0.0, 0.33, 0.66, 0.99 → 3 or 4 elements
 set:Q: thirds {0.0,,1.0 @step 0.33};
 i: thirds_size = thirds.size();
 if (thirds_size >= 3 AND thirds_size <= 4) then;
-    >! "[TYPE-003-3] PASS — set:Q @step 0.33 daje " + s(thirds_size) + " elementów";
+    >! "[TYPE-003-3] PASS — set:Q @step 0.33 gives " + s(thirds_size) + " elements";
 else;
-    >! "[TYPE-003-3] FAIL — set:Q size = " + s(thirds_size) + " (oczekiwane 3-4) [BUG set:Q @step]";
+    >! "[TYPE-003-3] FAIL — set:Q size = " + s(thirds_size) + " (expected 3-4) [BUG set:Q @step]";
 end;
 
 --- ── Subtest 4: set:N evens @step 2 ────────────────────────────────────
@@ -63,41 +63,41 @@ set:N: evens {0,,10 @step 2};
 if (evens.size() == 6) then;
     >! "[TYPE-003-4] PASS — {0,,10 @step 2} size = 6 (0,2,4,6,8,10)";
 else;
-    >! "[TYPE-003-4] FAIL — size = " + s(evens.size()) + " (oczekiwane 6) [BUG]";
+    >! "[TYPE-003-4] FAIL — size = " + s(evens.size()) + " (expected 6) [BUG]";
 end;
 
 if (evens.contains(0) AND evens.contains(10) AND NOT evens.contains(1)) then;
-    >! "[TYPE-003-4] PASS — evens: zawiera 0 i 10, nie zawiera 1";
+    >! "[TYPE-003-4] PASS — evens: contains 0 and 10, does not contain 1";
 else;
-    >! "[TYPE-003-4] FAIL — evens: niepoprawna zawartość [BUG]";
+    >! "[TYPE-003-4] FAIL — evens: incorrect content [BUG]";
 end;
 
---- ── Subtest 5: deduplikacja przy add() ────────────────────────────────
+--- ── Subtest 5: deduplication on add() ────────────────────────────────
 i: before = s1.size();
 s1.add(3);
 s1.add(3);
 s1.add(3);
 if (s1.size() == before) then;
-    >! "[TYPE-003-5] PASS — wielokrotne add(3) nie zmienia rozmiaru";
+    >! "[TYPE-003-5] PASS — multiple add(3) does not change size";
 else;
-    >! "[TYPE-003-5] FAIL — rozmiar zmienił się z " + s(before) + " na " + s(s1.size()) + " [BUG]";
+    >! "[TYPE-003-5] FAIL — size changed from " + s(before) + " to " + s(s1.size()) + " [BUG]";
 end;
 
---- ── Subtest 6: random.choice z setu ───────────────────────────────────
+--- ── Subtest 6: random.choice from set ───────────────────────────────────
 i: chosen = random.choice from s1;
 if (s1.contains(chosen)) then;
-    >! "[TYPE-003-6] PASS — random.choice zwrócił element należący do setu";
+    >! "[TYPE-003-6] PASS — random.choice returned an item belonging to the set";
 else;
-    >! "[TYPE-003-6] FAIL — chosen=" + s(chosen) + " nie należy do setu [BUG]";
+    >! "[TYPE-003-6] FAIL — chosen=" + s(chosen) + " does not belong to the set [BUG]";
 end;
 
---- ── Subtest 7: iteracja for..in set ───────────────────────────────────
+--- ── Subtest 7: iteration for..in set ───────────────────────────────────
 i: total = 0;
 for p in s1 do;
     total = total + p;
 end;
 if (total == 15) then;
-    >! "[TYPE-003-7] PASS — suma {1..5} = 15";
+    >! "[TYPE-003-7] PASS — sum {1..5} = 15";
 else;
-    >! "[TYPE-003-7] FAIL — suma = " + s(total) + " (oczekiwane 15) [BUG]";
+    >! "[TYPE-003-7] FAIL — sum = " + s(total) + " (expected 15) [BUG]";
 end;

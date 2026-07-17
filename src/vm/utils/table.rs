@@ -1,11 +1,40 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use parking_lot::RwLock;
-use crate::vm::value::{Value, TAG_STR};
+use crate::vm::value::{Value, TAG_STR, TAG_FLOAT, TAG_INT, TAG_BOOL, TAG_DATE};
 use crate::vm::object::{TableObj, RowObj, VMColumn, JoinPred};
 use crate::vm::core::executor::Executor;
 use crate::vm::core::vm::VM;
 use crate::vm::opcode::OpCode;
+
+#[derive(Clone, Copy)]
+pub struct HashableValue(pub Value);
+
+impl PartialEq for HashableValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for HashableValue {}
+
+impl std::hash::Hash for HashableValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.0.tag);
+        match self.0.tag {
+            TAG_STR => {
+                let val_str = self.0.as_string();
+                std::hash::Hash::hash(&*val_str, state);
+            }
+            TAG_INT | TAG_BOOL | TAG_DATE | TAG_FLOAT => {
+                state.write_u64(self.0.bits);
+            }
+            _ => {
+                state.write_u64(self.0.bits);
+            }
+        }
+    }
+}
 
 pub fn join_tables(
     left: &TableObj,
@@ -40,46 +69,79 @@ pub fn join_tables(
     let left_rc  = Arc::new(RwLock::new(left.clone()));
     let right_rc = Arc::new(RwLock::new(right.clone()));
     let mut out_rows: Vec<Vec<Value>> = Vec::new();
-    for li in 0..left.rows.len() {
-        for ri in 0..right.rows.len() {
-            let matches = match pred {
-                JoinPred::Keys(lk, rk) => {
-                    let lc = left.columns.iter().position(|c| &c.name == lk);
-                    let rc = right.columns.iter().position(|c| &c.name == rk);
-                    match (lc, rc) {
-                        (Some(lci), Some(rci)) => left.rows[li][lci] == right.rows[ri][rci],
-                        _ => false,
+    match pred {
+        JoinPred::Keys(lk, rk) => {
+            let lc = left.columns.iter().position(|c| &c.name == lk);
+            let rc = right.columns.iter().position(|c| &c.name == rk);
+            if let (Some(lci), Some(rci)) = (lc, rc) {
+                let mut right_hash: HashMap<HashableValue, Vec<usize>> = HashMap::with_capacity(right.rows.len());
+                for ri in 0..right.rows.len() {
+                    let key = HashableValue(right.rows[ri][rci]);
+                    right_hash.entry(key).or_default().push(ri);
+                }
+                for li in 0..left.rows.len() {
+                    let left_key = HashableValue(left.rows[li][lci]);
+                    if let Some(right_indices) = right_hash.get(&left_key) {
+                        for &ri in right_indices {
+                            let mut row = Vec::with_capacity(out_cols.len());
+                            for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                            for (r_col_idx, out_idx) in right_col_map.iter().enumerate() {
+                                if let Some(_oi) = out_idx {
+                                    let v = right.rows[ri][r_col_idx];
+                                    unsafe { v.inc_ref(); }
+                                    row.push(v);
+                                }
+                            }
+                            out_rows.push(row);
+                        }
                     }
                 }
-                JoinPred::Lambda(fid) => {
+            }
+        }
+        JoinPred::Lambda(fid) => {
+            for li in 0..left.rows.len() {
+                for ri in 0..right.rows.len() {
                     let row_a = Value::from_row(Arc::new(RowObj { table: left_rc.clone(), row_idx: li as u32 }));
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
-                    // executor.run_frame will be implemented in a sub-module of core
                     let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &[row_a, row_b], vm_arc), Some(res) if res.is_bool() && res.as_bool());
                     unsafe { row_a.dec_ref(); row_b.dec_ref(); }
-                    m
+                    if m {
+                        let mut row = Vec::with_capacity(out_cols.len());
+                        for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                        for (rci, out_idx) in right_col_map.iter().enumerate() {
+                            if let Some(_oi) = out_idx {
+                                let v = right.rows[ri][rci];
+                                unsafe { v.inc_ref(); }
+                                row.push(v);
+                            }
+                        }
+                        out_rows.push(row);
+                    }
                 }
-                JoinPred::Closure(fid, captures) => {
+            }
+        }
+        JoinPred::Closure(fid, captures) => {
+            for li in 0..left.rows.len() {
+                for ri in 0..right.rows.len() {
                     let row_a = Value::from_row(Arc::new(RowObj { table: left_rc.clone(), row_idx: li as u32 }));
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
                     let mut run_args = vec![row_a, row_b];
                     for v in captures { unsafe { v.inc_ref(); } run_args.push(*v); }
                     let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &run_args, vm_arc), Some(res) if res.is_bool() && res.as_bool());
                     for v in run_args { unsafe { v.dec_ref(); } }
-                    m
-                }
-            };
-            if matches {
-                let mut row = Vec::with_capacity(out_cols.len());
-                for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
-                for (rci, out_idx) in right_col_map.iter().enumerate() {
-                    if let Some(_oi) = out_idx {
-                        let v = right.rows[ri][rci];
-                        unsafe { v.inc_ref(); }
-                        row.push(v);
+                    if m {
+                        let mut row = Vec::with_capacity(out_cols.len());
+                        for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                        for (rci, out_idx) in right_col_map.iter().enumerate() {
+                            if let Some(_oi) = out_idx {
+                                let v = right.rows[ri][rci];
+                                unsafe { v.inc_ref(); }
+                                row.push(v);
+                            }
+                        }
+                        out_rows.push(row);
                     }
                 }
-                out_rows.push(row);
             }
         }
     }

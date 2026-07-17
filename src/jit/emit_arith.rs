@@ -77,30 +77,67 @@ pub fn emit_div_int(
     let (l_bits, _) = ctx.use_local(src1);
     let (r_bits, _) = ctx.use_local(src2);
     
-    let is_zero = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, 0);
-    let is_min = ctx.b.ins().icmp_imm(IntCC::Equal, l_bits, i64::MIN);
-    let is_minus_one = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, -1);
-    let is_overflow = ctx.b.ins().band(is_min, is_minus_one);
-    let should_fail = ctx.b.ins().bor(is_zero, is_overflow);
-    
-    let fail = ctx.create_block();
-    let ok = ctx.create_block();
-    
-    ctx.b.ins().brif(should_fail, fail, &[], ok, &[]);
-    ctx.b.switch_to_block(fail);
-    
-    let sip = ctx.b.ins().iconst(types::I64, ctx.start_ip as i64);
-    ctx.b.ins().call(symbols.xcx_jit_report_guard_failure, &[ctx.executor_ptr, sip]);
-    
-    ctx.spill_all();
-    let rv = ctx.b.ins().iconst(types::I32, fail_ip as i64);
-    ctx.b.ins().return_(&[rv]);
-    
-    ctx.b.switch_to_block(ok);
-    let s = if is_mod {
-        ctx.b.ins().srem(l_bits, r_bits)
+    let divisor_opt = ctx.register_const[src2 as usize];
+    if is_mod {
+        if let Some(divisor) = divisor_opt {
+            if divisor > 0 && (divisor & (divisor - 1)) == 0 {
+                let temp = ctx.b.ins().sshr_imm(l_bits, 63);
+                let mask = ctx.b.ins().band_imm(temp, divisor - 1);
+                let adjusted = ctx.b.ins().iadd(l_bits, mask);
+                let res = ctx.b.ins().band_imm(adjusted, divisor - 1);
+                let s = ctx.b.ins().isub(res, mask);
+                
+                if ctx.uses_heap && !ctx.should_skip_dec_ref(dst) {
+                    let (v_bits, v_tag) = ctx.use_local(dst);
+                    super::nan_ops::emit_conditional_dec_ref(ctx, symbols, v_bits, v_tag);
+                }
+                
+                let int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
+                ctx.def_local(dst, s, int_tag);
+                ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Int;
+                return;
+            }
+        }
+    }
+
+    let needs_guard = if let Some(divisor) = divisor_opt {
+        divisor == 0 || divisor == -1
     } else {
-        ctx.b.ins().sdiv(l_bits, r_bits)
+        true
+    };
+
+    let s = if !needs_guard {
+        if is_mod {
+            ctx.b.ins().srem(l_bits, r_bits)
+        } else {
+            ctx.b.ins().sdiv(l_bits, r_bits)
+        }
+    } else {
+        let is_zero = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, 0);
+        let is_min = ctx.b.ins().icmp_imm(IntCC::Equal, l_bits, i64::MIN);
+        let is_minus_one = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, -1);
+        let is_overflow = ctx.b.ins().band(is_min, is_minus_one);
+        let should_fail = ctx.b.ins().bor(is_zero, is_overflow);
+        
+        let fail = ctx.create_block();
+        let ok = ctx.create_block();
+        
+        ctx.b.ins().brif(should_fail, fail, &[], ok, &[]);
+        ctx.b.switch_to_block(fail);
+        
+        let sip = ctx.b.ins().iconst(types::I64, ctx.start_ip as i64);
+        ctx.b.ins().call(symbols.xcx_jit_report_guard_failure, &[ctx.executor_ptr, sip]);
+        
+        ctx.spill_all();
+        let rv = ctx.b.ins().iconst(types::I32, fail_ip as i64);
+        ctx.b.ins().return_(&[rv]);
+        
+        ctx.b.switch_to_block(ok);
+        if is_mod {
+            ctx.b.ins().srem(l_bits, r_bits)
+        } else {
+            ctx.b.ins().sdiv(l_bits, r_bits)
+        }
     };
     
     if ctx.uses_heap && !ctx.should_skip_dec_ref(dst) {
@@ -472,26 +509,37 @@ pub fn emit_poly_div_mod_fast_path(
         if is_mod {
             if let Some(divisor) = divisor_opt {
                 if divisor > 0 && (divisor & (divisor - 1)) == 0 {
-                    let is_neg = ctx.b.ins().icmp_imm(IntCC::SignedLessThan, l_bits, 0);
-                    let fast_blk = ctx.create_block();
-                    let slow_blk = ctx.create_block();
-                    let merge_blk = ctx.create_block();
-                    
-                    let res_val_var = ctx.b.declare_var(types::I64);
-                    ctx.b.ins().brif(is_neg, slow_blk, &[], fast_blk, &[]);
-                    
-                    ctx.b.switch_to_block(fast_blk);
-                    let fast_val = ctx.b.ins().band_imm(l_bits, divisor - 1);
-                    ctx.b.def_var(res_val_var, fast_val);
-                    ctx.b.ins().jump(merge_blk, &[]);
-                    
-                    ctx.b.switch_to_block(slow_blk);
-                    let slow_val = ctx.b.ins().srem(l_bits, r_bits);
-                    ctx.b.def_var(res_val_var, slow_val);
-                    ctx.b.ins().jump(merge_blk, &[]);
-                    
-                    ctx.b.switch_to_block(merge_blk);
-                    let s = ctx.b.use_var(res_val_var);
+                    let s = if divisor < 65536 {
+                        let temp = ctx.b.ins().sshr_imm(l_bits, 63);
+                        let mask = ctx.b.ins().band_imm(temp, divisor - 1);
+                        let adjusted = ctx.b.ins().iadd(l_bits, mask);
+                        let res = ctx.b.ins().band_imm(adjusted, divisor - 1);
+                        ctx.b.ins().isub(res, mask)
+                    } else if divisor == 4294967296 {
+                        let reduced = ctx.b.ins().ireduce(types::I32, l_bits);
+                        ctx.b.ins().uextend(types::I64, reduced)
+                    } else {
+                        let is_neg = ctx.b.ins().icmp_imm(IntCC::SignedLessThan, l_bits, 0);
+                        let fast_blk = ctx.create_block();
+                        let slow_blk = ctx.create_block();
+                        let merge_blk = ctx.create_block();
+                        
+                        let res_val_var = ctx.b.declare_var(types::I64);
+                        ctx.b.ins().brif(is_neg, slow_blk, &[], fast_blk, &[]);
+                        
+                        ctx.b.switch_to_block(fast_blk);
+                        let fast_val = ctx.b.ins().band_imm(l_bits, divisor - 1);
+                        ctx.b.def_var(res_val_var, fast_val);
+                        ctx.b.ins().jump(merge_blk, &[]);
+                        
+                        ctx.b.switch_to_block(slow_blk);
+                        let slow_val = ctx.b.ins().srem_imm(l_bits, divisor);
+                        ctx.b.def_var(res_val_var, slow_val);
+                        ctx.b.ins().jump(merge_blk, &[]);
+                        
+                        ctx.b.switch_to_block(merge_blk);
+                        ctx.b.use_var(res_val_var)
+                    };
                     
                     let cmp_int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
                     
@@ -501,48 +549,63 @@ pub fn emit_poly_div_mod_fast_path(
                     }
                     
                     ctx.def_local(dst, s, cmp_int_tag);
-                    ctx.clear_block_state(true);
+                    ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Int;
                     return;
                 }
             }
         }
         
-        let is_zero = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, 0);
-        let is_min  = ctx.b.ins().icmp_imm(IntCC::Equal, l_bits, i64::MIN);
-        let is_minus_one = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, -1);
-        let is_overflow = ctx.b.ins().band(is_min, is_minus_one);
-        let should_fail_native = ctx.b.ins().bor(is_zero, is_overflow);
-        
-        let local_slow = ctx.create_block();
-        let local_math = ctx.create_block();
-        let local_next = ctx.create_block();
-        
-        let res_bits_var = ctx.b.declare_var(types::I64);
-        let res_tag_var  = ctx.b.declare_var(types::I64);
-        let cmp_int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
-
-        ctx.b.ins().brif(should_fail_native, local_slow, &[], local_math, &[]);
-        
-        ctx.b.switch_to_block(local_math);
-        let s = if is_mod {
-            ctx.b.ins().srem(l_bits, r_bits)
+        let needs_guard = if let Some(divisor) = divisor_opt {
+            divisor == 0 || divisor == -1
         } else {
-            ctx.b.ins().sdiv(l_bits, r_bits)
+            true
         };
-        ctx.b.def_var(res_bits_var, s);
-        ctx.b.def_var(res_tag_var, cmp_int_tag);
-        ctx.b.ins().jump(local_next, &[]);
+        
+        let (final_bits, final_tag) = if !needs_guard {
+            let s = if is_mod {
+                ctx.b.ins().srem(l_bits, r_bits)
+            } else {
+                ctx.b.ins().sdiv(l_bits, r_bits)
+            };
+            let cmp_int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
+            (s, cmp_int_tag)
+        } else {
+            let is_zero = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, 0);
+            let is_min  = ctx.b.ins().icmp_imm(IntCC::Equal, l_bits, i64::MIN);
+            let is_minus_one = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, -1);
+            let is_overflow = ctx.b.ins().band(is_min, is_minus_one);
+            let should_fail_native = ctx.b.ins().bor(is_zero, is_overflow);
+            
+            let local_slow = ctx.create_block();
+            let local_math = ctx.create_block();
+            let local_next = ctx.create_block();
+            
+            let res_bits_var = ctx.b.declare_var(types::I64);
+            let res_tag_var  = ctx.b.declare_var(types::I64);
+            let cmp_int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
 
-        ctx.b.switch_to_block(local_slow);
-        let (s_bits, s_tag) = ctx.call_ffi_value(ffi_func, &[l_bits, cmp_int_tag, r_bits, cmp_int_tag, ctx.executor_ptr]);
-        ctx.emit_halt_if_errors(symbols);
-        ctx.b.def_var(res_bits_var, s_bits);
-        ctx.b.def_var(res_tag_var, s_tag);
-        ctx.b.ins().jump(local_next, &[]);
+            ctx.b.ins().brif(should_fail_native, local_slow, &[], local_math, &[]);
+            
+            ctx.b.switch_to_block(local_math);
+            let s = if is_mod {
+                ctx.b.ins().srem(l_bits, r_bits)
+            } else {
+                ctx.b.ins().sdiv(l_bits, r_bits)
+            };
+            ctx.b.def_var(res_bits_var, s);
+            ctx.b.def_var(res_tag_var, cmp_int_tag);
+            ctx.b.ins().jump(local_next, &[]);
 
-        ctx.b.switch_to_block(local_next);
-        let final_bits = ctx.b.use_var(res_bits_var);
-        let final_tag = ctx.b.use_var(res_tag_var);
+            ctx.b.switch_to_block(local_slow);
+            let (s_bits, s_tag) = ctx.call_ffi_value(ffi_func, &[l_bits, cmp_int_tag, r_bits, cmp_int_tag, ctx.executor_ptr]);
+            ctx.emit_halt_if_errors(symbols);
+            ctx.b.def_var(res_bits_var, s_bits);
+            ctx.b.def_var(res_tag_var, s_tag);
+            ctx.b.ins().jump(local_next, &[]);
+
+            ctx.b.switch_to_block(local_next);
+            (ctx.b.use_var(res_bits_var), ctx.b.use_var(res_tag_var))
+        };
         
         if ctx.uses_heap && !ctx.should_skip_dec_ref(dst) {
             let (old_bits, old_tag) = ctx.use_local(dst);
@@ -583,35 +646,7 @@ pub fn emit_poly_div_mod_fast_path(
     
     ctx.b.switch_to_block(do_math);
     let s = if is_mod {
-        let divisor_opt = ctx.register_const[src2 as usize];
-        if let Some(divisor) = divisor_opt {
-            if divisor > 0 && (divisor & (divisor - 1)) == 0 {
-                let is_neg = ctx.b.ins().icmp_imm(IntCC::SignedLessThan, v1_bits, 0);
-                let fast_blk = ctx.create_block();
-                let slow_blk = ctx.create_block();
-                let merge_blk = ctx.create_block();
-                
-                let res_val_var = ctx.b.declare_var(types::I64);
-                ctx.b.ins().brif(is_neg, slow_blk, &[], fast_blk, &[]);
-                
-                ctx.b.switch_to_block(fast_blk);
-                let fast_val = ctx.b.ins().band_imm(v1_bits, divisor - 1);
-                ctx.b.def_var(res_val_var, fast_val);
-                ctx.b.ins().jump(merge_blk, &[]);
-                
-                ctx.b.switch_to_block(slow_blk);
-                let slow_val = ctx.b.ins().srem(v1_bits, v2_bits);
-                ctx.b.def_var(res_val_var, slow_val);
-                ctx.b.ins().jump(merge_blk, &[]);
-                
-                ctx.b.switch_to_block(merge_blk);
-                ctx.b.use_var(res_val_var)
-            } else {
-                ctx.b.ins().srem(v1_bits, v2_bits)
-            }
-        } else {
-            ctx.b.ins().srem(v1_bits, v2_bits)
-        }
+        ctx.b.ins().srem(v1_bits, v2_bits)
     } else {
         ctx.b.ins().sdiv(v1_bits, v2_bits)
     };

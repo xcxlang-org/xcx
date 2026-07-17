@@ -1,3 +1,1 @@
-# Changelog
-
 For information on prior releases, refer to the changelogs in [./documentation/changelogs](documentation/changelogs).

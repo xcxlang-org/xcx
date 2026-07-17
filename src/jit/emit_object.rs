@@ -157,3 +157,37 @@ pub fn emit_set_member(
     let nl = ctx.b.ins().iconst(types::I64, name_len);
     ctx.b.ins().call(symbols.xcx_jit_set_member, &[c_bits, c_tag, np, nl, s_bits, s_tag]);
 }
+
+pub fn emit_str_append_member(
+    ctx: &mut CodegenCtx,
+    symbols: &ImportedSymbols,
+    container: u8,
+    name_idx: u32,
+    src: u8,
+    constants: &[VMValue],
+) {
+    let name_val = constants[name_idx as usize];
+    let name_arc = name_val.as_string();
+    let name_ptr = name_arc.data.as_ptr() as i64;
+    let name_len = name_arc.data.len() as i64;
+    
+    let (c_bits, c_tag) = ctx.use_local(container);
+    let (s_bits, s_tag) = ctx.use_local(src);
+    let np = ctx.b.ins().iconst(types::I64, name_ptr);
+    let nl = ctx.b.ins().iconst(types::I64, name_len);
+    ctx.b.ins().call(symbols.xcx_jit_str_append_member, &[c_bits, c_tag, np, nl, s_bits, s_tag]);
+}
+
+pub fn emit_str_append_element(
+    ctx: &mut CodegenCtx,
+    symbols: &ImportedSymbols,
+    container: u8,
+    index: u8,
+    src: u8,
+) {
+    let (c_bits, c_tag) = ctx.use_local(container);
+    let (idx_bits, _idx_tag) = ctx.use_local(index);
+    let (s_bits, s_tag) = ctx.use_local(src);
+    ctx.b.ins().call(symbols.xcx_jit_str_append_element, &[c_bits, c_tag, idx_bits, s_bits, s_tag]);
+}
+

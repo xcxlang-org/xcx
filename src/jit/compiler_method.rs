@@ -215,7 +215,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_add_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_add_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_add_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -226,7 +226,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_sub_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_sub_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_sub_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -237,7 +237,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_mul_int(&mut ctx, &symbols, dst, src1, src2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_mul_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_mul_poly(&mut ctx, &symbols, dst, src1, src2);
@@ -248,7 +248,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_poly_div_mod_fast_path(&mut ctx, &symbols, dst, src1, src2, symbols.xcx_jit_div, false);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_div_float(&mut ctx, &symbols, dst, src1, src2);
                         } else {
                             emit_poly_div_mod_fast_path(&mut ctx, &symbols, dst, src1, src2, symbols.xcx_jit_div, false);
@@ -273,18 +273,42 @@ impl JIT {
                     OpCode::DecLocal { reg } => {
                         emit_dec_local(&mut ctx, reg);
                     }
-                    OpCode::GetVar { dst, idx } => {
+                     OpCode::GetVar { dst, idx } => {
                         emit_get_var(&mut ctx, &symbols, dst, idx);
                     }
                     OpCode::SetVar { idx, src } => {
                         emit_set_var(&mut ctx, &symbols, idx, src);
+                    }
+                    OpCode::StrAppendVar { var_idx, src } => {
+                        ctx.spill_all();
+                        let idx_val = ctx.b.ins().iconst(types::I32, var_idx as i64);
+                        let (s_bits, s_tag) = ctx.use_local(src);
+                        ctx.b.ins().call(symbols.xcx_jit_str_append_var, &[
+                            ctx.vm_ptr,
+                            idx_val,
+                            s_bits,
+                            s_tag,
+                        ]);
+                        ctx.reload_globals();
+                    }
+                    OpCode::StrAppendLocal { local_idx, src } => {
+                        ctx.spill_all();
+                        let idx_val = ctx.b.ins().iconst(types::I32, local_idx as i64);
+                        let (s_bits, s_tag) = ctx.use_local(src);
+                        ctx.b.ins().call(symbols.xcx_jit_str_append_local, &[
+                            ctx.locals_ptr,
+                            idx_val,
+                            s_bits,
+                            s_tag,
+                        ]);
+                        ctx.reload_local(local_idx);
                     }
                     OpCode::Equal { dst, src1, src2 } => {
                         let t1 = ctx.get_reg_type(src1 as usize);
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 0);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 0);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 0);
@@ -295,7 +319,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 1);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 1);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 1);
@@ -306,7 +330,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 2);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 2);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 2);
@@ -317,7 +341,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 3);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 3);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 3);
@@ -328,7 +352,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 4);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 4);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 4);
@@ -339,7 +363,7 @@ impl JIT {
                         let t2 = ctx.get_reg_type(src2 as usize);
                         if t1 == TypeTag::Int && t2 == TypeTag::Int {
                             emit_cmp_int(&mut ctx, &symbols, dst, src1, src2, 5);
-                        } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                        } else if t1 == TypeTag::Float && t2 == TypeTag::Float {
                             emit_cmp_float(&mut ctx, &symbols, dst, src1, src2, 5);
                         } else {
                             emit_cmp_poly(&mut ctx, &symbols, dst, src1, src2, 5);
@@ -410,10 +434,40 @@ impl JIT {
                         let (iv_bits, _iv_tag) = ctx.use_local(index);
                         let container_ty = ctx.get_reg_type(container as usize);
                         if container_ty == TypeTag::BoolArray {
+                            let elements_ptr = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), cv_bits, 16);
+                            let len = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), cv_bits, 24);
+                            let is_in_bounds = ctx.b.ins().icmp(IntCC::UnsignedLessThan, iv_bits, len);
+                            
+                            let fast_blk = ctx.create_block();
+                            let slow_blk = ctx.create_block();
+                            let join_blk = ctx.create_block();
+                            let res_val = ctx.b.declare_var(types::I64);
+                            
+                            ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
+                            
+                            ctx.b.switch_to_block(fast_blk);
+                            let elem_addr = ctx.b.ins().iadd(elements_ptr, iv_bits);
+                            let raw_val_i8 = ctx.b.ins().load(types::I8, cranelift_codegen::ir::MemFlags::trusted(), elem_addr, 0);
+                            let raw_val = ctx.b.ins().uextend(types::I64, raw_val_i8);
+                            let val_bool = ctx.b.ins().band_imm(raw_val, 1);
+                            ctx.b.def_var(res_val, val_bool);
+                            ctx.b.ins().jump(join_blk, &[]);
+                            
+                            ctx.b.switch_to_block(slow_blk);
                             let call = ctx.b.ins().call(symbols.xcx_jit_array_get_bool, &[cv_bits, cv_tag, iv_bits]);
-                            let raw = ctx.b.inst_results(call)[0];
+                            let r_bits = ctx.b.inst_results(call)[0];
+                            ctx.b.def_var(res_val, r_bits);
+                            ctx.b.ins().jump(join_blk, &[]);
+                            
+                            ctx.b.switch_to_block(join_blk);
+                            ctx.clear_block_state(false);
+                            let final_bits = ctx.b.use_var(res_val);
+                            if !ctx.should_skip_dec_ref(dst) {
+                                let (old_bits, old_tag) = ctx.use_local(dst);
+                                emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);
+                            }
                             let bool_tag = ctx.b.ins().iconst(types::I64, TAG_BOOL as i64);
-                            ctx.def_local(dst, raw, bool_tag);
+                            ctx.def_local(dst, final_bits, bool_tag);
                         } else if container_ty == TypeTag::Table {
                             let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_table_get_row, &[cv_bits, cv_tag, iv_bits]);
                             if !ctx.should_skip_dec_ref(dst) {
@@ -440,8 +494,31 @@ impl JIT {
                             } else {
                                 super::nan_ops::unpack_bool(ctx.b, sv_bits)
                             };
+                            
+                            let elements_ptr = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), cv_bits, 16);
+                            let len = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), cv_bits, 24);
+                            let is_in_bounds = ctx.b.ins().icmp(IntCC::UnsignedLessThan, iv_bits, len);
+                            
+                            let fast_blk = ctx.create_block();
+                            let slow_blk = ctx.create_block();
+                            let join_blk = ctx.create_block();
+                            
+                            ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
+                            
+                            ctx.b.switch_to_block(fast_blk);
+                            let elem_addr = ctx.b.ins().iadd(elements_ptr, iv_bits);
+                            let val_norm = ctx.b.ins().band_imm(unpacked_bool, 1);
+                            let val_bool_i8 = ctx.b.ins().ireduce(types::I8, val_norm);
+                            ctx.b.ins().store(cranelift_codegen::ir::MemFlags::trusted(), val_bool_i8, elem_addr, 0);
+                            ctx.b.ins().jump(join_blk, &[]);
+                            
+                            ctx.b.switch_to_block(slow_blk);
                             let sv_bits_i8 = ctx.b.ins().ireduce(types::I8, unpacked_bool);
                             ctx.b.ins().call(symbols.xcx_jit_array_set_bool, &[cv_bits, cv_tag, iv_bits, sv_bits_i8]);
+                            ctx.b.ins().jump(join_blk, &[]);
+                            
+                            ctx.b.switch_to_block(join_blk);
+                            ctx.clear_block_state(false);
                         } else {
                             ctx.b.ins().call(symbols.xcx_jit_array_update, &[cv_bits, cv_tag, iv_bits, sv_bits, sv_tag]);
                         }
@@ -575,6 +652,12 @@ impl JIT {
                     }
                     OpCode::SetMember { container, name_idx, src } => {
                         emit_set_member(&mut ctx, &symbols, container, name_idx, src, constants);
+                    }
+                    OpCode::StrAppendMember { container, name_idx, src } => {
+                        emit_str_append_member(&mut ctx, &symbols, container, name_idx, src, constants);
+                    }
+                    OpCode::StrAppendElement { container, index, src } => {
+                        emit_str_append_element(&mut ctx, &symbols, container, index, src);
                     }
                     OpCode::TablePushRow { tbl_reg, row_reg } => {
                         emit_table_push_row(&mut ctx, &symbols, tbl_reg, row_reg);
@@ -718,6 +801,15 @@ impl JIT {
                         let elem_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, offset);
                         let count_val = ctx.b.ins().iconst(types::I32, count as i64);
                         let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_array_init, &[ctx.executor_ptr, elem_ptr, count_val]);
+                        if !ctx.should_skip_dec_ref(dst) {
+                            let (old_bits, old_tag) = ctx.use_local(dst);
+                            emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);
+                        }
+                        ctx.def_local(dst, res_bits, res_tag);
+                    }
+                    OpCode::BoolArrayInit { dst } => {
+                        ctx.spill_all();
+                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_bool_array_init, &[ctx.executor_ptr]);
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
                             emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);

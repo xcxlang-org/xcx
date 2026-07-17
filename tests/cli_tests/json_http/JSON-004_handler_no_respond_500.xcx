@@ -1,29 +1,27 @@
 --- TEST: JSON-004
 --- Area: JSON/HTTP
 --- Priority: medium
---- Name: HTTP handler bez net.respond() → automatyczne 500
+--- Name: HTTP handler without net.respond() → automatic 500
 --- Expect:
----   Handler, który nie wywołuje yield net.respond(), powoduje odpowiedź HTTP 500.
----   Handler, który wywołuje net.respond(200, ...), działa poprawnie.
+---   Handler that does not yield net.respond() causes HTTP 500 response.
+---   Handler that yields net.respond(200, ...) works correctly.
 --- .
---- Ten test wymaga zewnętrznego klienta HTTP (np. curl).
---- Runner uruchamia serwer, wysyła request i sprawdza status code.
---- Format weryfikacji: stdout runnerowy sprawdza "HTTP/1.1 500"
 
---- ── Handler bez respond ─────────────────────────────────────────────────
+
+--- ── Handler without respond ─────────────────────────────────────────────
 fiber handle_broken(json: req -> json) {
-    >! "[JSON-004] handle_broken wywołany — brak net.respond()";
-    --- celowo brak yield net.respond(...)
+    >! "[JSON-004] handle_broken called — missing net.respond()";
+    --- intentionally missing yield net.respond(...)
 };
 
---- ── Handler poprawny ────────────────────────────────────────────────────
+--- ── Valid handler ────────────────────────────────────────────────────────
 fiber handle_ok(json: req -> json) {
     yield net.respond(200, <<< {"status": "ok"} >>>);
 };
 
---- ── Serwer ──────────────────────────────────────────────────────────────
---- UWAGA: serve: jest terminalnym statement.
---- Runner uruchamia ten plik jako osobny proces i testuje przez HTTP.
+--- ── Server ──────────────────────────────────────────────────────────────
+--- NOTE: serve: is a terminal statement.
+--- Runner executes this file as a separate process and tests via HTTP.
 serve: test_app {
     port = 18404,
     host = "127.0.0.1",

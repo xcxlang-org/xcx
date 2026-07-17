@@ -12,7 +12,7 @@ impl Executor {
         let t = t_rc.read();
         match kind {
             MethodKind::Where => {
-                let (filter_func, captures) = if args[0].is_func() { (args[0].as_function_idx(), vec![]) }
+                let (filter_func, captures) = if args[0].is_func() { (args[0].as_function_idx(), args[1..].to_vec()) }
                 else if args[0].is_fiber() {
                     let f_arc = args[0].as_fiber();
                     let f = f_arc.read();
@@ -41,8 +41,26 @@ impl Executor {
                 let row_count = t.rows.len();
                 drop(t);
                 let mut filtered = Vec::new();
+
+                let key = Arc::as_ptr(&t_rc) as usize;
+                if !self.row_cache.contains_key(&key) {
+                    self.row_cache.insert(key, vec![Value::from_bool(false); row_count]);
+                }
+
                 for i in 0..row_count {
-                    let row_val = Value::from_row(Arc::new(RowObj { table: t_rc.clone(), row_idx: i as u32 }));
+                    let cache_vec = self.row_cache.get_mut(&key).unwrap();
+                    let row_val = if cache_vec[i].is_row() {
+                        let v = cache_vec[i];
+                        unsafe { v.inc_ref(); }
+                        v
+                    } else {
+                        let v = Value::from_row(Arc::new(RowObj { table: t_rc.clone(), row_idx: i as u32 }));
+                        cache_vec[i] = v;
+                        let temp = v;
+                        unsafe { temp.inc_ref(); }
+                        temp
+                    };
+
                     let mut run_args = vec![row_val];
                     for a in &args[1..] { unsafe { a.inc_ref(); } run_args.push(*a); }
                     if let Some(res) = self.run_frame(self.ctx.functions[filter_func as usize].clone(), &run_args, vm_arc) {
@@ -96,7 +114,14 @@ impl Executor {
                 locals[dst as usize] = res;
             }
             MethodKind::Count | MethodKind::Len | MethodKind::Size => {
-                let res = Value::from_i64(t.rows.len() as i64);
+                let res = if let (Some(binding), Some(where_clause)) = (&t.sql_binding, &t.sql_where) {
+                    let sql = format!("SELECT COUNT(*) FROM [{}] WHERE {}", binding.table_name, where_clause);
+                    let conn = binding.db_conn.lock();
+                    let count: i64 = conn.query_row(&sql, [], |row| row.get(0)).unwrap_or(0);
+                    Value::from_i64(count)
+                } else {
+                    Value::from_i64(t.rows.len() as i64)
+                };
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }

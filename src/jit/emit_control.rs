@@ -446,13 +446,15 @@ pub fn emit_jump_if(
     if_true: bool,
 ) {
     let (sv_bits, sv_tag) = ctx.use_local(src);
-    let expected_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
-    let expected_bits = ctx.b.ins().iconst(types::I64, 0);
-    
-    // Check if sv is exactly 'false'
-    let eq_tag = ctx.b.ins().icmp(IntCC::Equal, sv_tag, expected_tag);
-    let eq_bits = ctx.b.ins().icmp(IntCC::Equal, sv_bits, expected_bits);
-    let is_false = ctx.b.ins().band(eq_tag, eq_bits);
+    let is_false = if ctx.get_reg_type(src as usize) == crate::vm::opcode::TypeTag::Bool {
+        ctx.b.ins().icmp_imm(IntCC::Equal, sv_bits, 0)
+    } else {
+        let expected_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
+        let expected_bits = ctx.b.ins().iconst(types::I64, 0);
+        let eq_tag = ctx.b.ins().icmp(IntCC::Equal, sv_tag, expected_tag);
+        let eq_bits = ctx.b.ins().icmp(IntCC::Equal, sv_bits, expected_bits);
+        ctx.b.ins().band(eq_tag, eq_bits)
+    };
     
     let target_blk = blocks[&(target as usize)];
     let next_blk = ctx.create_block();

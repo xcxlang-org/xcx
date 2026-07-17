@@ -41,6 +41,8 @@ pub fn create_jit_builder() -> JITBuilder {
     builder.symbol("xcx_jit_set_values", xcx_jit_set_values as *const u8);
     builder.symbol("xcx_jit_inc_ref", xcx_jit_inc_ref as *const u8);
     builder.symbol("xcx_jit_dec_ref", xcx_jit_dec_ref as *const u8);
+    builder.symbol("xcx_jit_str_append_var", xcx_jit_str_append_var as *const u8);
+    builder.symbol("xcx_jit_str_append_local", xcx_jit_str_append_local as *const u8);
     builder.symbol("xcx_jit_dec_ref_range", xcx_jit_dec_ref_range as *const u8);
     builder.symbol("xcx_jit_method_dispatch", xcx_jit_method_dispatch as *const u8);
     builder.symbol("xcx_jit_method_dispatch_named", xcx_jit_method_dispatch_named as *const u8);
@@ -100,6 +102,7 @@ pub fn create_jit_builder() -> JITBuilder {
     builder.symbol("xcx_jit_cast_float", xcx_jit_cast_float as *const u8);
 
     builder.symbol("xcx_jit_array_init", xcx_jit_array_init as *const u8);
+    builder.symbol("xcx_jit_bool_array_init", xcx_jit_bool_array_init as *const u8);
     builder.symbol("xcx_jit_set_init", xcx_jit_set_init as *const u8);
     builder.symbol("xcx_jit_map_init", xcx_jit_map_init as *const u8);
     builder.symbol("xcx_jit_table_init", xcx_jit_table_init as *const u8);
@@ -116,6 +119,8 @@ pub fn create_jit_builder() -> JITBuilder {
     builder.symbol("xcx_jit_store_delete", xcx_jit_store_delete as *const u8);
     builder.symbol("xcx_jit_database_init", xcx_jit_database_init as *const u8);
     builder.symbol("xcx_jit_set_member", xcx_jit_set_member as *const u8);
+    builder.symbol("xcx_jit_str_append_member", xcx_jit_str_append_member as *const u8);
+    builder.symbol("xcx_jit_str_append_element", xcx_jit_str_append_element as *const u8);
     builder.symbol("xcx_jit_env_get", xcx_jit_env_get as *const u8);
     builder.symbol("xcx_jit_env_args", xcx_jit_env_args as *const u8);
     builder.symbol("xcx_jit_crypto_hash", xcx_jit_crypto_hash as *const u8);

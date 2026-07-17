@@ -3,7 +3,15 @@ use crate::vm::value::Value;
 use crate::vm::core::vm::OpResult;
 use crate::vm::utils::json::build_response_json;
 
+static HTTP_AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
 
+fn get_agent() -> &'static ureq::Agent {
+    HTTP_AGENT.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .build()
+    })
+}
 
 /// Performs a simple HTTP GET or POST request.
 #[unsafe(no_mangle)]
@@ -33,10 +41,11 @@ pub unsafe extern "C" fn xcx_jit_net_call(out: *mut Value, method_idx_bits: u64,
     }
 
     let timeout = std::time::Duration::from_secs(5);
+    let agent = get_agent();
     let res = match method.to_uppercase().as_str() {
-        "GET" => ureq::get(&url).timeout(timeout).call(),
+        "GET" => agent.get(&url).timeout(timeout).call(),
         "POST" => {
-            let req = ureq::post(&url).timeout(timeout);
+            let req = agent.post(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
@@ -44,16 +53,16 @@ pub unsafe extern "C" fn xcx_jit_net_call(out: *mut Value, method_idx_bits: u64,
             }
         }
         "PUT" => {
-            let req = ureq::put(&url).timeout(timeout);
+            let req = agent.put(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
                 req.set("Content-Type", "application/json").send_string(&body_val.to_string())
             }
         }
-        "DELETE" => ureq::delete(&url).timeout(timeout).call(),
+        "DELETE" => agent.delete(&url).timeout(timeout).call(),
         "PATCH" => {
-            let req = ureq::patch(&url).timeout(timeout);
+            let req = agent.patch(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
@@ -62,12 +71,12 @@ pub unsafe extern "C" fn xcx_jit_net_call(out: *mut Value, method_idx_bits: u64,
         }
         "HEAD" => {
             if url.ends_with("/get") && url.contains("httpbun.com") {
-                ureq::head(&url.replace("/get", "")).timeout(timeout).call()
+                agent.head(&url.replace("/get", "")).timeout(timeout).call()
             } else {
-                ureq::head(&url).timeout(timeout).call()
+                agent.head(&url).timeout(timeout).call()
             }
         }
-        _ => ureq::get(&url).timeout(timeout).call(),
+        _ => agent.get(&url).timeout(timeout).call(),
     };
     
     let resp_json = build_response_json(res);
@@ -95,10 +104,11 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
     
 
     let timeout = std::time::Duration::from_secs(5);
+    let agent = get_agent();
     let res = match method.to_uppercase().as_str() {
-        "GET" => ureq::get(&url).timeout(timeout).call(),
+        "GET" => agent.get(&url).timeout(timeout).call(),
         "POST" => {
-            let req = ureq::post(&url).timeout(timeout);
+            let req = agent.post(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
@@ -106,16 +116,16 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
             }
         }
         "PUT" => {
-            let req = ureq::put(&url).timeout(timeout);
+            let req = agent.put(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
                 req.set("Content-Type", "application/json").send_string(&body_val.to_string())
             }
         }
-        "DELETE" => ureq::delete(&url).timeout(timeout).call(),
+        "DELETE" => agent.delete(&url).timeout(timeout).call(),
         "PATCH" => {
-            let req = ureq::patch(&url).timeout(timeout);
+            let req = agent.patch(&url).timeout(timeout);
             if body_val.is_string() {
                 req.send_bytes(&*body_val.as_string())
             } else {
@@ -124,12 +134,12 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
         }
         "HEAD" => {
             if url.ends_with("/get") && url.contains("httpbun.com") {
-                ureq::head(&url.replace("/get", "")).timeout(timeout).call()
+                agent.head(&url.replace("/get", "")).timeout(timeout).call()
             } else {
-                ureq::head(&url).timeout(timeout).call()
+                agent.head(&url).timeout(timeout).call()
             }
         }
-        _ => ureq::get(&url).timeout(timeout).call(),
+        _ => agent.get(&url).timeout(timeout).call(),
     };
     
     let resp_json = build_response_json(res);
@@ -216,18 +226,19 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
         return;
     }
 
+    let agent = get_agent();
     let mut req = match method.to_uppercase().as_str() {
-        "POST" => ureq::post(&url),
-        "PUT" => ureq::put(&url),
-        "DELETE" => ureq::delete(&url),
-        "PATCH" => ureq::patch(&url),
+        "POST" => agent.post(&url),
+        "PUT" => agent.put(&url),
+        "DELETE" => agent.delete(&url),
+        "PATCH" => agent.patch(&url),
         "HEAD" => {
             if url.ends_with("/get") && url.contains("httpbun.com") {
                 url = url.replace("/get", "");
             }
-            ureq::head(&url)
+            agent.head(&url)
         }
-        _ => ureq::get(&url),
+        _ => agent.get(&url),
     };
     
     req = req.timeout(timeout);
@@ -351,13 +362,14 @@ pub fn request(dst: u8, arg_src: u8, locals: &mut [Value], http_req_val: Option<
                 url = url.replace("/get", "");
             }
             
+            let agent = get_agent();
             let mut req = match method.to_uppercase().as_str() {
-                "POST" => ureq::post(&url),
-                "PUT" => ureq::put(&url),
-                "DELETE" => ureq::delete(&url),
-                "PATCH" => ureq::patch(&url),
-                "HEAD" => ureq::head(&url),
-                _ => ureq::get(&url),
+                "POST" => agent.post(&url),
+                "PUT" => agent.put(&url),
+                "DELETE" => agent.delete(&url),
+                "PATCH" => agent.patch(&url),
+                "HEAD" => agent.head(&url),
+                _ => agent.get(&url),
             };
             
             let map = map_rc.read();

@@ -162,7 +162,7 @@ def looks_like_runtime_success(rc: int, stderr: str) -> bool:
 def find_xcx_binary(explicit: Optional[str]) -> Optional[str]:
     if explicit:
         return explicit if (os.path.isfile(explicit) or shutil.which(explicit)) else None
-    release_bin = str((Path(__file__).parent.parent.parent / "target" / "release" / "xcx-compiler.exe").resolve())
+    release_bin = str((Path(__file__).parent.parent.parent / "target" / "release" / "xcx.exe").resolve())
     if os.path.isfile(release_bin):
         return release_bin
     return None

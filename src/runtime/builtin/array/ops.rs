@@ -239,4 +239,102 @@ impl Executor {
         }
         OpResult::Continue
     }
+
+    pub fn handle_bool_array_method(
+        &mut self,
+        dst: u8,
+        arr_rc: Arc<RwLock<crate::vm::object::bool_array_obj::BoolArrayObj>>,
+        kind: MethodKind,
+        args: &[Value],
+        _names: Option<&[String]>,
+        ip: usize,
+        locals: &mut [Value],
+        _vm_arc: &Arc<VM>,
+    ) -> OpResult {
+        match kind {
+            MethodKind::Push => {
+                let val = args[0];
+                let b = if val.is_bool() {
+                    val.as_bool()
+                } else {
+                    false
+                };
+                arr_rc.write().data.push(b as u8);
+                let res = Value::from_bool(true);
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
+            MethodKind::Pop  => {
+                let popped = arr_rc.write().data.pop();
+                let res = popped.map(|b| Value::from_bool(b != 0)).unwrap_or(Value::from_bool(false));
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
+            MethodKind::Len | MethodKind::Count | MethodKind::Size => {
+                let res = Value::from_i64(arr_rc.read().data.len() as i64);
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
+            MethodKind::Clear => {
+                arr_rc.write().data.clear();
+                let res = Value::from_bool(true);
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
+            MethodKind::IsEmpty  => {
+                let res = Value::from_bool(arr_rc.read().data.is_empty());
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
+            MethodKind::Get => {
+                if args[0].is_int() {
+                    let arr = arr_rc.read();
+                    let i = args[0].as_i64();
+                    if i >= 0 && (i as usize) < arr.data.len() {
+                        let v = Value::from_bool(arr.data[i as usize] != 0);
+                        unsafe { locals[dst as usize].dec_ref(); }
+                        locals[dst as usize] = v;
+                    } else {
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        eprintln!("R303: BoolArray index out of bounds: {} (Array length: {}){}", i, arr.data.len(), self.current_span_info(ip));
+                        return OpResult::Halt;
+                    }
+                } else {
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = Value::from_bool(false);
+                }
+            }
+            MethodKind::Update | MethodKind::Set => {
+                if args[0].is_int() {
+                    let i = args[0].as_i64();
+                    let val = args[1];
+                    let b = if val.is_bool() {
+                        val.as_bool()
+                    } else {
+                        false
+                    };
+                    let mut arr = arr_rc.write();
+                    if i >= 0 && (i as usize) < arr.data.len() {
+                        arr.data[i as usize] = b as u8;
+                        let res = Value::from_bool(true);
+                        unsafe { locals[dst as usize].dec_ref(); }
+                        locals[dst as usize] = res;
+                    } else {
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        eprintln!("R303: BoolArray update index out of bounds: {}{}", i, self.current_span_info(ip));
+                        return OpResult::Halt;
+                    }
+                } else {
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = Value::from_bool(false);
+                }
+            }
+            _ => {
+                eprintln!("Method {:?} not supported for BoolArray{}", kind, self.current_span_info(ip));
+                self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                return OpResult::Halt;
+            }
+        }
+        OpResult::Continue
+    }
 }

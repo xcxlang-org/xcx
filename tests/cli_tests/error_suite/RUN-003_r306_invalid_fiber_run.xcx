@@ -3,11 +3,11 @@
 --- Priority: high
 --- Name: R306 Invalid Fiber Run
 --- Expect:
----   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+---   File returns 1 and exits with an error, runner treats it as success.
 --- Runner: expect_fatal_exit = true
 
 fiber f() { yield; };
 fiber: task = f();
 task.run();
 task.run();
-task.run(); --- Trzeci run na zakończonym fiberze -> Halt (R306)
+task.run(); --- Third run on completed fiber -> Halt (R306)

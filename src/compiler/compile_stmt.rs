@@ -34,6 +34,7 @@ impl FunctionCompiler {
                     let src = self.compile_expr(arg.expr(), ctx);
                     if src != dst { self.emit(OpCode::Move { dst, src }, &stmt.span); }
                     self.next_local = dst as usize + 1;
+                    self.sync_max_locals();
                 }
                 if let Some(&func_id) = ctx.func_indices.get(name) {
                     let dst = base;
@@ -52,7 +53,17 @@ impl FunctionCompiler {
                     Type::Float => TypeTag::Float,
                     Type::String => TypeTag::String,
                     Type::Bool => TypeTag::Bool,
-                    _ => TypeTag::Unknown,
+                    Type::Array(_) |
+                    Type::Set(_) |
+                    Type::Map(_, _) |
+                    Type::Date |
+                    Type::Table(_) |
+                    Type::Database |
+                    Type::DatabaseOperation(_, _) |
+                    Type::Json |
+                    Type::Builtin(_) |
+                    Type::Fiber(_) |
+                    Type::Unknown => TypeTag::Unknown,
                 };
                 self.emit(OpCode::Input { dst, ty: type_tag }, &stmt.span);
             }
@@ -72,6 +83,31 @@ impl FunctionCompiler {
                             } else if let Some(&global_idx) = ctx.globals.get(name) {
                                 self.emit(OpCode::IncVar { idx: global_idx as u32 }, &stmt.span);
                                 optimized = true;
+                            }
+                        } else {
+                            let mut chain = Vec::new();
+                            let is_str_append = collect_concat_chain(value, *name, &mut chain);
+                            if is_str_append && !chain.iter().any(|e| expr_contains_identifier(e, *name)) {
+                                chain.reverse();
+                                if let Some(local_idx) = self.lookup_local(name) {
+                                    if let Some(Type::String) = self.local_types.get(name) {
+                                        for right_expr in chain {
+                                            let src = self.compile_expr(right_expr, ctx);
+                                            self.emit(OpCode::StrAppendLocal { local_idx: local_idx as u8, src }, &stmt.span);
+                                            self.pop_reg();
+                                        }
+                                        optimized = true;
+                                    }
+                                } else if let Some(&global_idx) = ctx.globals.get(name) {
+                                    if let Some(Type::String) = ctx.global_types.get(name) {
+                                        for right_expr in chain {
+                                            let src = self.compile_expr(right_expr, ctx);
+                                            self.emit(OpCode::StrAppendVar { var_idx: global_idx as u32, src }, &stmt.span);
+                                            self.pop_reg();
+                                        }
+                                        optimized = true;
+                                    }
+                                }
                             }
                         }
                     } else if *op == TokenKind::Minus {
@@ -113,8 +149,105 @@ impl FunctionCompiler {
                 self.compile_continue(stmt);
             }
             StmtKind::ExprStmt(expr) => {
-                self.compile_expr(expr, ctx);
-                self.pop_reg();
+                let mut optimized = false;
+                if let ExprKind::MethodCall { receiver, method, args, wait_after } = &expr.kind {
+                    let method_name = ctx.interner.lookup(*method);
+                    if method_name == "set" && args.len() == 2 && !*wait_after {
+                        let key_expr = args[0].expr();
+                        let val_expr = args[1].expr();
+                        if let ExprKind::StringLiteral(key_id) = &key_expr.kind {
+                            if let ExprKind::Binary { left, op: TokenKind::Plus, right } = &val_expr.kind {
+                                if let ExprKind::MethodCall { receiver: get_recv, method: get_method, args: get_args, wait_after: false } = &left.kind {
+                                    if ctx.interner.lookup(*get_method) == "get" && get_args.len() == 1 {
+                                        let get_key_expr = get_args[0].expr();
+                                        if let ExprKind::StringLiteral(get_key_id) = &get_key_expr.kind {
+                                            if get_key_id == key_id {
+                                                if let ExprKind::Identifier(rec_id) = &receiver.kind {
+                                                    if let ExprKind::Identifier(get_rec_id) = &get_recv.kind {
+                                                        if rec_id == get_rec_id {
+                                                            let is_json = if let Some(Type::Json) = self.local_types.get(rec_id) {
+                                                                true
+                                                            } else if let Some(Type::Json) = ctx.global_types.get(rec_id) {
+                                                                true
+                                                            } else {
+                                                                false
+                                                            };
+                                                            if is_json {
+                                                                let saved_next_local = self.next_local;
+                                                                let container_reg = self.compile_expr(receiver, ctx);
+                                                                let rhs_reg = self.compile_expr(right, ctx);
+                                                                let key_str = ctx.interner.lookup(*key_id).to_string();
+                                                                let name_idx = ctx.add_constant(Value::from_string(std::sync::Arc::new(
+                                                                    crate::vm::object::StringObj::new(key_str.into_bytes())
+                                                                )));
+                                                                self.emit(OpCode::StrAppendMember {
+                                                                    container: container_reg,
+                                                                    name_idx,
+                                                                    src: rhs_reg,
+                                                                }, &stmt.span);
+                                                                self.next_local = saved_next_local;
+                                                                self.sync_max_locals();
+                                                                optimized = true;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if method_name == "update" && args.len() == 2 && !*wait_after {
+                        let idx_expr = args[0].expr();
+                        let val_expr = args[1].expr();
+                        if let ExprKind::Binary { left, op: TokenKind::Plus, right } = &val_expr.kind {
+                            if let ExprKind::MethodCall { receiver: get_recv, method: get_method, args: get_args, wait_after: false } = &left.kind {
+                                if ctx.interner.lookup(*get_method) == "get" && get_args.len() == 1 {
+                                    let get_idx_expr = get_args[0].expr();
+                                    let idx_match = match (&idx_expr.kind, &get_idx_expr.kind) {
+                                        (ExprKind::Identifier(id1), ExprKind::Identifier(id2)) => id1 == id2,
+                                        (ExprKind::IntLiteral(n1), ExprKind::IntLiteral(n2)) => n1 == n2,
+                                        _ => false,
+                                    };
+                                    if idx_match {
+                                        if let ExprKind::Identifier(rec_id) = &receiver.kind {
+                                            if let ExprKind::Identifier(get_rec_id) = &get_recv.kind {
+                                                if rec_id == get_rec_id {
+                                                    let is_string_array = if let Some(Type::Array(inner_ty)) = self.local_types.get(rec_id) {
+                                                        matches!(**inner_ty, Type::String)
+                                                    } else if let Some(Type::Array(inner_ty)) = ctx.global_types.get(rec_id) {
+                                                        matches!(**inner_ty, Type::String)
+                                                    } else {
+                                                        false
+                                                    };
+                                                    if is_string_array {
+                                                        let saved_next_local = self.next_local;
+                                                        let container_reg = self.compile_expr(receiver, ctx);
+                                                        let index_reg = self.compile_expr(idx_expr, ctx);
+                                                        let rhs_reg = self.compile_expr(right, ctx);
+                                                        self.emit(OpCode::StrAppendElement {
+                                                            container: container_reg,
+                                                            index: index_reg,
+                                                            src: rhs_reg,
+                                                        }, &stmt.span);
+                                                        self.next_local = saved_next_local;
+                                                        self.sync_max_locals();
+                                                        optimized = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !optimized {
+                    self.compile_expr(expr, ctx);
+                    self.pop_reg();
+                }
             }
             StmtKind::Halt { level, message } => {
                 let src = self.compile_expr(message, ctx);
@@ -180,11 +313,11 @@ impl FunctionCompiler {
             }
             StmtKind::NetRequestStmt { method, url, headers, body, timeout, target } => {
                 let mut elements = Vec::new();
-                elements.push(make_map_pair(make_str_key(ctx.interner, "method", crate::error::Span::default()), *method.clone()));
-                elements.push(make_map_pair(make_str_key(ctx.interner, "url", crate::error::Span::default()), *url.clone()));
-                if let Some(h) = headers { elements.push(make_map_pair(make_str_key(ctx.interner, "headers", crate::error::Span::default()), *h.clone())); }
-                if let Some(b) = body { elements.push(make_map_pair(make_str_key(ctx.interner, "body", crate::error::Span::default()), *b.clone())); }
-                if let Some(t) = timeout { elements.push(make_map_pair(make_str_key(ctx.interner, "timeout", crate::error::Span::default()), *t.clone())); }
+                elements.push((make_str_key(ctx.interner, "method", crate::error::Span::default()), *method.clone()));
+                elements.push((make_str_key(ctx.interner, "url", crate::error::Span::default()), *url.clone()));
+                if let Some(h) = headers { elements.push((make_str_key(ctx.interner, "headers", crate::error::Span::default()), *h.clone())); }
+                if let Some(b) = body { elements.push((make_str_key(ctx.interner, "body", crate::error::Span::default()), *b.clone())); }
+                if let Some(t) = timeout { elements.push((make_str_key(ctx.interner, "timeout", crate::error::Span::default()), *t.clone())); }
                 let map_expr = crate::frontend::ast::Expr { kind: ExprKind::MapLiteral { key_type: Box::new(Type::String), value_type: Box::new(Type::Json), elements }, span: crate::error::Span::default() };
                 let arg_src = self.compile_expr(&map_expr, ctx);
                 let dst = if let Some(slot) = self.lookup_local(target) { slot as u8 } else {
@@ -221,7 +354,72 @@ fn make_str_key(interner: &mut crate::intern::Interner, name: &str, span: crate:
     }
 }
 
-fn make_map_pair(key: crate::frontend::ast::Expr, val: crate::frontend::ast::Expr) -> (crate::frontend::ast::Expr, crate::frontend::ast::Expr) {
-    (key, val)
+fn collect_concat_chain<'a>(
+    expr: &'a crate::frontend::ast::Expr,
+    name: crate::intern::StringId,
+    args: &mut Vec<&'a crate::frontend::ast::Expr>,
+) -> bool {
+    match &expr.kind {
+        ExprKind::Binary { left, op, right } if *op == TokenKind::Plus => {
+            args.push(right);
+            collect_concat_chain(left, name, args)
+        }
+        ExprKind::Identifier(id) if *id == name => true,
+        _ => false,
+    }
 }
+
+fn expr_contains_identifier(expr: &crate::frontend::ast::Expr, name: crate::intern::StringId) -> bool {
+    match &expr.kind {
+        ExprKind::Identifier(id) => *id == name,
+        ExprKind::Binary { left, right, .. } => {
+            expr_contains_identifier(left, name) || expr_contains_identifier(right, name)
+        }
+        ExprKind::Unary { right, .. } => expr_contains_identifier(right, name),
+        ExprKind::ArrayLiteral { elements } | ExprKind::ArrayOrSetLiteral { elements } => {
+            elements.iter().any(|e| expr_contains_identifier(e, name))
+        }
+        ExprKind::SetLiteral { elements, range, .. } => {
+            elements.iter().any(|e| expr_contains_identifier(e, name)) ||
+            range.as_ref().map_or(false, |r| {
+                expr_contains_identifier(&r.start, name) ||
+                expr_contains_identifier(&r.end, name) ||
+                r.step.as_ref().map_or(false, |s| expr_contains_identifier(s, name))
+            })
+        }
+        ExprKind::MapLiteral { elements, .. } => {
+            elements.iter().any(|(k, v)| expr_contains_identifier(k, name) || expr_contains_identifier(v, name))
+        }
+        ExprKind::TableLiteral { rows, .. } => {
+            rows.iter().any(|row| row.iter().any(|e| expr_contains_identifier(e, name)))
+        }
+        ExprKind::DatabaseLiteral(fields) => {
+            fields.iter().any(|(_, e)| expr_contains_identifier(e, name))
+        }
+        ExprKind::FunctionCall { args, .. } | ExprKind::MethodCall { args, .. } | ExprKind::ModuleCall { args, .. } => {
+            args.iter().any(|arg| expr_contains_identifier(arg.expr(), name))
+        }
+        ExprKind::Index { receiver, index } => {
+            expr_contains_identifier(receiver, name) || expr_contains_identifier(index, name)
+        }
+        ExprKind::MemberAccess { receiver, .. } => {
+            expr_contains_identifier(receiver, name)
+        }
+        ExprKind::TerminalCommand(_, args) => {
+            args.iter().any(|e| expr_contains_identifier(e, name))
+        }
+        ExprKind::Lambda { body, .. } => {
+            expr_contains_identifier(body, name)
+        }
+        ExprKind::Tuple(elements) => {
+            elements.iter().any(|e| expr_contains_identifier(e, name))
+        }
+        ExprKind::As { expr, .. } | ExprKind::Yield(expr) => {
+            expr_contains_identifier(expr, name)
+        }
+        _ => false,
+    }
+}
+
+
 

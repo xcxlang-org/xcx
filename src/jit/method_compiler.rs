@@ -66,7 +66,7 @@
         let mut creates_ptrs = false;
         for op in chunk.bytecode.iter() {
             match op {
-                OpCode::ArrayInit { .. } | OpCode::SetInit { .. } | OpCode::MapInit { .. } | 
+                OpCode::ArrayInit { .. } | OpCode::BoolArrayInit { .. } | OpCode::SetInit { .. } | OpCode::MapInit { .. } | 
                 OpCode::TableInit { .. } | OpCode::MethodCall { .. } | OpCode::MethodCallCustom { .. } |
                 OpCode::SetName { .. } | OpCode::JsonParse { .. } | OpCode::DateNow { .. } |
                 OpCode::JsonBind { .. } | OpCode::JsonBindLocal { .. } | OpCode::JsonInject { .. } |
@@ -461,20 +461,14 @@
                         emit_inc_var(&mut ctx, &symbols, idx);
                     }
                     OpCode::IncVarLoopNext { g_idx, reg, limit_reg, target } => {
-                        let sip = ctx.start_ip;
-                        let clen = chunk.bytecode.len();
-                        emit_inc_var_loop_next(&mut ctx, &symbols, g_idx, reg, limit_reg, blocks[&(target as usize)], target as usize, sip, sip + clen, &mut terminated);
+                        emit_inc_var_loop_next_opcode(&mut ctx, &symbols, &blocks, g_idx, reg, limit_reg, target);
                     }
 
                     OpCode::ArrayLoopNext { idx_reg, size_reg, target } => {
-                        let sip = ctx.start_ip;
-                        let clen = chunk.bytecode.len();
-                        emit_array_loop_next(&mut ctx, idx_reg, size_reg, blocks[&(target as usize)], target, sip, sip + clen, &mut terminated);
+                        emit_array_loop_next_opcode(&mut ctx, &symbols, &blocks, idx_reg, size_reg, target);
                     }
                     OpCode::TableIter { tbl_reg, idx_reg, row_reg, limit_reg, target } => {
-                        let sip = ctx.start_ip;
-                        let clen = chunk.bytecode.len();
-                        emit_table_iter(&mut ctx, &symbols, tbl_reg, idx_reg, row_reg, limit_reg, blocks[&(target as usize)], sip, sip + clen, &mut terminated);
+                        emit_table_iter_opcode(&mut ctx, &symbols, &blocks, tbl_reg, idx_reg, row_reg, limit_reg, target);
                     }
                     OpCode::HaltAlert { src } => {
                         emit_halt_alert(&mut ctx, &symbols, src);
@@ -660,6 +654,15 @@
                         let elem_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, offset);
                         let count_val = ctx.b.ins().iconst(types::I32, count as i64);
                         let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_array_init, &[ctx.executor_ptr, elem_ptr, count_val]);
+                        if !ctx.should_skip_dec_ref(dst) {
+                            let (old_bits, old_tag) = ctx.use_local(dst);
+                            emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);
+                        }
+                        ctx.def_local(dst, res_bits, res_tag);
+                    }
+                    OpCode::BoolArrayInit { dst } => {
+                        ctx.spill_all();
+                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_bool_array_init, &[ctx.executor_ptr]);
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
                             emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);

@@ -173,7 +173,7 @@ All arithmetic writes result to `dst` and reads operands from `src1`, `src2`. Ty
 
 | Opcode | Operation |
 |---|---|
-| `Add` | `src1 + src2` (int, float, string concat, date+int) |
+| `Add` | `src1 + src2` (int, float, string concat, date+int). For mixed `Float`/`Int` operands, `Value::add` (and `.sub`/`.mul`/`.div`/`.rem`/`.pow`) converts the non-float operand via `.cast_float()` rather than reinterpreting its raw bits as float bits — the same rule the JIT's fast-path selection follows, see `compiler/jit/jit_codegen.md`. |
 | `Sub` | `src1 - src2` (int, float, date-int, date-date→days) |
 | `Mul` | `src1 * src2` |
 | `Div` | `src1 / src2` (halts on division by zero) |
@@ -183,6 +183,19 @@ All arithmetic writes result to `dst` and reads operands from `src1`, `src2`. Ty
 | `PowInt` | Integer-specialized power |
 | `PowFloat` | Float-specialized power |
 | `IntConcat` | `src1 ++ src2` — integer concatenation (joins digits: 12 ++ 34 = 1234) |
+
+### String Append
+
+Compiled from the self-concatenation assignment pattern `x = x + expr` (see `compiler/compiler/compiler_stmt.md`) instead of a generic `Add` followed by a store — this avoids allocating for both the read and the result on every iteration of a loop that accumulates a string.
+
+| Opcode | Fields | Description |
+|---|---|---|
+| `StrAppendVar` | `var_idx, src` | Append `locals[src]` to the string in global `var_idx`, in place if uniquely owned. |
+| `StrAppendLocal` | `local_idx, src` | Append `locals[src]` to the string in local `local_idx`, in place if uniquely owned. |
+| `StrAppendMember` | `container, name_idx, src` | Append `locals[src]` to the string stored at JSON field `name_idx` of `container`. |
+| `StrAppendElement` | `container, index, src` | Append `locals[src]` to the string element at `index` of array `container`. |
+
+All four opcodes are backed by `StringObj::try_extend_bytes`, which mutates the target buffer directly when its `Arc` has a unique owner (`Arc::strong_count <= 1`); when the string is shared, they transparently fall back to an allocating copy-on-write clone instead.
 
 ### Comparison
 

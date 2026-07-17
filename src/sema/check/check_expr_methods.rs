@@ -187,7 +187,9 @@ impl<'a> Checker<'a> {
                         for arg in args { self.check_expr(arg.expr(), symbols, errors); }
                         Type::Bool
                     }
-                    "toStr" | "toString" | "toJson" | "show" | "clear" | "sort" | "reverse" => Type::Bool,
+                    "toStr" | "toString" => Type::String,
+                    "toJson" => Type::Json,
+                    "show" | "clear" | "sort" | "reverse" => Type::Bool,
                     "slice" => {
                         for arg in args { self.check_expr(arg.expr(), symbols, errors); }
                         Type::Array(inner.clone())

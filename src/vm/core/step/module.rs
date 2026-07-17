@@ -58,8 +58,30 @@ pub fn handle<'a>(
         // JSON access
         OpCode::JsonBindLocal { dst, json_src, path_src } => {
             let json = locals[json_src as usize];
-            let path = locals[path_src as usize].to_string();
-            if let Some(val) = crate::runtime::builtin::json::access::get_path_value_xcx(json, &path) {
+            let path_val = locals[path_src as usize];
+            let path_borrow = unsafe { path_val.as_str_borrow() };
+            let path_temp;
+            let path = match path_borrow {
+                Some(s) => s,
+                None => { path_temp = path_val.to_string(); &path_temp }
+            };
+            let is_simple = !path.is_empty()
+                && path.bytes().all(|b| b != b'.' && b != b'[' && b != b']' && b != b'/');
+            let result = if is_simple && json.is_json() {
+                let json_rc = json.as_json();
+                match &json_rc.root {
+                    crate::vm::object::JsonVal::Object(o) => {
+                        let o_read = unsafe { &*(*o).data_ptr() };
+                        o_read.iter()
+                            .find(|(k, _)| k.as_str() == path)
+                            .map(|(_, v)| crate::vm::utils::json::json_val_to_value(v))
+                    }
+                    _ => crate::runtime::builtin::json::access::get_path_value_xcx(json, path),
+                }
+            } else {
+                crate::runtime::builtin::json::access::get_path_value_xcx(json, path)
+            };
+            if let Some(val) = result {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = val;
                 Some(OpResult::Continue)
@@ -118,9 +140,9 @@ pub fn handle<'a>(
                 }
             };
             
-            let is_simple = !path_str.starts_with('/') && !path_str.contains('.') && !path_str.contains('[') && !path_str.contains(']');
+            let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
             unsafe {
-                (*json_ptr).dirty.store(true, std::sync::atomic::Ordering::Release);
+                (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
                 if is_simple {
                     if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
                         let o_read = o.read();

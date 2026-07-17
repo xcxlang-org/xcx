@@ -8,6 +8,14 @@ use crate::vm::core::executor::Executor;
 impl Executor {
     pub fn handle_table_insert<'a>(&mut self, dst: u8, t_rc: Arc<RwLock<crate::vm::object::TableObj>>, kind: MethodKind, args: &[Value], names: Option<&[String]>, locals: &mut [Value]) -> OpResult {
         let mut t_mut = t_rc.write();
+        let key = Arc::as_ptr(&t_rc) as usize;
+        if let Some(cache_vec) = self.row_cache.remove(&key) {
+            for v in cache_vec {
+                if v.is_row() {
+                    unsafe { v.dec_ref(); }
+                }
+            }
+        }
         let cols = t_mut.columns.clone();
         let mut row = Vec::with_capacity(cols.len());
         

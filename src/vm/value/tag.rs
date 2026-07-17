@@ -1,12 +1,27 @@
-pub use super::nan_boxing::{
-    TAG_FLOAT, TAG_INT, TAG_BOOL, TAG_DATE, TAG_STR, TAG_ARR, TAG_SET,
-    TAG_MAP, TAG_TBL, TAG_FUNC, TAG_ROW, TAG_JSON, TAG_FIB, TAG_DB,
-    TAG_CLOSURE, TAG_ARENA, TAG_FIRST_PTR,
-};
+pub const TAG_FLOAT:   u64 = 0;
+pub const TAG_INT:     u64 = 1;
+pub const TAG_BOOL:    u64 = 2;
+pub const TAG_DATE:    u64 = 3;
+pub const TAG_STR:     u64 = 4;
+pub const TAG_ARR:     u64 = 5;
+pub const TAG_SET:     u64 = 6;
+pub const TAG_MAP:     u64 = 7;
+pub const TAG_TBL:     u64 = 8;
+pub const TAG_FUNC:    u64 = 9;
+pub const TAG_ROW:     u64 = 10;
+pub const TAG_JSON:    u64 = 11;
+pub const TAG_FIB:     u64 = 12;
+pub const TAG_DB:      u64 = 13;
+pub const TAG_CLOSURE: u64 = 14;
+pub const TAG_ARENA:   u64 = 15;
+pub const TAG_FUNC_PTR: u64 = 16;
+pub const TAG_BOOL_ARR: u64 = 17;
+
+pub const TAG_FIRST_PTR: u64 = TAG_STR;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
-    Float, Int, Bool, Date, String, Array, Set, Map, Table, Function, Row, Json, Fiber, Database, Unknown
+    Float, Int, Bool, Date, String, Array, Set, Map, Table, Function, Row, Json, Fiber, Database, BoolArray, Unknown
 }
 
 impl Tag {
@@ -26,6 +41,7 @@ impl Tag {
             Tag::Json     => "json",
             Tag::Fiber    => "fiber",
             Tag::Database => "database",
+            Tag::BoolArray => "bool_array",
             Tag::Unknown  => "unknown",
         }
     }

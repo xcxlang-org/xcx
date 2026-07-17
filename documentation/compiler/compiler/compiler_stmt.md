@@ -1,6 +1,6 @@
 # Compiler — Statements & Control Flow
 
-The statement compiler translates top-level AST `Stmt` nodes into bytecode. It handles assignments, variable declarations, I/O, database initializations, and control flow structures (if, while, for).
+The statement compiler translates top-level AST `Stmt` nodes into bytecode. It handles assignments, variable declarations, I/O, database initializations, and control flow structures (if, while, for). The same statement-compilation entry points, and the same `loop_stack`/`LoopFrame` representation described below, are shared by the AST compiler (`compile_control.rs`) and the HIR compiler (`hir/compile_hir.rs` — see `compiler/hir/hir_codegen.md`).
 
 ---
 
@@ -28,10 +28,11 @@ pub fn compile_stmt(&mut self, stmt: &Stmt, ctx: &mut CompileContext)
 Iterates over the statement kind and dispatches compilation:
 - **I/O (`Print`, `Input`, `TerminalWrite`)**: Compiles the source expression, emits the I/O opcode, and pops the source register.
 - **Halt (`Alert`, `Error`, `Fatal`)**: Emits the respective halt opcode and stops further block compilation if fatal.
-- **Assignment**: Differentiates between local and global variables, emitting `Move` and `SetVar` respectively. Handles `+= 1` / `-= 1` inline optimizations (`IncLocal`, `IncVar`, `DecLocal`, `DecVar`).
+- **Assignment**: Differentiates between local and global variables, emitting `Move` and `SetVar` respectively. Handles `+= 1` / `-= 1` inline optimizations (`IncLocal`, `IncVar`, `DecLocal`, `DecVar`). String-concatenating self-assignment (`var = var + expr`, `obj.field = obj.field + expr`, `arr.update(i, arr.get(i) + expr)`) is recognized as its own pattern and compiled to the `StrAppend*` family instead — see below.
 - **Multiple Variable Declarations (`MultiVarDecl`)**: Recursively compiles each nested variable declaration statement in sequence, preserving their stack ordering.
 - **Serve & Net**: Compiles `net.method` into `HttpRequest` and `serve:` into `HttpServe`, passing HTTP arguments as a pre-constructed `MapLiteral`.
 - **JSON**: Resolves `json:bind` and `json:inject` into optimized `JsonBindLocal`/`JsonBindGlobal` or fast injection pipelined equivalents.
+- After every call or `for`-loop compilation that advances `next_local`, `sync_max_locals()` is invoked to keep `max_locals_used` — the value that ultimately sizes the runtime stack frame — in sync with the high-water mark of register usage.
 
 ---
 
@@ -39,13 +40,20 @@ Iterates over the statement kind and dispatches compilation:
 
 Generates forward-jump placeholders and backpatches them once the target block is fully compiled. Uses a `loop_stack` to track bounding indices for `break` and `continue`.
 
-### `loop_stack`
+### `loop_stack` / `LoopFrame`
 
 ```rust
-// (start_ip, unresolved_breaks, unresolved_continues, fiber_yield_target)
-pub loop_stack: Vec<(usize, Vec<usize>, Vec<usize>, Option<usize>)>
+pub struct LoopFrame {
+    pub start_pc: usize,
+    pub breaks: Vec<usize>,
+    pub continues: Vec<usize>,
+    pub fiber_reg: Option<usize>,
+}
+
+pub loop_stack: Vec<LoopFrame>
 ```
-Pushed on loop entry, popped on loop exit. `break` and `continue` instructions append their IP to the current top entry's lists for deferred backpatching.
+
+Pushed on loop entry, popped on loop exit. `start_pc` is the loop's re-entry address (the `continue` jump target). `break` and `continue` instructions append their IP to `breaks`/`continues` on the current top frame for deferred backpatching once the loop's end address is known. `fiber_reg` holds the register of the fiber being iterated, if any — used to emit a safe hidden `Close` call when `break` fires inside a fiber loop. Both `compile_control.rs` (AST path) and `hir/compile_hir.rs` (HIR path) push and consume the same `LoopFrame` type, so loop compilation logic does not need to be duplicated per pipeline.
 
 ### `If` Statements
 
@@ -68,6 +76,23 @@ Separates compilation into three specialized pipelines depending on `ForIterType
 - **Array / Set (`in obj`)**: Loads the object length via a silent `MethodCall` to `kind: Size`. Uses a hidden index register, emitting an `ArrayLoopNext` fused instruction for high-speed bounds-checked iteration.
 - **Fiber (`in fiber_obj`)**: Executes the fiber until `IsDone` returns true, yielding values from `Next` directly to the `var_name` register. Emits a safe hidden `Close` method call if `break` is executed inside a fiber loop.
 
+Emission of `IncVarLoopNext`, `ArrayLoopNext`, and `TableIter` is centralized in `method_compiler.rs` behind dedicated `*_opcode` helper functions rather than building each instruction's arguments inline at every call site.
+
+---
+
+## String Append Optimization: `StrAppendVar` / `StrAppendLocal` / `StrAppendMember` / `StrAppendElement`
+
+The self-concatenation pattern `var = var + expr` (global and local), `obj.field = obj.field + expr` (JSON field), and `arr.update(i, arr.get(i) + expr)` (string array element) is recognized directly by the statement compiler and lowered to one of four dedicated opcodes instead of a generic read/allocate/write sequence:
+
+- `OpCode::StrAppendVar { var_idx, src }` — global variable target.
+- `OpCode::StrAppendLocal { local_idx, src }` — local variable target.
+- `OpCode::StrAppendMember { container, name_idx, src }` — JSON object field target.
+- `OpCode::StrAppendElement { container, index, src }` — string array element target.
+
+At the VM level, each opcode attempts an in-place buffer extension via `StringObj::try_extend_bytes` when the target string's `Arc` has a unique owner (`Arc::strong_count <= 1`), falling back to a full copy-on-write clone otherwise — see `compiler/vm/vm_opcode.md` and `compiler/vm/vm_value.md` for the runtime side.
+
+Both the AST compiler (`compile_stmt.rs`) and the HIR compiler (`hir/compile_hir.rs`) recognize this pattern, including chained concatenations with left-associative recursion (e.g. `res = res + "a" + "b"`), which are flattened at compile time into a sequence of `StrAppendLocal`/`StrAppendVar` instructions rather than a nested binary-add tree — provided the target variable is not read again on the right-hand side of the expression.
+
 ---
 
 ## Variable and Database Declarations (`compile_decl.rs`)
@@ -76,7 +101,7 @@ Resolves lexical scoping by mapping a declared `StringId` to the current `Functi
 Variables declared at the root script level outside any function are treated as globals.
 
 **Database Initialization Edge Case**:
-The AST explicitly distinguishes `DatabaseDecl`. The compiler `compile_database_decl` looks for explicit map keys `"engine"` and `"path"`. All other map values are strictly treated as Tables. It emits `DatabaseInit` wrapping engine, path, and an arbitrary contiguous register span of tables.
+The AST explicitly distinguishes `DatabaseDecl`. The compiler `compile_database_decl` looks for explicit map keys `"engine"` and `"path"`. All other map values are strictly treated as Tables. It emits `DatabaseInit` wrapping engine, path, and an arbitrary contiguous register span of tables. Validation that a field marked `is_const` is not reassigned is intentionally left to the semantic analyzer rather than duplicated here.
 
 ---
 

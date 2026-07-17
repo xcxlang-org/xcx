@@ -58,7 +58,6 @@ impl Executor {
                 let mut jrows = Vec::new();
 
                 let col_names: Vec<String> = (0..col_count).map(|i| stmt.column_name(i).unwrap_or("unknown").to_string()).collect();
-                
                 let params: Vec<Box<dyn rusqlite::ToSql>> = params_vals.iter().map(|v| Box::new(v.to_sql_value()) as Box<dyn rusqlite::ToSql>).collect();
                 let rusql_params = rusqlite::params_from_iter(params);
 

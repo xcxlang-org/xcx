@@ -207,20 +207,21 @@ impl Executor {
             OpCode::Jump { target } => {
                 let target_ip = target as usize;
                 if target_ip < ip {
-                    // Backward jump
-                    if let Some(start) = self.recorder.start_ip {
-                        if target_ip == start {
-                            self.recorder.record(TraceOp::Jump { target_ip });
-                        } else {
-                            self.recorder.stop();
-                        }
-                    } else {
-                        self.recorder.stop();
+                    // Backward jump: a bare unconditional backward jump means the loop uses
+                    // Add+Jump rather than a dedicated LoopNext opcode (i.e. a @step loop).
+                    // The JIT would emit an infinite native loop with no conditional exit for
+                    // the loop bound — blacklist to keep it interpreted.
+                    let start = self.recorder.start_ip;
+                    self.recorder.stop();
+                    if let Some(s) = start {
+                        self.hotspot.blacklist(s);
                     }
                 } else {
                     self.recorder.record(TraceOp::Jump { target_ip });
                 }
             }
+
+
             OpCode::JumpIfFalse { src, target } => {
                 let val = locals[src as usize];
                 let target_ip = target as usize;

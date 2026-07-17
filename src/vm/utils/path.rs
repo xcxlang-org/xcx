@@ -40,7 +40,6 @@ pub fn get_path_value_xcx(root: Value, path: &str) -> Option<Value> {
     unsafe { current.inc_ref(); }
 
     for part in parts {
-        let tag = current.tag;
         let next = if current.is_array() {
             let idx = part.parse::<usize>().unwrap_or(u32::MAX as usize);
             let arr_rc = current.as_array();
@@ -57,13 +56,25 @@ pub fn get_path_value_xcx(root: Value, path: &str) -> Option<Value> {
                 unsafe { (v as &Value).inc_ref(); }
                 Some(*v)
             } else { None }
-        } else if tag == crate::vm::value::TAG_JSON {
+        } else if current.is_json() {
             let json_rc = current.as_json();
-            let pointer = format!("/{}", part);
-            let v = json_rc.root.pointer(&pointer);
-            match v {
-                Some(v) => Some(crate::vm::utils::json::json_val_to_value(&v)),
-                None => None,
+            match &json_rc.root {
+                crate::vm::object::JsonVal::Object(o) => {
+                    let o_read = unsafe { &*(*o).data_ptr() };
+                    match o_read.iter().find(|(k, _)| k.as_str() == part) {
+                        Some((_, v)) => Some(crate::vm::utils::json::json_val_to_value(v)),
+                        None => None,
+                    }
+                }
+                crate::vm::object::JsonVal::Array(a) => {
+                    if let Ok(idx) = part.parse::<usize>() {
+                        let a_read = unsafe { &*(*a).data_ptr() };
+                        if idx < a_read.len() {
+                            Some(crate::vm::utils::json::json_val_to_value(&a_read[idx]))
+                        } else { None }
+                    } else { None }
+                }
+                _ => None,
             }
         } else {
             None

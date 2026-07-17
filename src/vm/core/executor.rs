@@ -22,12 +22,28 @@ pub struct Executor {
     pub stack_ptr: usize,
     pub call_depth: usize,
     pub in_fiber: bool,
+    pub globals_raw: *mut Value,
+    pub row_cache: std::collections::HashMap<usize, Vec<Value>>,
 }
 
 impl Executor {
     pub fn new(vm: Arc<VM>, ctx: Arc<SharedContext>) -> Self {
         let mut hotspot = crate::vm::trace::Hotspot::new();
         hotspot.threshold = vm.jit_threshold;
+        let globals_raw = vm.globals.read().as_ptr() as *mut Value;
+        debug_assert_eq!(
+            vm.globals.read().len(),
+            65536,
+            "globals Vec must be fixed-size; reallocating would invalidate globals_raw"
+        );
+
+
+        let stack_size = if vm.disable_jit {
+            1024 * 64 // 64K values (1MB) for fast interpreter cache locality
+        } else {
+            1024 * 512 // 512K values (8MB) for deeper JIT execution frames
+        };
+
         Self {
             vm,
             ctx,
@@ -39,10 +55,12 @@ impl Executor {
             terminal_raw_enabled: false,
             fiber_next_ip: 0,
             current_bytecode_ptr: 0,
-            stack: vec![Value::from_bool(false); 1024 * 64], // 64K values (1MB)
+            stack: vec![Value::from_bool(false); stack_size],
             stack_ptr: 0,
             call_depth: 0,
             in_fiber: false,
+            globals_raw,
+            row_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -58,7 +76,7 @@ impl Executor {
         let _guard = crate::vm::core::vm::ActiveVmGuard::new(Arc::as_ptr(vm_arc) as *const crate::vm::VM);
         let jit_fn: crate::jit::abi::MethodJitFunction = unsafe { std::mem::transmute(jit_ptr) };
 
-        let globals_ptr = { vm_arc.globals.read().as_ptr() as *mut Value };
+        let globals_ptr = self.globals_raw;
         let consts_ptr = self.ctx.constants.as_ptr() as *const Value;
         let vm_ptr = Arc::as_ptr(vm_arc) as *mut crate::vm::VM;
         let shutdown_ptr = &SHUTDOWN as *const std::sync::atomic::AtomicBool as *const bool;
@@ -112,18 +130,14 @@ impl Executor {
         }
 
         let stack_ptr_raw = self.stack.as_mut_ptr();
-        let locals_slice = unsafe { std::slice::from_raw_parts_mut(stack_ptr_raw.add(locals_start), chunk.max_locals) };
-        let arg_count = args.len();
-        if arg_count < chunk.max_locals {
-            for v in &mut locals_slice[arg_count..] { *v = Value::from_bool(false); }
+        let limit = std::cmp::min(args.len(), chunk.max_locals);
+        for i in 0..limit {
+            let v = args[i];
+            if v.is_ptr() { unsafe { v.inc_ref(); } }
+            unsafe { *stack_ptr_raw.add(locals_start + i) = v; }
         }
-
-        for (i, arg) in args.iter().enumerate() {
-            if i < chunk.max_locals {
-                let v = *arg;
-                if v.is_ptr() { unsafe { v.inc_ref(); } }
-                locals_slice[i] = v;
-            }
+        for i in limit..chunk.max_locals {
+            unsafe { *stack_ptr_raw.add(locals_start + i) = Value::from_bool(false); }
         }
 
         Ok((locals_start, old_spans, old_stack_ptr))
@@ -148,7 +162,11 @@ impl Executor {
                         jit_ptr = ptr as *mut std::ffi::c_void;
                         chunk.jit_ptr.store(jit_ptr, Ordering::Release);
                     }
-                    Err(_e) => {}
+                    Err(_e) => {
+                        #[cfg(debug_assertions)]
+                        eprintln!("JIT compilation failed for {}: {:?}", func_name, _e);
+                        vm_arc.error_count.fetch_add(1, Ordering::SeqCst);
+                    }
                 }
             }
         }
@@ -215,6 +233,16 @@ impl Executor {
         res
     }
 
+    pub fn handle_call(
+        &mut self,
+        func_idx: u32,
+        chunk: Arc<Chunk>,
+        args: &[Value],
+        vm_arc: &Arc<VM>,
+    ) -> OpResult {
+        self.handle_call_inner(Some(func_idx), chunk, args, vm_arc, " in handle_call")
+    }
+
     pub fn handle_call_no_jit(
         &mut self,
         chunk: Arc<Chunk>,
@@ -222,6 +250,17 @@ impl Executor {
         vm_arc: &Arc<VM>,
     ) -> OpResult {
         let _guard = crate::vm::core::vm::ActiveVmGuard::new(Arc::as_ptr(vm_arc) as *const crate::vm::VM);
+        self.handle_call_inner(None, chunk, args, vm_arc, " in handle_call_no_jit")
+    }
+
+    fn handle_call_inner(
+        &mut self,
+        func_idx: Option<u32>,
+        chunk: Arc<Chunk>,
+        args: &[Value],
+        vm_arc: &Arc<VM>,
+        loc: &'static str,
+    ) -> OpResult {
         if self.call_depth >= RECURSION_LIMIT {
             let err = format!("ERROR halt: Recursion limit exceeded ({} frames)\n", RECURSION_LIMIT);
             crate::runtime::builtin::io::eprint_buffered(&err);
@@ -229,7 +268,7 @@ impl Executor {
         }
         self.call_depth += 1;
 
-        let (locals_start, old_spans, old_stack_ptr) = match self.prepare_frame(&chunk, args, vm_arc, " in handle_call_no_jit") {
+        let (locals_start, old_spans, old_stack_ptr) = match self.prepare_frame(&chunk, args, vm_arc, loc) {
             Ok(res) => res,
             Err(()) => {
                 self.call_depth -= 1;
@@ -237,7 +276,12 @@ impl Executor {
             }
         };
 
-        let jit_ptr = chunk.jit_ptr.load(Ordering::Acquire);
+        let jit_ptr = if let Some(f_idx) = func_idx {
+            self.check_jit_warmup(&chunk, f_idx, vm_arc)
+        } else {
+            chunk.jit_ptr.load(Ordering::Acquire)
+        };
+
         if !jit_ptr.is_null() {
             return unsafe { self.dispatch_jit_call(jit_ptr, locals_start, vm_arc, old_spans, old_stack_ptr) };
         }
@@ -254,7 +298,16 @@ impl Executor {
 
         self.cleanup_frame(locals_start, &chunk, old_spans, old_stack_ptr, old_bptr);
         self.call_depth -= 1;
-        ores
+
+        if func_idx.is_some() {
+            match ores {
+                OpResult::Return(v) => OpResult::Return(v),
+                OpResult::Halt      => OpResult::Halt,
+                _                   => OpResult::Continue,
+            }
+        } else {
+            ores
+        }
     }
 
     pub(crate) fn execute_bytecode_inner(
@@ -283,54 +336,6 @@ impl Executor {
         OpResult::Continue
     }
 
-
-    pub fn handle_call(
-        &mut self,
-        func_idx: u32,
-        chunk: Arc<Chunk>,
-        args: &[Value],
-        vm_arc: &Arc<VM>,
-    ) -> OpResult {
-        if self.call_depth >= RECURSION_LIMIT {
-            let err = format!("ERROR halt: Recursion limit exceeded ({} frames)\n", RECURSION_LIMIT);
-            crate::runtime::builtin::io::eprint_buffered(&err);
-            return OpResult::Halt;
-        }
-        self.call_depth += 1;
-
-        let (locals_start, old_spans, old_stack_ptr) = match self.prepare_frame(&chunk, args, vm_arc, " in handle_call") {
-            Ok(res) => res,
-            Err(()) => {
-                self.call_depth -= 1;
-                return OpResult::Halt;
-            }
-        };
-
-        let jit_ptr = self.check_jit_warmup(&chunk, func_idx, vm_arc);
-
-        if !jit_ptr.is_null() {
-            return unsafe { self.dispatch_jit_call(jit_ptr, locals_start, vm_arc, old_spans, old_stack_ptr) };
-        }
-
-        let callee_bytecode_ptr = chunk.bytecode.as_ptr() as usize;
-        let old_bptr2 = std::mem::replace(&mut self.current_bytecode_ptr, callee_bytecode_ptr);
-
-        let mut ip = 0;
-        let ores = {
-            let lp = self.stack.as_mut_ptr();
-            let locals = unsafe { std::slice::from_raw_parts_mut(lp.add(locals_start), chunk.max_locals) };
-            self.execute_bytecode_inner(&chunk.bytecode, &mut ip, locals, vm_arc)
-        };
-
-        self.cleanup_frame(locals_start, &chunk, old_spans, old_stack_ptr, old_bptr2);
-        self.call_depth -= 1;
-
-        match ores {
-            OpResult::Return(v) => OpResult::Return(v),
-            OpResult::Halt      => OpResult::Halt,
-            _                   => OpResult::Continue,
-        }
-    }
 
     pub unsafe fn dispatch_method(&mut self, receiver: Value, kind: u8, args: &[Value], names: Option<&[String]>) -> Result<Value, ()> {
         let kind_enum = match MethodKind::from_u8(kind) {
@@ -405,6 +410,13 @@ impl Drop for Executor {
         if crate::runtime::builtin::io::terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
             let _ = crossterm::terminal::disable_raw_mode();
             crate::runtime::builtin::io::terminal::OS_RAW_ACTIVE.store(false, std::sync::atomic::Ordering::Release);
+        }
+        for (_, cache_vec) in self.row_cache.drain() {
+            for v in cache_vec {
+                if v.is_row() {
+                    unsafe { v.dec_ref(); }
+                }
+            }
         }
     }
 }

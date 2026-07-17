@@ -1,33 +1,33 @@
 --- TEST: HALT-001
 --- Area: Error Handling
 --- Priority: critical
---- Name: halt.alert — kontynuacja wykonania
+--- Name: halt.alert — execution continuation
 --- Expect:
----   halt.alert drukuje komunikat do stderr/stdout.
----   Wykonanie kontynuuje — następna linia musi się wykonać.
----   Wielokrotne halt.alert — wszystkie kontynuują.
+---   halt.alert prints message to stderr/stdout.
+---   Execution continues — the next line must execute.
+---   Multiple halt.alerts — all continue.
 
->! "[HALT-001] Przed halt.alert";
+>! "[HALT-001] Before halt.alert";
 
-halt.alert >! "HALT-ALERT-1: To jest ostrzeżenie — VM powinien kontynuować";
+halt.alert >! "HALT-ALERT-1: This is a warning — VM should continue";
 
->! "[HALT-001] PASS — linia PO pierwszym halt.alert się wykonała";
+>! "[HALT-001] PASS — line AFTER first halt.alert executed";
 
-halt.alert >! "HALT-ALERT-2: Drugie ostrzeżenie";
+halt.alert >! "HALT-ALERT-2: Second warning";
 
->! "[HALT-001] PASS — linia PO drugim halt.alert się wykonała";
+>! "[HALT-001] PASS — line AFTER second halt.alert executed";
 
---- halt.alert wewnątrz funkcji
+--- halt.alert inside function
 func risky_op(-> b) {
-    halt.alert >! "HALT-ALERT-3: alert wewnątrz funkcji";
+    halt.alert >! "HALT-ALERT-3: alert inside function";
     return true;
 };
 
 b: result = risky_op();
 if (result == true) then;
-    >! "[HALT-001] PASS — funkcja z halt.alert zwróciła true";
+    >! "[HALT-001] PASS — function with halt.alert returned true";
 else;
-    >! "[HALT-001] FAIL — funkcja z halt.alert nie zwróciła true";
+    >! "[HALT-001] FAIL — function with halt.alert did not return true";
 end;
 
->! "[HALT-001] PASS — halt.alert nie przerywa wykonania";
+>! "[HALT-001] PASS — halt.alert does not interrupt execution";

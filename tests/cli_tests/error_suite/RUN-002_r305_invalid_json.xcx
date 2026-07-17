@@ -3,7 +3,7 @@
 --- Priority: high
 --- Name: R305 Invalid JSON Parser
 --- Expect:
----   Plik zwraca 1 i kończy z błędem, runner traktuje to jako sukces.
+---   File returns 1 and exits with an error, runner treats it as success.
 --- Runner: expect_fatal_exit = true
 
-json: obj = json.parse("{ niepoprawny json }"); --- Halt (R305)
+json: obj = json.parse("{ invalid json }"); --- Halt (R305)

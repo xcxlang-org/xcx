@@ -1,13 +1,13 @@
 --- TEST: SEC-001b
 --- Area: Security
 --- Priority: critical
---- Name: store — absolutna ścieżka → halt.fatal
+--- Name: store — absolute path → halt.fatal
 --- Expect:
----   store.write("/tmp/evil.txt", ...) → halt.fatal, VM terminuje.
----   Linia PO wywołaniu się NIE wykona.
+---   store.write("/tmp/evil.txt", ...) → halt.fatal, VM terminates.
+---   Line AFTER invocation will NOT execute.
 --- Runner: expect_fatal_exit = true
 
->! "[SEC-001b] Próba store.write z absolutną ścieżką...";
+>! "[SEC-001b] Attempting store.write with absolute path...";
 store.write("/tmp/xcx_evil_test.txt", "pwned");
 
->! "[SEC-001b] FAIL — absolutna ścieżka nie wywołała halt.fatal";
+>! "[SEC-001b] FAIL — absolute path did not trigger halt.fatal";

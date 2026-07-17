@@ -7,3 +7,4 @@ pub mod vm;
 pub mod runtime;
 pub mod repl;
 pub mod jit;
+pub mod hir;

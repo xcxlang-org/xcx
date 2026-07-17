@@ -19,9 +19,15 @@ pub fn is_verbose_enabled() -> bool {
     *CACHE.get_or_init(|| {
         let is_test_bin = std::env::current_exe()
             .ok()
-            .map(|p| p.to_string_lossy().into_owned().to_lowercase())
-            .map(|path| {
-                path.contains("test") || path.contains("runner") || path.contains("deps")
+            .map(|p| {
+                let path_lower = p.to_string_lossy().to_lowercase();
+                let file_name = p.file_name()
+                    .map(|f| f.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                file_name.contains("test")
+                    || file_name.contains("runner")
+                    || path_lower.contains("/deps/")
+                    || path_lower.contains("\\deps\\")
             })
             .unwrap_or(false);
             

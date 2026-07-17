@@ -1,4 +1,4 @@
-# XCX 4.1 Changelog
+# XCX 4.2 Changelog
 
 ---
 
@@ -157,7 +157,7 @@ Declaring multiple variables of the same basic type in a single statement (e.g. 
 
 ---
 
-| Benchmark | XCX 4.0 (no JIT) | XCX 4.0 (JIT) | XCX 4.1 (no JIT) | XCX 4.1 (JIT) |
+| Benchmark | XCX 4.0 (no JIT) | XCX 4.0 (JIT) | XCX 4.2 (no JIT) | XCX 4.2 (JIT) |
 |---|---|---|---|---|
 | Loop 100M | 7341ms | 119ms | 7340ms | **116.27ms** |
 | Fib(30) | 260ms | ~14ms | 180ms | **12.87ms** |

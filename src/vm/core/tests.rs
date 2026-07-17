@@ -834,5 +834,229 @@ mod tests {
         let len_val = unsafe { *lock_ptr.add(3) };
         assert_eq!(len_val, 2);
     }
+
+    #[test]
+    fn test_global_string_append_copy_on_write() {
+        let source = r#"
+            s: a = "test";
+            s: b = a;
+            a = a + "ing";
+            s: res_a = a;
+            s: res_b = b;
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let res_a_id = interner.intern("res_a");
+        let res_b_id = interner.intern("res_b");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        let res_a_idx = *compiler.globals.get(&res_a_id).expect("Global res_a not found");
+        let res_b_idx = *compiler.globals.get(&res_b_id).expect("Global res_b not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        let val_a = vm.get_global(res_a_idx);
+        let val_b = vm.get_global(res_b_idx);
+
+        assert!(val_a.is_string(), "Expected String, got {:?}", val_a);
+        assert!(val_b.is_string(), "Expected String, got {:?}", val_b);
+
+        assert!(val_a.matches_str("testing"), "a should be 'testing', got value: '{}' ({:?})", val_a.to_string(), val_a);
+        assert!(val_b.matches_str("test"), "b should be 'test' (copy on write), got value: '{}' ({:?})", val_b.to_string(), val_b);
+    }
+
+    #[test]
+    fn test_local_string_append_copy_on_write() {
+        let source = r#"
+            func test_local_cow( -> s) {
+                s: a = "local";
+                s: b = a;
+                a = a + "ing";
+                return b;
+            };
+            s: res = test_local_cow();
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let res_id = interner.intern("res");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        println!("[DEBUG] Main chunk bytecode:");
+        for (i, op) in main_chunk.bytecode.iter().enumerate() {
+            println!("  ip={}: {:?}", i, op);
+        }
+
+        println!("[DEBUG] Functions count: {}", functions.len());
+        for (f_idx, func_chunk) in functions.iter().enumerate() {
+            println!("  Function {} chunk bytecode:", f_idx);
+            for (i, op) in func_chunk.bytecode.iter().enumerate() {
+                println!("    ip={}: {:?}", i, op);
+            }
+        }
+
+        let res_idx = *compiler.globals.get(&res_id).expect("Global res not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        let val = vm.get_global(res_idx);
+        assert!(val.is_string(), "Expected String, got {:?}", val);
+        assert!(val.matches_str("local"), "b should remain 'local' (copy on write), got: '{}'", val.to_string());
+    }
+
+    #[test]
+    fn test_json_field_string_append_cow() {
+        let source = r#"
+            json: a = json.parse("{\"log\":\"test\"}");
+            json: b = a;
+            a.set("log", a.get("log") + "ing");
+            s: res_a = a.get("log");
+            s: res_b = b.get("log");
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let res_a_id = interner.intern("res_a");
+        let res_b_id = interner.intern("res_b");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        let res_a_idx = *compiler.globals.get(&res_a_id).expect("Global res_a not found");
+        let res_b_idx = *compiler.globals.get(&res_b_id).expect("Global res_b not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        let val_a = vm.get_global(res_a_idx);
+        let val_b = vm.get_global(res_b_idx);
+
+        assert!(val_a.is_string(), "Expected String, got {:?}", val_a);
+        assert!(val_b.is_string(), "Expected String, got {:?}", val_b);
+
+        assert!(val_a.matches_str("testing"), "a should be 'testing', got: '{}'", val_a.to_string());
+        assert!(val_b.matches_str("testing"), "b should also be 'testing' (reference to same JSON object), got: '{}'", val_b.to_string());
+    }
+
+    #[test]
+    fn test_array_element_string_append_cow() {
+        let source = r#"
+            array:s: a = {"test"};
+            array:s: b = {"test"};
+            a.update(0, "shared");
+            b.update(0, a.get(0));
+            a.update(0, a.get(0) + "ing");
+            s: res_a = a.get(0);
+            s: res_b = b.get(0);
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let res_a_id = interner.intern("res_a");
+        let res_b_id = interner.intern("res_b");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        let res_a_idx = *compiler.globals.get(&res_a_id).expect("Global res_a not found");
+        let res_b_idx = *compiler.globals.get(&res_b_id).expect("Global res_b not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        let val_a = vm.get_global(res_a_idx);
+        let val_b = vm.get_global(res_b_idx);
+
+        assert!(val_a.is_string(), "Expected String, got {:?}", val_a);
+        assert!(val_b.is_string(), "Expected String, got {:?}", val_b);
+
+        assert!(val_a.matches_str("shareding"), "a[0] should be 'shareding', got: '{}'", val_a.to_string());
+        assert!(val_b.matches_str("shared"), "b[0] should remain 'shared' (copy on write), got: '{}'", val_b.to_string());
+    }
+
+    #[test]
+    fn test_general_string_append_cow() {
+        let source = r#"
+            s: a = "shared";
+            s: b = a;
+            s: res_a = a + "ing";
+            s: res_b = b;
+        "#;
+        let mut parser = Parser::new(source);
+        let mut program = parser.parse_program();
+        let mut interner = parser.into_interner();
+        let mut checker = Checker::new(&interner);
+        let mut symbols = SymbolTable::new();
+        let _ = checker.check(&mut program, &mut symbols);
+
+        let res_a_id = interner.intern("res_a");
+        let res_b_id = interner.intern("res_b");
+
+        let mut compiler = XCXCompiler::new();
+        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+
+        let res_a_idx = *compiler.globals.get(&res_a_id).expect("Global res_a not found");
+        let res_b_idx = *compiler.globals.get(&res_b_id).expect("Global res_b not found");
+
+        let vm = Arc::new(VM::new());
+        let ctx = SharedContext { 
+            constants, 
+            functions, 
+            http_req: None 
+        };
+        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
+
+        let val_a = vm.get_global(res_a_idx);
+        let val_b = vm.get_global(res_b_idx);
+
+        assert!(val_a.is_string(), "Expected String, got {:?}", val_a);
+        assert!(val_b.is_string(), "Expected String, got {:?}", val_b);
+
+        assert!(val_a.matches_str("shareding"), "res_a should be 'shareding', got: '{}'", val_a.to_string());
+        assert!(val_b.matches_str("shared"), "res_b should remain 'shared' (copy on write), got: '{}'", val_b.to_string());
+    }
 }
 

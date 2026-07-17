@@ -2,9 +2,7 @@ use cranelift::prelude::*;
 use std::collections::{HashSet, HashMap};
 use crate::jit::nan_ops::{VALUE_SIZE};
 
-/// Per-slot state for a JIT register (XCX local variable).
-///
-/// Each slot stores a Value as a single quiet-NaN boxed variable:
+
 #[derive(Clone, Copy)]
 pub struct SlotVars {
     pub bits_var: Variable,
@@ -22,7 +20,6 @@ pub fn executor_field_offsets() -> (u32, u32) {
 pub struct CodegenCtx<'a, 'b> {
     pub b: &'a mut cranelift_frontend::FunctionBuilder<'b>,
 
-    /// Pointer to return the Value struct (16 bytes).
     pub out_ptr: Value,
     /// Pointer to the locals array in the executor stack (each slot = VALUE_SIZE bytes).
     pub locals_ptr: Value,
@@ -458,12 +455,23 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         }
     }
 
-    pub fn sync_for_jump(&mut self) {
-        // Elided for performance.
+    pub fn reload_local(&mut self, reg: u8) {
+        let r = reg as usize;
+        if let Some(slot) = self.slots[r] {
+            let offset = (r as i64) * (VALUE_SIZE as i64);
+            let (bits, tag) = self.load_value_from(self.locals_ptr, offset);
+            self.b.def_var(slot.bits_var, bits);
+            self.b.def_var(slot.tag_var, tag);
+        }
     }
 
-    pub fn clear_block_state(&mut self, _keep_consts: bool) {
-        // Elided for performance.
+    pub fn sync_for_jump(&mut self) {
+    }
+
+    pub fn clear_block_state(&mut self, keep_consts: bool) {
+        if !keep_consts {
+            self.register_const = [None; 256];
+        }
     }
 
     /// Decrements the refcount of every live heap value in used registers.

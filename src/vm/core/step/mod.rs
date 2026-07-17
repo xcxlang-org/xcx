@@ -34,7 +34,7 @@ impl Executor {
                 unsafe { val.assign_to(&mut locals[dst as usize]); }
                 Some(OpResult::Continue)
             }
-            OpCode::GetVar { .. } | OpCode::SetVar { .. } | OpCode::IncVar { .. } | OpCode::DecVar { .. } => {
+            OpCode::GetVar { .. } | OpCode::SetVar { .. } | OpCode::IncVar { .. } | OpCode::DecVar { .. } | OpCode::StrAppendVar { .. } | OpCode::StrAppendLocal { .. } => {
                 self.handle_var_op(op, locals, vm_arc)
             }
 
@@ -53,8 +53,8 @@ impl Executor {
                 logic::handle(op, locals)
             }
 
-            OpCode::ArrayInit {..} | OpCode::SetInit {..} | OpCode::MapInit {..} | 
-            OpCode::Has {..} | OpCode::GetIndex {..} | OpCode::SetIndex {..} |
+            OpCode::ArrayInit {..} | OpCode::BoolArrayInit {..} | OpCode::SetInit {..} | OpCode::MapInit {..} | 
+            OpCode::Has {..} | OpCode::GetIndex {..} | OpCode::SetIndex {..} | OpCode::StrAppendElement {..} |
             OpCode::SetUnion {..} | OpCode::SetIntersection {..} | 
             OpCode::SetDifference {..} | OpCode::SetSymDifference {..} |
             OpCode::RandomChoice {..} | OpCode::IntConcat {..} | 
@@ -68,7 +68,7 @@ impl Executor {
                 collection::handle_table_init(self, op, locals)
             }
 
-            OpCode::GetMember {..} | OpCode::SetMember {..} => {
+            OpCode::GetMember {..} | OpCode::SetMember {..} | OpCode::StrAppendMember {..} => {
                 member::handle(self, op, locals, vm_arc)
             }
 
@@ -188,6 +188,90 @@ impl Executor {
                 let val = vm_arc.get_global(idx);
                 let res = val.sub(Value::from_i64(1));
                 vm_arc.set_global(idx, res);
+            }
+            OpCode::StrAppendVar { var_idx, src } => {
+                let rhs_val = locals[src as usize];
+                let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
+                    let arc = crate::vm::value::heap_object::as_string(&rhs_val);
+                    arc.data.clone()
+                } else {
+                    rhs_val.to_string().into_bytes()
+                };
+
+                let raw = vm_arc.get_global(var_idx as usize);
+                if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
+                    let ptr = raw.bits as *const crate::vm::object::StringObj;
+                    let arc = unsafe { Arc::from_raw(ptr) };
+
+                    let sc = Arc::strong_count(&arc);
+                    let wc = Arc::weak_count(&arc);
+                    if sc <= 2 && wc == 0 {
+                        let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(&rhs_bytes);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+                        vm_arc.set_global(var_idx as usize, new_val);
+                    } else {
+                        let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
+                        combined.extend_from_slice(&arc.data);
+                        combined.extend_from_slice(&rhs_bytes);
+                        std::mem::forget(arc);
+                        let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
+                        let new_val = crate::vm::value::heap_object::from_string(new_arc);
+                        vm_arc.set_global(var_idx as usize, new_val);
+                    }
+                } else {
+                    let s1 = raw.to_string();
+                    let suffix = String::from_utf8_lossy(&rhs_bytes).into_owned();
+                    let combined = s1 + &suffix;
+                    let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
+                    vm_arc.set_global(var_idx as usize, new_val);
+                }
+            }
+            OpCode::StrAppendLocal { local_idx, src } => {
+                let rhs_val = locals[src as usize];
+                let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
+                    let arc = crate::vm::value::heap_object::as_string(&rhs_val);
+                    arc.data.clone()
+                } else {
+                    rhs_val.to_string().into_bytes()
+                };
+
+                let raw = locals[local_idx as usize];
+                if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
+                    let ptr = raw.bits as *const crate::vm::object::StringObj;
+                    let arc = unsafe { Arc::from_raw(ptr) };
+
+                    let sc = Arc::strong_count(&arc);
+                    let wc = Arc::weak_count(&arc);
+                    if sc <= 1 && wc == 0 {
+                        let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+                        unsafe {
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(&rhs_bytes);
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+                        locals[local_idx as usize] = new_val;
+                    } else {
+                        let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
+                        combined.extend_from_slice(&arc.data);
+                        combined.extend_from_slice(&rhs_bytes);
+                        std::mem::forget(arc);
+                        let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
+                        let new_val = crate::vm::value::heap_object::from_string(new_arc);
+                        unsafe { new_val.replace_at(&mut locals[local_idx as usize]); }
+                    }
+                } else {
+                    let s1 = raw.to_string();
+                    let suffix = String::from_utf8_lossy(&rhs_bytes).into_owned();
+                    let combined = s1 + &suffix;
+                    let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
+                    unsafe { new_val.replace_at(&mut locals[local_idx as usize]); }
+                }
             }
             _ => return None,
         }

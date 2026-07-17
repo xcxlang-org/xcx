@@ -1,12 +1,12 @@
 --- TEST: COL-004
 --- Area: Collections
 --- Priority: medium
---- Name: Table.toJson() — typy, pusta tabela, tabela po .where()
+--- Name: Table.toJson() — types, empty table, table after .where()
 --- Expect:
----   Pełna zgodność z type mapping dokumentacji.
----   Pusta tabela → [].
----   Po .where() → tylko przefiltrowane wiersze.
----   @auto id uwzględniony w wyniku.
+---   Full compliance with type mapping documentation.
+---   Empty table → [].
+---   After .where() → filtered rows only.
+---   @auto id included in the result.
 
 table: products {
     columns = [ id :: i @auto @pk, name :: s, price :: f, active :: b ]
@@ -17,61 +17,61 @@ products.add("Laptop", 2999.99, true);
 products.add("Phone", 1499.50, false);
 products.add("Tablet", 899.00, true);
 
---- ── Subtest 1: pełna serializacja ──────────────────────────────────────
+--- ── Subtest 1: full serialization ──────────────────────────────────────
 json: j = products.toJson();
 
 if (j.size() == 3) then;
-    >! "[COL-004-1] PASS — toJson() ma 3 elementy";
+    >! "[COL-004-1] PASS — toJson() has 3 elements";
 else;
-    >! "[COL-004-1] FAIL — toJson() ma " + s(j.size()) + " elementów";
+    >! "[COL-004-1] FAIL — toJson() has " + s(j.size()) + " elements";
 end;
 
 json: first_row = j.get(0);
 s: fname; first_row.bind("name", fname);
 if (fname == "Laptop") then;
-    >! "[COL-004-1] PASS — pierwszy element name = Laptop";
+    >! "[COL-004-1] PASS — first element name = Laptop";
 else;
-    >! "[COL-004-1] FAIL — pierwszy element name = " + fname;
+    >! "[COL-004-1] FAIL — first element name = " + fname;
 end;
 
 i: fid; first_row.bind("id", fid);
 if (fid == 1) then;
     >! "[COL-004-1] PASS — @auto id = 1";
 else;
-    >! "[COL-004-1] FAIL — @auto id = " + s(fid) + " (oczekiwane 1)";
+    >! "[COL-004-1] FAIL — @auto id = " + s(fid) + " (expected 1)";
 end;
 
---- ── Subtest 2: pusta tabela → [] ──────────────────────────────────────
+--- ── Subtest 2: empty table → [] ──────────────────────────────────────
 table: empty_t { columns=[x :: i] rows=[EMPTY] };
 json: empty_j = empty_t.toJson();
 if (empty_j.size() == 0) then;
-    >! "[COL-004-2] PASS — pusta tabela → [] (size 0)";
+    >! "[COL-004-2] PASS — empty table → [] (size 0)";
 else;
-    >! "[COL-004-2] FAIL — pusta tabela size = " + s(empty_j.size());
+    >! "[COL-004-2] FAIL — empty table size = " + s(empty_j.size());
 end;
 
---- ── Subtest 3: po .where() — tylko przefiltrowane ─────────────────────
+--- ── Subtest 3: after .where() — filtered rows only ────────────────────
 table: active_only = products.where(active == true);
 json: filtered_j = active_only.toJson();
 if (filtered_j.size() == 2) then;
-    >! "[COL-004-3] PASS — po .where(active==true) toJson() ma 2 elementy";
+    >! "[COL-004-3] PASS — after .where(active==true) toJson() has 2 elements";
 else;
-    >! "[COL-004-3] FAIL — po .where() toJson() ma " + s(filtered_j.size()) + " elementów";
+    >! "[COL-004-3] FAIL — after .where() toJson() has " + s(filtered_j.size()) + " elements";
 end;
 
---- ── Subtest 4: typ f → JSON number ────────────────────────────────────
+--- ── Subtest 4: float type → JSON number ────────────────────────────────────
 json: row2 = j.get(1);
 f: price; row2.bind("price", price);
 if (price == 1499.50) then;
-    >! "[COL-004-4] PASS — float price poprawnie serializowany";
+    >! "[COL-004-4] PASS — float price correctly serialized";
 else;
     >! "[COL-004-4] FAIL — price = " + s(price);
 end;
 
---- ── Subtest 5: typ b → JSON boolean ───────────────────────────────────
+--- ── Subtest 5: bool type → JSON boolean ───────────────────────────────────
 b: active_val; first_row.bind("active", active_val);
 if (active_val == true) then;
-    >! "[COL-004-5] PASS — bool active poprawnie serializowany";
+    >! "[COL-004-5] PASS — bool active correctly serialized";
 else;
     >! "[COL-004-5] FAIL — active = " + s(active_val);
 end;

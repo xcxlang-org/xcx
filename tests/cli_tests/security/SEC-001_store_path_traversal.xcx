@@ -3,11 +3,11 @@
 --- Priority: critical
 --- Name: store — path traversal (..) → halt.fatal
 --- Expect:
----   store.read("../../etc/passwd") → halt.fatal, VM terminuje.
----   Linia PO wywołaniu się NIE wykona.
+---   store.read("../../etc/passwd") → halt.fatal, VM terminates.
+---   Line AFTER invocation will NOT execute.
 --- Runner: expect_fatal_exit = true
 
->! "[SEC-001] Próba store.read z path traversal...";
+>! "[SEC-001] Attempting store.read with path traversal...";
 s: content = store.read("../../etc/passwd");
 
->! "[SEC-001] FAIL — path traversal nie wywołał halt.fatal";
+>! "[SEC-001] FAIL — path traversal did not trigger halt.fatal";

@@ -1,10 +1,10 @@
 --- TEST: COL-003b
 --- Area: Collections
 --- Priority: high
---- Name: Table — .where() S301 poprawny workaround (zmiana nazwy parametru)
+--- Name: Table — .where() S301 valid workaround (parameter renaming)
 --- Expect:
----   Zmiana nazwy parametru na 't' eliminuje konflikt S301.
----   Filtrowanie działa poprawnie.
+---   Renaming parameter to 't' eliminates S301 conflict.
+---   Filtering works correctly.
 
 database: db { engine = "sqlite", path = "tests_tmp/col003b.db" };
 
@@ -17,15 +17,15 @@ yield db.sync(sessions);
 yield db.insert(sessions, "abc123", 1);
 yield db.insert(sessions, "xyz789", 2);
 
---- Poprawna wersja — parametr 't' zamiast 'token':
+--- Valid version — parameter 't' instead of 'token':
 fiber verify(s: t -> b) {
     table: sess = db.sessions.where(token == t);
 
     if (sess.count() == 1) then;
-        >! "[COL-003b] PASS — znaleziono 1 sesję dla tokenu: " + t;
+        >! "[COL-003b] PASS — found 1 session for token: " + t;
         return true;
     else;
-        >! "[COL-003b] FAIL — znaleziono " + s(sess.count()) + " sesji";
+        >! "[COL-003b] FAIL — found " + s(sess.count()) + " sessions";
         return false;
     end;
     return false;
@@ -42,10 +42,9 @@ end;
 fiber:b: f2 = verify("notexist");
 b: ok2 = f2.next();
 if (NOT ok2) then;
-    >! "[COL-003b] PASS — verify('notexist') poprawnie zwróciło false";
+    >! "[COL-003b] PASS — verify('notexist') correctly returned false";
 else;
-    >! "[COL-003b] FAIL — verify('notexist') powinno zwrócić false";
+    >! "[COL-003b] FAIL — verify('notexist') should return false";
 end;
 
 db.close();
-);

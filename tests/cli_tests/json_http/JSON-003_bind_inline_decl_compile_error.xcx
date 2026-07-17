@@ -2,16 +2,16 @@
 --- Runner: expect_compile_error = true
 --- Area: JSON/HTTP
 --- Priority: high
---- Name: .bind() — deklaracja inline → compile error; pre-deklaracja → OK
+--- Name: .bind() — inline declaration → compile error; pre-declaration → OK
 --- Expect:
----   Ten plik NIE POWINIEN się skompilować.
----   Inline deklaracja w bind() → compile error.
+---   This file SHOULD NOT compile.
+---   Inline declaration in bind() → compile error.
 --- .
---- Runner: oczekiwany exit code kompilacji niezerowy.
+--- Runner: expected non-zero compilation exit code.
 
 json: req <<< {"ip": "127.0.0.1", "method": "GET"} >>>;
 
---- LINIA KRYTYCZNA — inline deklaracja niedozwolona:
+--- CRITICAL LINE — inline declaration not allowed:
 req.bind("ip", s: ip);
 
->! "FAIL — inline deklaracja w bind() nie wywołała błędu kompilacji";
+>! "FAIL — inline declaration in bind() did not trigger compilation error";

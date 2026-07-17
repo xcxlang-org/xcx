@@ -1,20 +1,11 @@
-/// Integration test runner for XCX edge case test files.
-/// 
-/// NOTE: By default, this test runner silently suppresses all XCX JIT/VM 
-/// string outputs (`print`, `>!`, `halt`) to keep the test summary clean.
-/// If you need to debug a failing test and want to see the detailed VM execution logs
-/// and print outputs, run tests with the show-output flag:
-/// 
-///     cargo test --release -- --nocapture
-///
 use serial_test::serial;
 use std::path::PathBuf;
-use xcx_compiler::frontend::parser::Parser;
-use xcx_compiler::frontend::parser::expander::Expander;
-use xcx_compiler::sema::Checker;
-use xcx_compiler::sema::SymbolTable;
-use xcx_compiler::compiler::Compiler as XCXCompiler;
-use xcx_compiler::vm::{VM, SharedContext};
+use xcx::frontend::parser::Parser;
+use xcx::frontend::parser::expander::Expander;
+use xcx::sema::Checker;
+use xcx::sema::SymbolTable;
+use xcx::compiler::Compiler as XCXCompiler;
+use xcx::vm::{VM, SharedContext};
 use std::sync::Arc;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,20 +28,20 @@ fn comprehensive_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("comprehensive")
 }
 
-fn professional_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("professional")
+fn core_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("core")
 }
 
 fn hardening_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("hardening")
 }
 
-fn ultimate_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("ultimate")
+fn extended_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("extended")
 }
 
-fn refactor_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("refactor")
+fn smoke_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("rust_harness").join("smoke")
 }
 
 fn sql_dir() -> PathBuf {
@@ -109,7 +100,7 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
     
     let handle = std::thread::Builder::new()
         .name("xcx-test-executor".to_string())
-        .stack_size(64 * 1024 * 1024) // 64MB
+        .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             vm_for_thread.run(main_chunk_arc, ctx, &[]);
         })
@@ -124,7 +115,6 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
     vm
 }
 
-/// Load a .xcx file from tests/xcx/ and run it through the full pipeline.
 fn run_file(filename: &str) -> Arc<VM> {
     let path = test_dir().join(filename);
     let source = std::fs::read_to_string(&path)
@@ -139,11 +129,11 @@ fn run_comprehensive_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(comprehensive_dir()))
 }
 
-fn run_professional_file(filename: &str) -> Arc<VM> {
-    let path = professional_dir().join(filename);
+fn run_core_file(filename: &str) -> Arc<VM> {
+    let path = core_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(professional_dir()))
+    run_source_with_dir(&source, Some(core_dir()))
 }
 
 fn run_hardening_file(filename: &str) -> Arc<VM> {
@@ -153,11 +143,11 @@ fn run_hardening_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(hardening_dir()))
 }
 
-fn run_ultimate_file(filename: &str) -> Arc<VM> {
-    let path = ultimate_dir().join(filename);
+fn run_extended_file(filename: &str) -> Arc<VM> {
+    let path = extended_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(ultimate_dir()))
+    run_source_with_dir(&source, Some(extended_dir()))
 }
 
 fn run_feature_file(filename: &str) -> Arc<VM> {
@@ -174,11 +164,11 @@ fn run_random_file(filename: &str) -> Arc<VM> {
     run_source_with_dir(&source, Some(random_dir()))
 }
 
-fn run_refactor_file(filename: &str) -> Arc<VM> {
-    let path = refactor_dir().join(filename);
+fn run_smoke_file(filename: &str) -> Arc<VM> {
+    let path = smoke_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source_with_dir(&source, Some(refactor_dir()))
+    run_source_with_dir(&source, Some(smoke_dir()))
 }
 
 fn run_sql_file(filename: &str) -> Arc<VM> {
@@ -191,10 +181,9 @@ fn run_sql_file(filename: &str) -> Arc<VM> {
         let _vm = run_source_with_dir(&source, Some(dir.clone()));
     }
     
-    Arc::new(VM::new()) // Return a dummy VM since the result is usually ignored in tests
+    Arc::new(VM::new()) 
 }
 
-/// Expect the type checker to REJECT this source with at least one error.
 fn expect_type_error(source: &str) {
     let mut parser = Parser::new(source);
     let mut program = parser.parse_program();
@@ -240,19 +229,16 @@ fn multiple_var_declarations() {
 
 #[test]
 fn type_error_string_assigned_to_int() {
-    // Spec: i is Integer, "hello" is String — must be rejected
     expect_type_error(r#"i: x = "hello";"#);
 }
 
 #[test]
 fn type_error_int_plus_string() {
-    // Adding integer and string should fail the type checker
     expect_type_error(r#"i: a = 5; s: b = "abc"; i: c = a + b;"#);
 }
 
 #[test]
 fn type_error_bool_from_int() {
-    // b: flag = 10 — boolean cannot hold an integer literal
     expect_type_error("b: flag = 10;");
 }
 
@@ -262,20 +248,16 @@ fn type_error_bool_from_int() {
 
 #[test]
 fn overflow_max_int_literal() {
-    // i64::MAX as a literal — must parse and store without panic
     run_source("i: max_int = 9223372036854775807; >! max_int;");
 }
 
 #[test]
 fn overflow_large_multiplication() {
-    // 999_999 * 999_999 = 999_998_000_001 — fits in i64
     run_source("i: big = 999999 * 999999; >! big;");
 }
 
 #[test]
 fn overflow_large_float() {
-    // XCX lexer does not support scientific notation (e.g. 1.7e307)
-    // Use a plain large decimal float instead.
     run_source("f: big_f = 99999999.99; >! big_f;");
 }
 
@@ -286,7 +268,6 @@ fn overflow_negative_int() {
 
 #[test]
 fn overflow_file() {
-    // Run the full overflow test file
     run_file("02_overflow.xcx");
 }
 
@@ -791,25 +772,25 @@ mod comprehensive_suite {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. PROFESSIONAL SUITE
+// 12. CORE SUITE
 // ─────────────────────────────────────────────────────────────────────────────
 
-mod professional_suite {
+mod core_suite {
     use super::*;
 
-    #[test] fn prof_01_primitives() { run_professional_file("01_primitives.xcx"); }
-    #[test] fn prof_02_operators() { run_professional_file("02_operators.xcx"); }
-    #[test] fn prof_03_control_flow() { run_professional_file("03_control_flow.xcx"); }
-    #[test] fn prof_04_functions() { run_professional_file("04_functions.xcx"); }
-    #[test] fn prof_05_arrays() { run_professional_file("05_arrays.xcx"); }
-    #[test] fn prof_06_sets() { run_professional_file("06_sets.xcx"); }
-    #[test] fn prof_07_maps() { run_professional_file("07_maps.xcx"); }
-    #[test] fn prof_08_halt_system() { run_professional_file("08_halt_system.xcx"); }
-    #[test] fn prof_09_store_module() { run_professional_file("09_store_module.xcx"); }
-    #[test] fn prof_10_date_time() { run_professional_file("10_date_time.xcx"); }
-    #[test] fn prof_11_tables() { run_professional_file("11_tables.xcx"); }
-    #[test] fn prof_12_json() { run_professional_file("12_json.xcx"); }
-    #[test] fn prof_13_fibers() { run_professional_file("13_fibers.xcx"); }
+    #[test] fn core_01_primitives() { run_core_file("01_primitives.xcx"); }
+    #[test] fn core_02_operators() { run_core_file("02_operators.xcx"); }
+    #[test] fn core_03_control_flow() { run_core_file("03_control_flow.xcx"); }
+    #[test] fn core_04_functions() { run_core_file("04_functions.xcx"); }
+    #[test] fn core_05_arrays() { run_core_file("05_arrays.xcx"); }
+    #[test] fn core_06_sets() { run_core_file("06_sets.xcx"); }
+    #[test] fn core_07_maps() { run_core_file("07_maps.xcx"); }
+    #[test] fn core_08_halt_system() { run_core_file("08_halt_system.xcx"); }
+    #[test] fn core_09_store_module() { run_core_file("09_store_module.xcx"); }
+    #[test] fn core_10_date_time() { run_core_file("10_date_time.xcx"); }
+    #[test] fn core_11_tables() { run_core_file("11_tables.xcx"); }
+    #[test] fn core_12_json() { run_core_file("12_json.xcx"); }
+    #[test] fn core_13_fibers() { run_core_file("13_fibers.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -833,7 +814,6 @@ mod hardening_suite {
 
     #[test]
     fn hard_03_scope_integrity() {
-        // Same concern as hard_02: run in a larger-stack thread for safety.
         std::thread::Builder::new()
             .stack_size(128 * 1024 * 1024)
             .spawn(|| run_hardening_file("test_scope_integrity.xcx"))
@@ -844,29 +824,29 @@ mod hardening_suite {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13. ULTIMATE SUITE
+// 13. EXTENDED SUITE
 // ─────────────────────────────────────────────────────────────────────────────
 
-mod ultimate_suite {
+mod extended_suite {
     use super::*;
 
-    #[test] fn ult_01_fiber_generator() { run_ultimate_file("ult_01_fiber_generator.xcx"); }
-    #[test] fn ult_02_fiber_isdone() { run_ultimate_file("ult_02_fiber_isdone.xcx"); }
-    #[test] fn ult_03_fiber_drain() { run_ultimate_file("ult_03_fiber_drain.xcx"); }
-    #[test] fn ult_04_fiber_nested() { run_ultimate_file("ult_04_fiber_nested.xcx"); }
-    #[test] fn ult_05_table_where() { run_ultimate_file("ult_05_table_where.xcx"); }
-    #[test] fn ult_06_table_relational() { run_ultimate_file("ult_06_table_relational.xcx"); }
-    #[test] fn ult_07_json_binding() { run_ultimate_file("ult_07_json_binding.xcx"); }
-    #[test] fn ult_08_recursion() { run_ultimate_file("ult_08_recursion.xcx"); }
-    #[test] fn ult_09_loops() { run_ultimate_file("ult_09_loops.xcx"); }
-    #[test] fn ult_10_errors() { run_ultimate_file("ult_10_errors.xcx"); }
-    #[test] fn ult_11_modules() { run_ultimate_file("ult_11_modules.xcx"); }
-    #[test] fn ult_12_namespaces() { run_ultimate_file("ult_12_namespaces.xcx"); }
-    #[test] fn ult_13_date_time() { run_ultimate_file("ult_13_date_time.xcx"); }
-    #[test] fn ult_14_store() { run_ultimate_file("ult_14_store.xcx"); }
-    #[test] fn ult_15_json_raw() { run_ultimate_file("ult_15_json_raw.xcx"); }
-    #[test] fn ult_16_math() { run_ultimate_file("ult_16_math.xcx"); }
-    #[test] fn ult_17_math_comprehensive() { run_ultimate_file("ult_17_math_comprehensive.xcx"); }
+    #[test] fn ext_01_fiber_generator() { run_extended_file("ult_01_fiber_generator.xcx"); }
+    #[test] fn ext_02_fiber_isdone() { run_extended_file("ult_02_fiber_isdone.xcx"); }
+    #[test] fn ext_03_fiber_drain() { run_extended_file("ult_03_fiber_drain.xcx"); }
+    #[test] fn ext_04_fiber_nested() { run_extended_file("ult_04_fiber_nested.xcx"); }
+    #[test] fn ext_05_table_where() { run_extended_file("ult_05_table_where.xcx"); }
+    #[test] fn ext_06_table_relational() { run_extended_file("ult_06_table_relational.xcx"); }
+    #[test] fn ext_07_json_binding() { run_extended_file("ult_07_json_binding.xcx"); }
+    #[test] fn ext_08_recursion() { run_extended_file("ult_08_recursion.xcx"); }
+    #[test] fn ext_09_loops() { run_extended_file("ult_09_loops.xcx"); }
+    #[test] fn ext_10_errors() { run_extended_file("ult_10_errors.xcx"); }
+    #[test] fn ext_11_modules() { run_extended_file("ult_11_modules.xcx"); }
+    #[test] fn ext_12_namespaces() { run_extended_file("ult_12_namespaces.xcx"); }
+    #[test] fn ext_13_date_time() { run_extended_file("ult_13_date_time.xcx"); }
+    #[test] fn ext_14_store() { run_extended_file("ult_14_store.xcx"); }
+    #[test] fn ext_15_json_raw() { run_extended_file("ult_15_json_raw.xcx"); }
+    #[test] fn ext_16_math() { run_extended_file("ult_16_math.xcx"); }
+    #[test] fn ext_17_math_comprehensive() { run_extended_file("ult_17_math_comprehensive.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -887,7 +867,6 @@ mod feature_suite {
     #[test] fn feat_fibers() { run_feature_file("test_fibers.xcx"); }
     #[test] #[serial] fn feat_all_elements() { run_feature_file("test_all_elements.xcx"); }
     #[test] fn feat_settest() { run_feature_file("settest.xcx"); }
-    // #[test] fn feat_input_strict() { run_feature_file("input_strict_test.xcx"); }
     #[test] fn feat_map_to_json() { run_feature_file("test_map_to_json.xcx"); }
     #[test] fn feat_random_array() { run_feature_file("test_random_array.xcx"); }
     #[test] fn feat_to_json() { run_feature_file("test_to_json.xcx"); }
@@ -909,10 +888,10 @@ mod random_suite {
     #[test] fn rand_assertions() { run_random_file("02_assertions.xcx"); }
 }
 
-mod refactor_baseline {
+mod smoke_suite {
     use super::*;
 
-    #[test] fn collections_smoke() { run_refactor_file("collections_smoke.xcx"); }
+    #[test] fn collections_smoke() { run_smoke_file("collections_smoke.xcx"); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1023,6 +1002,71 @@ mod stability_suite {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
+    fn force_remove_file(path: &Path) {
+        const MAX_ATTEMPTS: u32 = 10;
+        const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
+
+        if !path.exists() {
+            return;
+        }
+
+        for attempt in 1..=MAX_ATTEMPTS {
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                if perms.readonly() {
+                    perms.set_readonly(false);
+                    let _ = std::fs::set_permissions(path, perms);
+                }
+            }
+
+            match std::fs::remove_file(path) {
+                Ok(_) => return,
+                Err(e) => {
+                    if attempt == MAX_ATTEMPTS {
+                        eprintln!(
+                            "force_remove_file failed for {} after {} attempts: {}",
+                            path.display(),
+                            MAX_ATTEMPTS,
+                            e
+                        );
+                    } else {
+                        std::thread::sleep(RETRY_DELAY);
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_db_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        if let Some(name) = dir.file_name().and_then(|n| n.to_str()) {
+            if name == "target" || name == ".git" || name == ".github" || name == "Linux" || name == "MacOS" || name == "Windows" || name == "linux" || name == "macOS" {
+                return;
+            }
+        }
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                collect_db_files(&p, out);
+            } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
+                    out.push(p);
+                }
+            }
+        }
+    }
+
+    fn cleanup_db_files(dir: &Path) {
+        let mut files = Vec::new();
+        collect_db_files(dir, &mut files);
+        for f in files {
+            force_remove_file(&f);
+        }
+    }
+
     struct TestMeta {
         id: String,
         area: String,
@@ -1103,18 +1147,8 @@ mod stability_suite {
     #[test]
     #[serial_test::serial]
     fn run_xcx_stability_suite() {
-        // Cleanup leftover .db files from project root before starting
         let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        if let Ok(entries) = std::fs::read_dir(&project_root) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                    if ext == "db" || ext == "db-journal" || ext == "db-wal" || ext == "db-shm" {
-                        let _ = std::fs::remove_file(&p);
-                    }
-                }
-            }
-        }
+        cleanup_db_files(&project_root);
         let mut base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         base_dir.push("tests");
         base_dir.push("cli_tests");
@@ -1127,7 +1161,7 @@ mod stability_suite {
         let mut xcx_bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         xcx_bin.push("target");
         xcx_bin.push("release");
-        xcx_bin.push("xcx-compiler.exe"); // Windows explicit
+        xcx_bin.push("xcx.exe");
 
         if !xcx_bin.exists() {
             xcx_bin.set_extension("");
@@ -1138,7 +1172,7 @@ mod stability_suite {
 
         let temp_dir = std::env::temp_dir().join(format!("xcx_v3_runner_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&temp_dir);
-        let _ = std::fs::create_dir_all(temp_dir.join("tests_tmp")); // For SEC-001c etc.
+        let _ = std::fs::create_dir_all(temp_dir.join("tests_tmp"));
 
         let mut tests = Vec::new();
         let mut stack = vec![base_dir.clone()];
@@ -1185,7 +1219,7 @@ mod stability_suite {
 
             let pass_count = stdout.lines().filter(|l| l.contains("] PASS")).count();
             let fail_count = stdout.lines()
-                .filter(|l| l.contains("] FAIL") && !l.contains("FAIL — znaleziono 0 sesji"))
+                .filter(|l| l.contains("] FAIL") && !l.contains("FAIL — found 0 sessions"))
                 .count();
 
             let mut is_ok = false;
@@ -1195,7 +1229,7 @@ mod stability_suite {
                 if looks_like_compile_error(rc, &stderr, &stdout) {
                     is_ok = true;
                 } else if rc != 0 && !looks_like_runtime_success(rc, &stderr, &stdout) {
-                    is_ok = true; // Fallback for unrecognized compilation exit formats
+                    is_ok = true;
                 } else {
                     reason = format!("Expected compile error but it didn't look like one.");
                 }
@@ -1206,7 +1240,7 @@ mod stability_suite {
                     reason = format!("Expected fatal exit but failed or didn't exit cleanly.");
                 }
             } else if meta.expect_regression && fail_count > 0 {
-                is_ok = true; // known regression
+                is_ok = true;
             } else if fail_count > 0 {
                 is_ok = false;
                 reason = format!("{} asserts failed.", fail_count);
@@ -1216,7 +1250,7 @@ mod stability_suite {
                 is_ok = false;
                 reason = format!("Exit {} without passes.", rc);
             } else {
-                is_ok = true; // exit 0 without passes is ok
+                is_ok = true;
             }
 
             if is_ok {
@@ -1226,8 +1260,24 @@ mod stability_suite {
                 eprintln!("FAIL: {} ({})\nReason: {}\nSTDOUT:\n{}\nSTDERR:\n{}", meta.name, meta.id, reason, stdout, stderr);
             }
         }
+        cleanup_db_files(&project_root);
+        cleanup_db_files(&temp_dir);
+
+        #[cfg(target_os = "windows")]
+        {
+            let script = format!(
+                "Start-Sleep -Seconds 3; Remove-Item -Path '{}' -Recurse -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '{}' -Recurse -Include *.db,*.db-journal,*.db-wal,*.db-shm | Remove-Item -Force -ErrorAction SilentlyContinue",
+                project_root.join("test_output").display(),
+                project_root.display(),
+                temp_dir.display()
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+                .spawn();
+        }
 
         println!("Stability tests summary: {} passed, {} failed, {} skipped", passed, failed, skipped);
         assert_eq!(failed, 0, "Some stability tests failed");
     }
 }
+

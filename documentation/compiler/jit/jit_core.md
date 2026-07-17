@@ -63,9 +63,11 @@ For internal self-recursive or local segment calls, the compiler generates two n
 - **Inner Function (`Linkage::Local`):** Receives parameters directly via register-based CPU ABIs (pairs of `(bits_reg, tag_reg)`) instead of reading them from the `locals_ptr` stack frame.
 - **Outer Wrapper (`Linkage::Export`):** Serves as the FFI bridge for the interpreter. It unpacks arguments from `locals_ptr`, executes the local inner function, records the resulting `Value` back into `out_ptr`, and returns the frame status.
 
+**Recursion depth guard:** before performing a local recursive call, the compiler emits a native comparison of the call-depth counter (stored on the `Executor`) against a fixed limit of `800`, using `IntCC::SignedGreaterThanOrEqual`. On overflow, execution branches to a dedicated block that spills registers, invokes the `xcx_jit_check_recursion` FFI helper to report the failure, and returns a halt status — the failure path itself is not inlined at each call site, keeping the guard's generated code compact. On the non-overflow path the depth counter is incremented before the recursive call and restored to its prior value afterwards.
+
 #### 2. Cross-Function Direct Call Dispatch
 When calling another function (`func_idx != ctx.self_func_idx`), the compiler audits the callee's JIT status:
-- **Fast-Path (Direct Call):** If the target function has already been JIT-compiled (callee's `jit_ptr` is non-null), the compiler emits a Cranelift `call_indirect` instruction directly to that memory location. The compiler increments `call_depth` check-bounds, moves the VM register stack pointer (`stack_ptr`) forward by `callee_chunk.max_locals` to frame local scopes, and restores them on return.
+- **Fast-Path (Direct Call):** If the target function has already been JIT-compiled (callee's `jit_ptr` is non-null), the compiler emits a Cranelift `call_indirect` instruction directly to that memory location. The compiler increments `call_depth` check-bounds, moves the VM register stack pointer (`stack_ptr`) forward by `callee_chunk.max_locals` to frame local scopes, and restores them on return. Global variables are reloaded from memory after the call only when the callee's static analysis marks it as heap-touching (`callee_uses_heap`); a callee known to be pure math skips the reload.
 - **Slow-Path Fallback:** If the callee is uncompiled (`jit_ptr` is null), processing falls back to the interpreter interface via the `xcx_jit_call_recursive` FFI helper.
 
 ```
@@ -96,6 +98,7 @@ Through this registration, JIT-generated Cranelift IR calls external routines fo
 - Core FFI library lookups (string manipulation, JSON serialization, date parsing).
 - I/O and network layers (`net_call`, `net_request`, `terminal_move`, `terminal_cursor`).
 - Deep recursion checks (`xcx_jit_check_recursion`, `xcx_jit_dec_recursion`).
+- Bounds-checked collection fallbacks (`xcx_jit_array_get_bool` and equivalents), invoked when a fast-path bounds check on `Array`/`BoolArray` element access fails — see `compiler/jit/jit_codegen.md`.
 
 ### Macro-driven Declarations (`src/jit/symbol_macros.rs`)
 To avoid manually repeating binding declarations, the compiler uses the `declare_jit_symbols!` macro. This macro:
@@ -103,4 +106,3 @@ To avoid manually repeating binding declarations, the compiler uses the `declare
 2. Generates the fields of the `ImportedSymbols` struct (defining `FuncRef` function call reference mappings).
 3. Automates the linkage imports declaration block inside `SymbolRegistry::new`.
 4. Automates the declaration of target function imports in individual trace functions inside `SymbolRegistry::import_in_func`.
-

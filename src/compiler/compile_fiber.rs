@@ -7,8 +7,9 @@ impl FunctionCompiler {
     pub(crate) fn compile_fiber_def(&mut self, stmt: &Stmt, ctx: &mut CompileContext) {
         if let StmtKind::FiberDef { name, params, body, .. } = &stmt.kind {
             let mut fc = FunctionCompiler::new(false, None);
-            for (i, (_, pname)) in params.iter().enumerate() {
+            for (i, (ty, pname)) in params.iter().enumerate() {
                 fc.define_local(*pname, i);
+                fc.local_types.insert(*pname, ty.clone());
             }
             fc.next_local = params.len();
             for s in body { fc.compile_stmt(s, ctx); }
@@ -31,6 +32,7 @@ impl FunctionCompiler {
                 let src = self.compile_expr(arg.expr(), ctx);
                 if src != dst { self.emit(OpCode::Move { dst, src }, &stmt.span); }
                 self.next_local = (dst + 1) as usize;
+                self.sync_max_locals();
             }
             let f_idx = ctx.func_indices.get(fiber_name).copied().unwrap_or(0);
             let dst = if let Some(s) = self.lookup_local(name) { s as u8 } else {

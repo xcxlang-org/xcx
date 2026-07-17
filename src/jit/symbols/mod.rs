@@ -23,6 +23,8 @@ pub struct SymbolRegistry {
     pub xcx_jit_set_values: FuncId,
     pub xcx_jit_inc_ref: FuncId,
     pub xcx_jit_dec_ref: FuncId,
+    pub xcx_jit_str_append_var: FuncId,
+    pub xcx_jit_str_append_local: FuncId,
     pub xcx_jit_dec_ref_range: FuncId,
     pub xcx_jit_method_dispatch: FuncId,
     pub xcx_jit_method_dispatch_named: FuncId,
@@ -62,6 +64,7 @@ pub struct SymbolRegistry {
     pub xcx_jit_perf_us: FuncId,
     pub xcx_jit_perf_ns: FuncId,
     pub xcx_jit_array_init: FuncId,
+    pub xcx_jit_bool_array_init: FuncId,
     pub xcx_jit_set_init: FuncId,
     pub xcx_jit_map_init: FuncId,
     pub xcx_jit_table_init: FuncId,
@@ -84,6 +87,8 @@ pub struct SymbolRegistry {
     pub xcx_jit_store_delete: FuncId,
     pub xcx_jit_database_init: FuncId,
     pub xcx_jit_set_member: FuncId,
+    pub xcx_jit_str_append_member: FuncId,
+    pub xcx_jit_str_append_element: FuncId,
     pub xcx_jit_env_get: FuncId,
     pub xcx_jit_env_args: FuncId,
     pub xcx_jit_crypto_hash: FuncId,
@@ -379,6 +384,10 @@ impl SymbolRegistry {
         sig_ptr_u32_u32_ret_val.params.push(AbiParam::new(types::I32));
         sig_ptr_u32_u32_ret_val.params.push(AbiParam::new(types::I32));
 
+        let mut sig_init_bool_arr = module.make_signature();
+        sig_init_bool_arr.params.push(AbiParam::new(ptr_type)); // out
+        sig_init_bool_arr.params.push(AbiParam::new(ptr_type)); // executor
+
         let mut sig_coll_init = module.make_signature();
         sig_coll_init.params.push(AbiParam::new(ptr_type)); // out
         sig_coll_init.params.push(AbiParam::new(ptr_type)); // executor_ptr
@@ -560,6 +569,22 @@ impl SymbolRegistry {
             xcx_jit_set_values: module.declare_function("xcx_jit_set_values", Linkage::Import, &sig_val_val_ret).unwrap(),
             xcx_jit_inc_ref: module.declare_function("xcx_jit_inc_ref", Linkage::Import, &sig_val_ret_void).unwrap(),
             xcx_jit_dec_ref: module.declare_function("xcx_jit_dec_ref", Linkage::Import, &sig_val_ret_void).unwrap(),
+            xcx_jit_str_append_var: {
+                let mut sig = module.make_signature();
+                sig.params.push(AbiParam::new(ptr_type));
+                sig.params.push(AbiParam::new(types::I32));
+                sig.params.push(AbiParam::new(types::I64));
+                sig.params.push(AbiParam::new(types::I64));
+                module.declare_function("xcx_jit_str_append_var", Linkage::Import, &sig).unwrap()
+            },
+            xcx_jit_str_append_local: {
+                let mut sig = module.make_signature();
+                sig.params.push(AbiParam::new(ptr_type));
+                sig.params.push(AbiParam::new(types::I32));
+                sig.params.push(AbiParam::new(types::I64));
+                sig.params.push(AbiParam::new(types::I64));
+                module.declare_function("xcx_jit_str_append_local", Linkage::Import, &sig).unwrap()
+            },
             xcx_jit_dec_ref_range: module.declare_function("xcx_jit_dec_ref_range", Linkage::Import, &sig_ptr_u32_ret_void).unwrap(),
             xcx_jit_method_dispatch: module.declare_function("xcx_jit_method_dispatch", Linkage::Import, &sig_method).unwrap(),
             xcx_jit_method_dispatch_named: module.declare_function("xcx_jit_method_dispatch_named", Linkage::Import, &sig_method_named).unwrap(),
@@ -625,6 +650,7 @@ impl SymbolRegistry {
                 module.declare_function("xcx_jit_perf_ns", Linkage::Import, &sig).unwrap()
             },
             xcx_jit_array_init: module.declare_function("xcx_jit_array_init", Linkage::Import, &sig_coll_init).unwrap(),
+            xcx_jit_bool_array_init: module.declare_function("xcx_jit_bool_array_init", Linkage::Import, &sig_init_bool_arr).unwrap(),
             xcx_jit_set_init: module.declare_function("xcx_jit_set_init", Linkage::Import, &sig_coll_init).unwrap(),
             xcx_jit_map_init: module.declare_function("xcx_jit_map_init", Linkage::Import, &sig_coll_init).unwrap(),
             xcx_jit_table_init: module.declare_function("xcx_jit_table_init", Linkage::Import, &sig_table_init_v2).unwrap(),
@@ -659,6 +685,8 @@ impl SymbolRegistry {
             xcx_jit_store_delete: module.declare_function("xcx_jit_store_delete", Linkage::Import, &sig_val_val_ret).unwrap(),
             xcx_jit_database_init: module.declare_function("xcx_jit_database_init", Linkage::Import, &sig_db_init).unwrap(),
             xcx_jit_set_member: module.declare_function("xcx_jit_set_member", Linkage::Import, &sig_set_member).unwrap(),
+            xcx_jit_str_append_member: module.declare_function("xcx_jit_str_append_member", Linkage::Import, &sig_set_member).unwrap(),
+            xcx_jit_str_append_element: module.declare_function("xcx_jit_str_append_element", Linkage::Import, &sig_val_i64_val_ret_i32).unwrap(),
             xcx_jit_env_get: module.declare_function("xcx_jit_env_get", Linkage::Import, &sig_val_val_ret).unwrap(),
             xcx_jit_env_args: module.declare_function("xcx_jit_env_args", Linkage::Import, &sig_val_ret).unwrap(),
             xcx_jit_crypto_hash: module.declare_function("xcx_jit_crypto_hash", Linkage::Import, &sig_val_val_val_ret).unwrap(),
@@ -734,6 +762,8 @@ impl SymbolRegistry {
             xcx_jit_set_values: module.declare_func_in_func(self.xcx_jit_set_values, func),
             xcx_jit_inc_ref: module.declare_func_in_func(self.xcx_jit_inc_ref, func),
             xcx_jit_dec_ref: module.declare_func_in_func(self.xcx_jit_dec_ref, func),
+            xcx_jit_str_append_var: module.declare_func_in_func(self.xcx_jit_str_append_var, func),
+            xcx_jit_str_append_local: module.declare_func_in_func(self.xcx_jit_str_append_local, func),
             xcx_jit_dec_ref_range: module.declare_func_in_func(self.xcx_jit_dec_ref_range, func),
             xcx_jit_method_dispatch: module.declare_func_in_func(self.xcx_jit_method_dispatch, func),
             xcx_jit_method_dispatch_named: module.declare_func_in_func(self.xcx_jit_method_dispatch_named, func),
@@ -773,6 +803,7 @@ impl SymbolRegistry {
             xcx_jit_perf_us: module.declare_func_in_func(self.xcx_jit_perf_us, func),
             xcx_jit_perf_ns: module.declare_func_in_func(self.xcx_jit_perf_ns, func),
             xcx_jit_array_init: module.declare_func_in_func(self.xcx_jit_array_init, func),
+            xcx_jit_bool_array_init: module.declare_func_in_func(self.xcx_jit_bool_array_init, func),
             xcx_jit_set_init: module.declare_func_in_func(self.xcx_jit_set_init, func),
             xcx_jit_map_init: module.declare_func_in_func(self.xcx_jit_map_init, func),
             xcx_jit_table_init: module.declare_func_in_func(self.xcx_jit_table_init, func),
@@ -789,6 +820,8 @@ impl SymbolRegistry {
             xcx_jit_store_delete: module.declare_func_in_func(self.xcx_jit_store_delete, func),
             xcx_jit_database_init: module.declare_func_in_func(self.xcx_jit_database_init, func),
             xcx_jit_set_member: module.declare_func_in_func(self.xcx_jit_set_member, func),
+            xcx_jit_str_append_member: module.declare_func_in_func(self.xcx_jit_str_append_member, func),
+            xcx_jit_str_append_element: module.declare_func_in_func(self.xcx_jit_str_append_element, func),
             xcx_jit_env_get: module.declare_func_in_func(self.xcx_jit_env_get, func),
             xcx_jit_env_args: module.declare_func_in_func(self.xcx_jit_env_args, func),
             xcx_jit_crypto_hash: module.declare_func_in_func(self.xcx_jit_crypto_hash, func),
@@ -867,6 +900,8 @@ pub struct ImportedSymbols {
     pub xcx_jit_set_values: FuncRef,
     pub xcx_jit_inc_ref: FuncRef,
     pub xcx_jit_dec_ref: FuncRef,
+    pub xcx_jit_str_append_var: FuncRef,
+    pub xcx_jit_str_append_local: FuncRef,
     pub xcx_jit_dec_ref_range: FuncRef,
     pub xcx_jit_method_dispatch: FuncRef,
     pub xcx_jit_method_dispatch_named: FuncRef,
@@ -906,6 +941,7 @@ pub struct ImportedSymbols {
     pub xcx_jit_perf_us: FuncRef,
     pub xcx_jit_perf_ns: FuncRef,
     pub xcx_jit_array_init: FuncRef,
+    pub xcx_jit_bool_array_init: FuncRef,
     pub xcx_jit_set_init: FuncRef,
     pub xcx_jit_map_init: FuncRef,
     pub xcx_jit_table_init: FuncRef,
@@ -933,6 +969,8 @@ pub struct ImportedSymbols {
     pub xcx_jit_store_delete: FuncRef,
     pub xcx_jit_database_init: FuncRef,
     pub xcx_jit_set_member: FuncRef,
+    pub xcx_jit_str_append_member: FuncRef,
+    pub xcx_jit_str_append_element: FuncRef,
     pub xcx_jit_env_get: FuncRef,
     pub xcx_jit_env_args: FuncRef,
     pub xcx_jit_crypto_hash: FuncRef,

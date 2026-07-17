@@ -5,7 +5,7 @@ use crate::vm::value::Value;
 use crate::vm::object::{DatabaseObj, JsonObj};
 
 impl Executor {
-    pub fn handle_database_write(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, kind: crate::vm::opcode::MethodKind, args: &[Value], ip: usize, locals: &mut [Value]) -> OpResult {
+    pub fn handle_database_write(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, kind: crate::vm::opcode::MethodKind, args: &[Value], names: Option<&[String]>, ip: usize, locals: &mut [Value]) -> OpResult {
         if args.is_empty() { return OpResult::Continue; }
         
         let mut sqls = Vec::new();
@@ -25,22 +25,41 @@ impl Executor {
                 let mut placeholders = Vec::new();
                 let mut params = Vec::new();
                 
-                let mut col_idx = 0;
-                let mut arg_idx = 1;
-                while arg_idx < args.len() && col_idx < table.columns.len() {
-                    let col = &table.columns[col_idx];
-                    if col.is_auto {
-                        col_idx += 1;
-                        continue;
-                    }
+                let bindable_cols: Vec<&crate::vm::object::VMColumn> = table.columns.iter().filter(|c| !c.is_auto).collect();
+                let mut next_positional_col_idx = 0;
+                
+                for arg_idx in 1..args.len() {
+                    let arg_val = &args[arg_idx];
+                    let named_col = if let Some(arg_names) = names {
+                        if let Some(name) = arg_names.get(arg_idx) {
+                            if !name.is_empty() {
+                                bindable_cols.iter().find(|col| col.name == *name).copied()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    let col = if let Some(col) = named_col {
+                        col
+                    } else {
+                        if next_positional_col_idx < bindable_cols.len() {
+                            let col = bindable_cols[next_positional_col_idx];
+                            next_positional_col_idx += 1;
+                            col
+                        } else {
+                            continue;
+                        }
+                    };
+                    
                     col_names.push(format!("[{}]", col.name));
                     placeholders.push("?".to_string());
-                    params.push(Box::new(args[arg_idx].to_sql_value()) as Box<dyn rusqlite::ToSql>);
-                    col_idx += 1;
-                    arg_idx += 1;
+                    params.push(Box::new(arg_val.to_sql_value()) as Box<dyn rusqlite::ToSql>);
                 }
-                
-
                 
                 let sql = format!("INSERT INTO [{}] ({}) VALUES ({})", table.table_name, col_names.join(", "), placeholders.join(", "));
                 sqls.push(sql);

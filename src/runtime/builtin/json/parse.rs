@@ -4,25 +4,45 @@ use crate::vm::utils::json::json_val_to_value;
 // Implementation of JSON parsing for the XCX runtime.
 // Parses a JSON string into an XCX Value (Map, Array, or primitive).
 pub fn handle_json_parse(json_str: &str) -> Value {
-    // Try strict JSON first
-    if let Ok(v) = serde_json::from_str(json_str) {
-        let json_val = crate::vm::object::JsonVal::from_serde(v);
-        let res = json_val_to_value(&json_val);
+    thread_local! {
+        static JSON_CACHE: std::cell::RefCell<std::collections::HashMap<String, crate::vm::object::JsonVal>> = 
+            std::cell::RefCell::new(std::collections::HashMap::with_capacity(128));
+    }
+
+    let cached_val = JSON_CACHE.with(|c| {
+        let cache = c.borrow();
+        cache.get(json_str).map(|v| v.deep_clone())
+    });
+
+    if let Some(val) = cached_val {
+        let res = json_val_to_value(&val);
         unsafe { res.inc_ref(); }
         return res;
     }
 
-    // Try relaxed parsing for XCX-style literals like {1, 2, 3}
-    let relaxed = relaxed_preprocess(json_str);
-    match serde_json::from_str(&relaxed) {
-        Ok(v) => {
-            let json_val = crate::vm::object::JsonVal::from_serde(v);
-            let res = json_val_to_value(&json_val);
-            unsafe { res.inc_ref(); }
-            res
+    // Try strict JSON first
+    let json_val = if let Ok(v) = serde_json::from_str(json_str) {
+        crate::vm::object::JsonVal::from_serde(v)
+    } else {
+        // Try relaxed parsing for XCX-style literals like {1, 2, 3}
+        let relaxed = relaxed_preprocess(json_str);
+        match serde_json::from_str(&relaxed) {
+            Ok(v) => crate::vm::object::JsonVal::from_serde(v),
+            Err(_) => panic!("halt.fatal: Invalid JSON (R305)"),
         }
-        Err(_) => panic!("halt.fatal: Invalid JSON (R305)"),
-    }
+    };
+
+    JSON_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if cache.len() >= 128 {
+            cache.clear();
+        }
+        cache.insert(json_str.to_string(), json_val.clone());
+    });
+
+    let res = json_val_to_value(&json_val);
+    unsafe { res.inc_ref(); }
+    res
 }
 
 fn relaxed_preprocess(s: &str) -> String {
