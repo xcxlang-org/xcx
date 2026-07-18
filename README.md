@@ -329,6 +329,9 @@ Binary: `target/release/xcx`
 
 VS Code extension: [xcxlang-org/xcx-vscode](https://github.com/xcxlang-org/xcx-vscode)
 
+- **VS Code Marketplace:** [marketplace.visualstudio.com/items?itemName=xcxlang-org.xcx-vscode](https://marketplace.visualstudio.com/items?itemName=xcxlang-org.xcx-vscode)
+- **Open VSX Registry:** [open-vsx.org/extension/xcxlang-org/xcx-vscode](https://open-vsx.org/extension/xcxlang-org/xcx-vscode)
+
 Syntax highlighting, snippets, `.xcx` and `.pax` support.
 
 ```bash
