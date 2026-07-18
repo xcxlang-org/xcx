@@ -85,7 +85,7 @@ Directly interact with the system environment or current process.
 |------------------------|--------------------------------------------------|
 | `.terminal !clear`     | Clears the screen                                |
 | `.terminal !exit`      | Terminates the VM process                        |
-| `.terminal !run s`     | Runs another XCX file in a new process           |
+| `.terminal !run s`     | Opens file `s` via the OS's default file association (returns `b`)              |
 | `.terminal !raw`       | Raw mode — no echo, no buffering                 |
 | `.terminal !normal`    | Restores normal terminal mode                    |
 | `.terminal !cursor on` | Shows the cursor                                 |
@@ -120,3 +120,4 @@ end;
 - **`.terminal` directives**: Are not expressions and cannot be assigned to variables.
 - **`.terminal !move`**: Arguments must be integers (`i`).
 - **Terminal Availability**: The VM will halt with a fatal error if console handles are redirected or unavailable.
+- **`.terminal !run`**: IS usable as a boolean expression (returns `b`), despite being listed among directives. Its "run" semantics are OS file-association based, not a guaranteed interpreter invocation. On systems without a registered file association (e.g. Windows), this triggers an OS-level "Open With" prompt instead of executing the file. To reliably re-invoke the interpreter on another script, spawn it explicitly via the interpreter's own executable path.
