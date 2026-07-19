@@ -201,6 +201,8 @@ Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
 XCX 4.2 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
 
+**Current focus is foundations.** The long-term goal includes making XCX simple to install and deploy on servers, but a lot of that — packaging, deployment workflow, hosting ergonomics — hasn't been fully figured out yet. Right now most effort goes into the runtime, VM, and JIT itself. Treat XCX as a language in active development, not a finished deployment story.
+
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
 **macOS support:** builds and the full test suite pass on macOS via GitHub Actions CI. However, without access to physical Mac hardware, parity with the Linux and Windows experience can't be fully confirmed. If you hit anything macOS-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
