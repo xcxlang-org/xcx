@@ -36,5 +36,4 @@ TODO.md
 /MacOS/dist/
 /Linux/dist/
 
-xcx-linux
-xcx-macos
+/xcx-benchmarks/

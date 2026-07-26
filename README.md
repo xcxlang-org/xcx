@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560">
+  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.webp" width="560">
 </p>
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
@@ -50,7 +50,7 @@ fiber handle_404(json: req -> json) {
 };
 
 serve: api {
-    host   = "0.0.0.0",
+    host   = "[IP_ADDRESS]",
     port   = 8000,
     routes = ["POST /login" :: handle_login, "*" :: handle_404]
 };
@@ -86,7 +86,7 @@ fiber handle_create(json: req -> json) {
 };
 
 serve: api {
-    host   = "0.0.0.0",
+    host   = "[IP_ADDRESS]",
     port   = 8080,
     routes = ["GET /users" :: handle_users, "POST /users" :: handle_create]
 };
@@ -107,7 +107,7 @@ The honest picture: what you gain and what you give up:
 | Type safety | strong | optional (TS) | optional (mypy) | static, compile-time |
 | Concurrency model | goroutines | event loop | async/await | cooperative fibers |
 | Ecosystem | large | very large | very large | minimal (early stage) |
-| Platform support | Win / Linux / macOS | Win / Linux / macOS | Win / Linux / macOS | Windows (primary), Linux / macOS |
+| Platform support | Windows (primary) / Linux / macOS |
 
 XCX is not trying to replace Go or Node. It occupies a different space: small backend services and tools where you want zero dependency setup and a language that knows what you're building. The trade-off is an early-stage ecosystem and a single contributor.
 
@@ -189,7 +189,7 @@ Source (.xcx)
 
 **Value representation:** every value is a 16-byte `{ bits: u64, tag: u64 }` struct. The explicit integer tag means zero bitwise operations when reading the type in the interpreter. Scalars (int, float, bool, date) require zero heap allocation. Pointers to heap objects (strings, arrays, JSON, tables, fibers) are packed into `bits`. The JIT uses NaN-boxing internally (Cranelift registers hold a single NaN-boxed `u64`), with `pack_value`/`unpack_value` adapters at the boundary, which keeps CPU register usage lower and block signatures simpler in compiled traces.
 
-**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`.
+**Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`. Fiber scoping works correctly on all platforms.
 
 **JIT**: backward jumps (loop edges) are counted per instruction pointer. After 50 visits to a given IP, trace recording starts. The threshold is configurable via `--threshold` / `--th`. The trace is specialized for the runtime types seen (integer guards, float guards), then compiled by Cranelift to native code. Functions have a separate threshold: compiled from the 5th call onward. Recursive calls compile to direct native `call` instructions. After 3 guard failures at a given IP, the trace is blacklisted to prevent re-compilation of unstable paths. General string operations are not JIT-compiled, with one exception: the self-concatenation pattern (`x = x + expr`) is recognized and compiled to a dedicated in-place-append fast path.
 
@@ -201,11 +201,11 @@ Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
 XCX 4.2 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
 
-**Current focus is foundations.** The long-term goal includes making XCX simple to install and deploy on servers, but a lot of that — packaging, deployment workflow, hosting ergonomics — hasn't been fully figured out yet. Right now most effort goes into the runtime, VM, and JIT itself. Treat XCX as a language in active development, not a finished deployment story.
-
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
-**macOS support:** builds and the full test suite pass on macOS via GitHub Actions CI. However, without access to physical Mac hardware, parity with the Linux and Windows experience can't be fully confirmed. If you hit anything macOS-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+**Known rough edges:** 
+
+**Linux and macOS**: XCX 4.2 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -260,9 +260,9 @@ xcx hello.xcx
 **3. Try the REPL:**
 
 ```bash
+xcx
 xcx> i: x = 2 ^ 10;
-...  >! x;
-...  !exec
+xcx> >! x;
 1024
 xcx> !exit
 ```
@@ -275,11 +275,7 @@ fiber handle(json: req -> json) {
     return <<< {} >>>;
 };
 
-serve: api { 
-    host = "0.0.0.0", 
-    port = 8080, 
-    routes = ["*" :: handle] 
-};
+serve: api { host = "[IP_ADDRESS]", port = 8080, routes = ["*" :: handle] };
 ```
 
 ```bash
@@ -330,9 +326,6 @@ Binary: `target/release/xcx`
 ## Editor support
 
 VS Code extension: [xcxlang-org/xcx-vscode](https://github.com/xcxlang-org/xcx-vscode)
-
-- **VS Code Marketplace:** [marketplace.visualstudio.com/items?itemName=xcxlang-org.xcx-vscode](https://marketplace.visualstudio.com/items?itemName=xcxlang-org.xcx-vscode)
-- **Open VSX Registry:** [open-vsx.org/extension/xcxlang-org/xcx-vscode](https://open-vsx.org/extension/xcxlang-org/xcx-vscode)
 
 Syntax highlighting, snippets, `.xcx` and `.pax` support.
 

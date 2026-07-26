@@ -155,7 +155,7 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
         let f = &executor.ctx.functions[func_idx as usize];
         let mut jp = f.jit_ptr.load(Ordering::Acquire);
 
-        if !executor.vm.disable_jit && jp.is_null() {
+        if !executor.vm.disable_jit.load(Ordering::Acquire) && jp.is_null() {
             let count = f.call_count.fetch_add(1, Ordering::Relaxed) + 1;
             if count >= 5 {
                 let mut jit = executor.vm.jit.lock();
@@ -166,7 +166,9 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
                         jp = ptr as *mut std::ffi::c_void;
                         f.jit_ptr.store(jp, Ordering::Release);
                     },
-                    Err(_e) => {}
+                    Err(_e) => {
+                        executor.vm.disable_jit.store(true, Ordering::Release);
+                    }
                 }
             }
         }

@@ -92,10 +92,15 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
     let body_val = locals[body_src as usize];
     let method = ctx_constants[method_idx as usize].to_string();
     
-    if url.contains("169.254.") || url.contains("instance-data") {
+    if let Err(e) = is_safe_url(&url) {
+        if e.to_uppercase().starts_with("HALT.FATAL") {
+            panic!("halt.fatal:{}", e.trim_start_matches("HALT.FATAL:").trim_start_matches("HALT.FATAL"));
+        } else if e.to_uppercase().starts_with("HALT.ERROR") {
+            panic!("halt.error:{}", e.trim_start_matches("HALT.ERROR:").trim_start_matches("HALT.ERROR"));
+        }
         let mut map = Vec::new();
         map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
-        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new("SSRF attempt blocked".to_string()))));
+        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(e))));
         let res = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(map))))));
         unsafe { locals[dst as usize].dec_ref(); }
         locals[dst as usize] = res;

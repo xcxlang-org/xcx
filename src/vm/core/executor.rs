@@ -38,7 +38,7 @@ impl Executor {
         );
 
 
-        let stack_size = if vm.disable_jit {
+        let stack_size = if vm.disable_jit.load(Ordering::Acquire) {
             1024 * 64 // 64K values (1MB) for fast interpreter cache locality
         } else {
             1024 * 512 // 512K values (8MB) for deeper JIT execution frames
@@ -151,7 +151,7 @@ impl Executor {
         vm_arc: &Arc<VM>,
     ) -> *mut std::ffi::c_void {
         let mut jit_ptr = chunk.jit_ptr.load(Ordering::Acquire);
-        if !vm_arc.disable_jit && jit_ptr.is_null() {
+        if !vm_arc.disable_jit.load(Ordering::Acquire) && jit_ptr.is_null() {
             let count = chunk.call_count.fetch_add(1, Ordering::Relaxed) + 1;
             if count == vm_arc.jit_threshold as usize {
                 let mut jit = vm_arc.jit.lock();
@@ -163,9 +163,7 @@ impl Executor {
                         chunk.jit_ptr.store(jit_ptr, Ordering::Release);
                     }
                     Err(_e) => {
-                        #[cfg(debug_assertions)]
-                        eprintln!("JIT compilation failed for {}: {:?}", func_name, _e);
-                        vm_arc.error_count.fetch_add(1, Ordering::SeqCst);
+                        vm_arc.disable_jit.store(true, Ordering::Release);
                     }
                 }
             }

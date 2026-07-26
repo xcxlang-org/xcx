@@ -43,13 +43,11 @@ Incrementing MINOR (e.g. `5.1` → `5.2`) resets the letter back to `a`.
 | `5.2a` | "five two-a" | Next MINOR bump (5.2) — letter resets to `a` again |
 | `5.1a.1` | "five one-a one" | Hotfix #1 to version 5.1a |
 
+## Level Mapping
+
 | Classic scheme level | Letter scheme equivalent |
 |---|---|
 | *(new, narrower threshold — foundational rewrite only)* | MAJOR |
 | MAJOR | MINOR |
 | MINOR | LETTER |
 | PATCH | HOTFIX |
-
-## Naming Conventions
-
-Starting from version `5.0a`, a standardized file and directory naming convention will officially take effect across the repository (concerning platform directories, test layouts, and external assets) to ensure consistency.

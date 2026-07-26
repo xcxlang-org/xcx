@@ -16,7 +16,7 @@ pub struct Repl {
 impl Repl {
     pub fn new(disable_jit: bool, jit_threshold: u32) -> Self {
         let mut vm = VM::new();
-        vm.disable_jit = disable_jit;
+        vm.disable_jit.store(disable_jit, std::sync::atomic::Ordering::Release);
         vm.jit_threshold = jit_threshold;
         Self {
             vm: Arc::new(vm),
@@ -120,7 +120,7 @@ impl Repl {
     }
 
     fn show_jit_stats(&self) {
-        let disabled = self.vm.disable_jit;
+        let disabled = self.vm.disable_jit.load(std::sync::atomic::Ordering::Acquire);
         let threshold = self.vm.jit_threshold;
         
         let traces = self.vm.traces.read();
@@ -144,11 +144,11 @@ impl Repl {
     }
 
     fn reset_state(&mut self) {
-        let disable_jit = self.vm.disable_jit;
+        let disable_jit = self.vm.disable_jit.load(std::sync::atomic::Ordering::Acquire);
         let jit_threshold = self.vm.jit_threshold;
         
         let mut new_vm = VM::new();
-        new_vm.disable_jit = disable_jit;
+        new_vm.disable_jit.store(disable_jit, std::sync::atomic::Ordering::Release);
         new_vm.jit_threshold = jit_threshold;
         
         self.vm = Arc::new(new_vm);
