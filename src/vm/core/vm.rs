@@ -28,7 +28,7 @@ pub struct VM {
     pub error_count: std::sync::atomic::AtomicUsize,
     pub traces: Arc<RwLock<HashMap<(usize, usize), Arc<RwLock<Trace>>>>>,
     pub jit: Mutex<crate::jit::JIT>,
-    pub disable_jit: bool,
+    pub disable_jit: std::sync::atomic::AtomicBool,
     pub jit_threshold: u32,
     pub start_instant: std::time::Instant,
 }
@@ -42,19 +42,21 @@ impl VM {
             error_count: std::sync::atomic::AtomicUsize::new(0),
             traces: Arc::new(RwLock::new(HashMap::new())),
             jit: Mutex::new(crate::jit::JIT::new()),
-            disable_jit: false,
+            disable_jit: std::sync::atomic::AtomicBool::new(false),
             jit_threshold: 50,
             start_instant: std::time::Instant::now(),
         }
     }
 
     pub fn run(self: &Arc<Self>, chunk: Arc<Chunk>, ctx: SharedContext, params: &[Value]) -> Option<Value> {
-        if !self.disable_jit && chunk.jit_ptr.load(Ordering::Acquire).is_null() {
+        if !self.disable_jit.load(Ordering::Acquire) && chunk.jit_ptr.load(Ordering::Acquire).is_null() {
             let mut jit = self.jit.lock();
             let func_id_idx = chunk.bytecode.as_ptr() as usize;
             match jit.compile_method(func_id_idx, u32::MAX, &chunk, &ctx.constants, &ctx.functions, "main") {
                 Ok(ptr) => { chunk.jit_ptr.store(ptr as *mut _, Ordering::Release); }
-                Err(_e) => {}
+                Err(_e) => {
+                    self.disable_jit.store(true, Ordering::Release);
+                }
             }
         }
         let ctx = Arc::new(ctx);

@@ -1,0 +1,26 @@
+name: Build & Test FreeBSD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    name: FreeBSD Build and Test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Test on FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          sync: rsync
+          prepare: |
+            pkg install -y rust
+          run: |
+            cargo test --release --verbose

@@ -275,7 +275,7 @@ fn run_file(
     };
 
     let mut vm_inner = VM::new();
-    vm_inner.disable_jit = disable_jit;
+    vm_inner.disable_jit.store(disable_jit, std::sync::atomic::Ordering::Release);
     vm_inner.jit_threshold = jit_threshold;
     let vm = Arc::new(vm_inner);
     let vm2 = vm.clone();
