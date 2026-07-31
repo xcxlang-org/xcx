@@ -95,7 +95,12 @@ impl JIT {
             // ctx.b.seal_block(entry_block); // Seal at the end instead
             ctx.b.switch_to_block(*block_0);
 
-            ctx.preload_locals(&used_locals);
+            let needs_init_vec = analyze_chunk_locals_init(&chunk.bytecode, chunk.arity as u8);
+            let mut needs_init: std::collections::HashSet<u8> = needs_init_vec.into_iter().collect();
+            for i in 0..chunk.arity as u8 {
+                needs_init.insert(i);
+            }
+            ctx.preload_locals(&used_locals, &needs_init);
 
             let mut terminated = false;
 

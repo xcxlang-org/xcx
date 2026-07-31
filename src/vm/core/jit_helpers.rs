@@ -87,6 +87,7 @@ pub unsafe extern "C" fn xcx_jit_str_append_local(
     };
 
     let raw = locals[local_idx as usize];
+
     if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
         let ptr = raw.bits as *const crate::vm::object::StringObj;
         let arc = unsafe { Arc::from_raw(ptr) };

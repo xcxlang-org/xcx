@@ -42,17 +42,30 @@ pub unsafe extern "C" fn xcx_jit_terminal_exit() {
 pub unsafe extern "C" fn xcx_jit_terminal_run(out: *mut Value, cmd_bits: u64, cmd_tag: u64) {
     let cmd_val = Value { bits: cmd_bits, tag: cmd_tag };
     let cmd = cmd_val.to_string();
-    let output = if cfg!(windows) {
-        std::process::Command::new("cmd").arg("/C").arg(&cmd).output()
-    } else {
-        std::process::Command::new("sh").arg("-c").arg(&cmd).output()
-    };
+    let output = crate::runtime::builtin::io::execute_run(&cmd);
     let res = match output {
-        Ok(o) => Value::from_string(Arc::new(StringObj::new(o.stdout))),
+        Ok(o) => {
+            if !o.stdout.is_empty() {
+                let s = String::from_utf8_lossy(&o.stdout);
+                crate::runtime::builtin::io::write_buffered(&s);
+                crate::runtime::builtin::io::flush_buffered();
+            }
+            if o.status.success() {
+                if o.stdout.is_empty() {
+                    Value::from_bool(true)
+                } else {
+                    Value::from_string(Arc::new(StringObj::new(o.stdout)))
+                }
+            } else {
+                Value::from_bool(false)
+            }
+        }
         Err(_) => Value::from_bool(false),
     };
     unsafe { *out = res; }
 }
+
+
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_terminal_write(src_bits: u64, src_tag: u64) {

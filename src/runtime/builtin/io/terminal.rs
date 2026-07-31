@@ -85,3 +85,29 @@ pub fn exit() -> OpResult {
     }
     std::process::exit(0);
 }
+
+/// Helper function to execute a terminal command or run another XCX file in a new process.
+pub fn execute_run(cmd: &str) -> std::io::Result<std::process::Output> {
+    let trimmed = cmd.trim();
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+
+    if let Some(&first_token) = tokens.first() {
+        let path = std::path::Path::new(first_token);
+        let is_xcx_script = first_token.to_lowercase().ends_with(".xcx")
+            || path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("xcx")).unwrap_or(false);
+
+        if is_xcx_script {
+            let current_exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("xcx"));
+            let mut command = std::process::Command::new(current_exe);
+            command.args(&tokens);
+            return command.output();
+        }
+    }
+
+    if cfg!(windows) {
+        std::process::Command::new("cmd").arg("/C").arg(trimmed).output()
+    } else {
+        std::process::Command::new("sh").arg("-c").arg(trimmed).output()
+    }
+}
+

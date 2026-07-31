@@ -136,8 +136,13 @@ impl JIT {
             ctx.is_inner_func = is_inner_func;
 
             let used_locals = analyze_chunk_locals(&chunk.bytecode);
+
+
             let bool_array_hints = analyze_bool_array_regs(&chunk.bytecode, constants);
             let (inferred_types, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, None, chunk.arity, self_func_idx, &bool_array_hints);
+
+
+
             
             // Heuristic: if it's a pure math function, we can elide heap tracking.
             // A function is pure math if it never assigns a non-primitive type.
@@ -171,7 +176,14 @@ impl JIT {
                     filtered_locals.push(reg);
                 }
             }
-            ctx.preload_locals(&filtered_locals);
+            let needs_init_vec = analyze_chunk_locals_init(&chunk.bytecode, chunk.arity as u8);
+            let mut needs_init: std::collections::HashSet<u8> = needs_init_vec.into_iter().collect();
+            if !is_inner_func {
+                for i in 0..chunk.arity as u8 {
+                    needs_init.insert(i);
+                }
+            }
+            ctx.preload_locals(&filtered_locals, &needs_init);
 
             let used_globals = analyze_chunk_globals(&chunk.bytecode);
             ctx.preload_globals(&used_globals);

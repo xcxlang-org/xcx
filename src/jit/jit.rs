@@ -96,9 +96,9 @@ impl JIT {
 
             let mut ctx = CodegenCtx::new(&mut b, out_ptr, locals_ptr, globals_ptr, consts_ptr, vm_ptr, exec_ptr, shutdown_ptr, start_ip, trace_read.min_locals, HashMap::new(), u32::MAX, None, call_depth_offset, stack_ptr_offset);
             
-            // Phase 4: Analyze used locals and preload them
             let used_locals = analyze_trace_locals(&trace_read.ops);
-            ctx.preload_locals(&used_locals);
+            let needs_init: std::collections::HashSet<u8> = used_locals.iter().cloned().collect();
+            ctx.preload_locals(&used_locals, &needs_init);
             
             let used_globals = analyze_trace_globals(&trace_read.ops);
             ctx.preload_globals(&used_globals);
