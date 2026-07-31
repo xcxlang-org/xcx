@@ -26,6 +26,7 @@ Technical deep-dives into how the XCX compiler, JIT, and VM work.
   - [Frontend Syntax](compiler/frontend/): Lexing, parsing, and AST specifications.
   - [Semantic Analysis](compiler/sema/): Type checking and scoping validators.
   - [Compiler Code Gen](compiler/compiler/): Register mapping and VM bytecode translation.
+  - [HIR Pipeline](compiler/hir/): High-level IR lowering, inlining, and compiler passes.
   - [JIT Engine](compiler/jit/): Cranelift trace compilation and NaN-boxing.
   - [Virtual Machine](compiler/vm/): Bytecode execution interpreter loop and heap values.
   - [Runtime Services](compiler/runtime/): Linked collection APIs and FFI linkages.
@@ -35,7 +36,8 @@ Technical deep-dives into how the XCX compiler, JIT, and VM work.
 ## 📦 Tooling
 Guides for the XCX ecosystem tools.
 
-- [PAX Manual](pax/pax_manual.md): Package management and project structure.
+- [PAX Manual](tooling/pax_manual.md): Package management and project structure.
+- [DOC Tool Manual](tooling/doc_manual.md): Offline error code reference utility.
 
 ---
 *Documentation Version: 4.2.0 *
