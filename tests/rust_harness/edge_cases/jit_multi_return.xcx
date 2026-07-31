@@ -1,0 +1,19 @@
+func makePath(i: mode -> s) {
+    if (mode == 0) then; return ""; end;
+
+    s: result = "";
+    i: j;
+    for j in 0 to 2 do;
+        if (result != "") then;
+            result = result + "/";
+        end;
+        result = result + "X";
+    end;
+    return result;
+};
+
+s: v1 = makePath(0);
+assert(v1 == "");
+
+s: v2 = makePath(1);
+assert(v2 == "X/X/X");
