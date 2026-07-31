@@ -65,7 +65,9 @@ pub struct CodegenCtx<'a, 'b> {
     pub functions: Option<&'a [std::sync::Arc<crate::vm::opcode::Chunk>]>,
     pub non_ptr_regs: HashSet<u8>,
     pub may_contain_ptr: Vec<[u64; 4]>,
+    pub defined_locals: [bool; 256],
 }
+
 
 impl<'a, 'b> CodegenCtx<'a, 'b> {
     pub fn new(
@@ -124,8 +126,10 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             functions: None,
             non_ptr_regs: HashSet::new(),
             may_contain_ptr: Vec::new(),
+            defined_locals: [false; 256],
         }
     }
+
 
     pub fn set_functions(&mut self, functions: &'a [std::sync::Arc<crate::vm::opcode::Chunk>]) {
         self.functions = Some(functions);
@@ -244,6 +248,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         let r = reg as usize;
         self.mark_used(r);
         self.mark_dirty(r);
+        self.defined_locals[r] = true;
         let slots = self.ensure_slot(r);
 
         let ty = self.get_def_reg_type(r);
@@ -254,11 +259,14 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.known_types[r] = ty;
     }
 
+
+
     /// Defines a local register directly with a packed quiet-NaN Cranelift Value.
     pub fn def_local_nanboxed(&mut self, reg: u8, val: Value) {
         let r = reg as usize;
         self.mark_used(r);
         self.mark_dirty(r);
+        self.defined_locals[r] = true;
         let slots = self.ensure_slot(r);
         
         let ty = self.get_def_reg_type(r);
@@ -281,6 +289,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.register_const[r] = None;
         self.known_types[r] = ty;
     }
+
 
     /// Convenience: define a local register from a known-integer raw i64.
     pub fn def_local_int(&mut self, reg: u8, raw_i64: Value) {
@@ -384,31 +393,31 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
 
     // --- Preload / Spill ---
 
-    /// Preloads a set of locals from memory into their Cranelift Variables.
-    pub fn preload_locals(&mut self, locals_to_load: &[u8]) {
+    pub fn preload_locals(&mut self, locals_to_load: &[u8], needs_init: &HashSet<u8>) {
         for &reg in locals_to_load {
             let r = reg as usize;
             if r >= self.max_locals { continue; }
+            if !needs_init.contains(&reg) {
+                continue;
+            }
             self.mark_used(r);
+            self.defined_locals[r] = true;
+            
             let offset = (r as i64) * (VALUE_SIZE as i64);
             let (bits, tag) = self.load_value_from(self.locals_ptr, offset);
             
-            let ty = self.get_reg_type(r);
             let slots = self.ensure_slot(r);
-            if matches!(ty, crate::vm::opcode::TypeTag::Int | crate::vm::opcode::TypeTag::Bool | crate::vm::opcode::TypeTag::Float) {
-                self.b.def_var(slots.bits_var, bits);
-                // Assign arbitrary tag or appropriate tag
-                self.b.def_var(slots.tag_var, tag);
-            } else {
-                self.b.def_var(slots.bits_var, bits);
-                self.b.def_var(slots.tag_var, tag);
-            }
+            self.b.def_var(slots.bits_var, bits);
+            self.b.def_var(slots.tag_var, tag);
         }
     }
+
+
 
     /// Spills all dirty registers back to the locals array in memory.
     pub fn spill_all(&mut self) {
         for i_idx in 0..4usize {
+
             let mut bits = self.dirty_registers[i_idx];
             while bits != 0 {
                 let bit = bits.trailing_zeros() as usize;
@@ -416,32 +425,34 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
                 bits &= !(1 << bit);
                 if r >= self.max_locals { continue; }
                 if let Some(slot) = self.slots[r] {
-            let bits = self.b.use_var(slot.bits_var);
-            let tag  = self.b.use_var(slot.tag_var);
-            let ty = self.get_reg_type(r);
-            let (bv, tv) = match ty {
-                crate::vm::opcode::TypeTag::Int => {
-                    let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
-                    (bits, t)
+                    let bits = self.b.use_var(slot.bits_var);
+                    let tag  = self.b.use_var(slot.tag_var);
+                    let ty = self.get_reg_type(r);
+                    let (bv, tv) = match ty {
+                        crate::vm::opcode::TypeTag::Int => {
+                            let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
+                            (bits, t)
+                        }
+                        crate::vm::opcode::TypeTag::Bool => {
+                            let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
+                            (bits, t)
+                        }
+                        crate::vm::opcode::TypeTag::Float => {
+                            let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_FLOAT as i64);
+                            (bits, t)
+                        }
+                        _ => (bits, tag)
+                    };
+                    let offset = (r as i64) * (VALUE_SIZE as i64);
+                    self.store_value_to(self.locals_ptr, offset, bv, tv);
+
                 }
-                crate::vm::opcode::TypeTag::Bool => {
-                    let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
-                    (bits, t)
-                }
-                crate::vm::opcode::TypeTag::Float => {
-                    let t = self.b.ins().iconst(types::I64, crate::vm::value::TAG_FLOAT as i64);
-                    (bits, t)
-                }
-                _ => (bits, tag)
-            };
-            let offset = (r as i64) * (VALUE_SIZE as i64);
-            self.store_value_to(self.locals_ptr, offset, bv, tv);
-        }
             }
             self.dirty_registers[i_idx] = 0;
         }
         self.spill_globals();
     }
+
 
     pub fn reload_globals(&mut self) {
         let vars: Vec<(u32, (Variable, Variable))> = self.global_vars.iter()
@@ -457,6 +468,10 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
 
     pub fn reload_local(&mut self, reg: u8) {
         let r = reg as usize;
+        self.mark_used(r);
+        self.mark_dirty(r);
+        self.defined_locals[r] = true;
+        self.known_types[r] = crate::vm::opcode::TypeTag::String;
         if let Some(slot) = self.slots[r] {
             let offset = (r as i64) * (VALUE_SIZE as i64);
             let (bits, tag) = self.load_value_from(self.locals_ptr, offset);
@@ -465,8 +480,11 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         }
     }
 
+
     pub fn sync_for_jump(&mut self) {
     }
+
+
 
     pub fn clear_block_state(&mut self, keep_consts: bool) {
         if !keep_consts {
@@ -491,7 +509,9 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
                 if let Some(s) = skip_reg {
                     if r == s as usize { continue; }
                 }
+                if !self.defined_locals[r] { continue; }
                 if self.is_known_non_ptr(r) || self.reg_is_never_ptr(r) { continue; }
+
                 let val = self.use_slot(r, self.locals_ptr, (r as i64) * (VALUE_SIZE as i64));
                 super::nan_ops::emit_conditional_dec_ref(self, symbols, val.0, val.1);
             }
@@ -499,12 +519,16 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
     }
 
     pub fn should_skip_dec_ref(&self, reg: u8) -> bool {
+        if !self.defined_locals[reg as usize] {
+            return true;
+        }
         self.is_known_non_ptr(reg as usize)
             || self.reg_is_never_ptr(reg as usize)
             || self.non_ptr_regs.contains(&reg)
             || (self.current_ip < self.may_contain_ptr.len()
                 && (self.may_contain_ptr[self.current_ip][(reg / 64) as usize] & (1u64 << (reg % 64))) == 0)
     }
+
 
     // --- Helpers ---
 
@@ -577,6 +601,8 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         }
         true
     }
+
+
 
     /// Invokes an FFI function that returns a Value.
     /// Handles the Windows ABI by automatically allocating a 16-byte StackSlot,

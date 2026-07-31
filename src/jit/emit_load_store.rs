@@ -31,7 +31,12 @@ pub fn emit_load_const(
         let (c_bits, c_tag) = ctx.load_const(val_idx);
         emit_conditional_inc_ref(ctx, symbols, c_bits, c_tag);
         ctx.def_local(dst, c_bits, c_tag);
+        if val.is_string() {
+            ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::String;
+        }
     }
+
+
 }
 
 pub fn emit_move(
@@ -57,6 +62,8 @@ pub fn emit_move(
     ctx.register_const[dst as usize] = c;
     ctx.known_types[dst as usize] = ty;
 }
+
+
 
 pub fn emit_get_var(
     ctx: &mut CodegenCtx,

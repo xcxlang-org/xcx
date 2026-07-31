@@ -181,7 +181,14 @@
                     filtered_locals.push(reg);
                 }
             }
-            ctx.preload_locals(&filtered_locals);
+            let needs_init_vec = analyze_chunk_locals_init(&chunk.bytecode, chunk.arity as u8);
+            let mut needs_init: std::collections::HashSet<u8> = needs_init_vec.into_iter().collect();
+            if !is_inner_func {
+                for i in 0..chunk.arity as u8 {
+                    needs_init.insert(i);
+                }
+            }
+            ctx.preload_locals(&filtered_locals, &needs_init);
 
 
 
