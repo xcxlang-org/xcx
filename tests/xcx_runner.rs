@@ -59,6 +59,10 @@ fn run_source(source: &str) -> Arc<VM> {
 }
 
 fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
+    run_source_with_dir_opts(source, dir, false)
+}
+
+fn run_source_with_dir_opts(source: &str, dir: Option<PathBuf>, disable_jit: bool) -> Arc<VM> {
     unsafe { std::env::set_var("XCX_IN_TEST_HARNESS", "1"); }
 
     let source_with_assert = format!(
@@ -93,6 +97,7 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
 
     test_log("[TEST] Running VM...");
     let vm = Arc::new(VM::new());
+    vm.disable_jit.store(disable_jit, std::sync::atomic::Ordering::Release);
     let ctx = SharedContext { constants, functions, http_req: None };
     
     let vm_for_thread = vm.clone();
@@ -116,10 +121,14 @@ fn run_source_with_dir(source: &str, dir: Option<PathBuf>) -> Arc<VM> {
 }
 
 fn run_file(filename: &str) -> Arc<VM> {
+    run_file_opts(filename, false)
+}
+
+fn run_file_opts(filename: &str, disable_jit: bool) -> Arc<VM> {
     let path = test_dir().join(filename);
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {}", path.display(), e));
-    run_source(&source)
+    run_source_with_dir_opts(&source, None, disable_jit)
 }
 
 fn run_comprehensive_file(filename: &str) -> Arc<VM> {
@@ -969,6 +978,9 @@ fn http_server_suite() {
 }
 
 #[test] fn edge_cases() { run_file("edge_cases.xcx"); }
+#[test] fn jit_multi_return_with_jit() { run_file_opts("jit_multi_return.xcx", false); }
+#[test] fn jit_multi_return_without_jit() { run_file_opts("jit_multi_return.xcx", true); }
+
 #[test] fn recent_features() { run_file("recent_features.xcx"); }
 #[test] fn terminal_run() { run_file("terminal_run.xcx"); }
 
