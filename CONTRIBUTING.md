@@ -2,7 +2,7 @@
 
 ## Project status
 
-XCX is currently developed entirely by me (Aleksky), solo - this is
+XCX is currently developed entirely by Heisenberg7312, solo - this is
 my first project of this scale, and I'd rather keep control over
 the core for now instead of opening it up more broadly. Development
 on `/src` (VM, JIT, compiler) happens in batches aligned with
