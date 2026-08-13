@@ -455,54 +455,53 @@ end;
 // -------------------------------------------------------------------------
 procedure RemoveFromPath();
 var
-  Path: String;
+  Paths: String;
   BinPath: String;
-  Parts: TStringList;
-  i: Integer;
+  P: Integer;
   NewPath: String;
   Changed: Boolean;
+  CurrentPath: String;
 begin
   BinPath := Uppercase(ExpandConstant('{app}\bin'));
 
-  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path', Path) then
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path', Paths) then
     Exit;
 
-  Parts := TStringList.Create;
-  try
-    Parts.Delimiter := ';';
-    Parts.StrictDelimiter := True;
-    Parts.DelimitedText := Path;
-
-    Changed := False;
-    for i := Parts.Count - 1 downto 0 do
+  NewPath := '';
+  Changed := False;
+  
+  while Paths <> '' do
+  begin
+    P := Pos(';', Paths);
+    if P > 0 then
     begin
-      if Uppercase(Trim(Parts[i])) = BinPath then
-      begin
-        Parts.Delete(i);
-        Changed := True;
-      end;
-    end;
-
-    if Changed then
+      CurrentPath := Copy(Paths, 1, P - 1);
+      Paths := Copy(Paths, P + 1, Length(Paths));
+    end
+    else
     begin
-      NewPath := '';
-      for i := 0 to Parts.Count - 1 do
-      begin
-        if Trim(Parts[i]) <> '' then
-        begin
-          if NewPath <> '' then
-            NewPath := NewPath + ';';
-          NewPath := NewPath + Parts[i];
-        end;
-      end;
-
-      if NewPath = '' then
-        RegDeleteValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path')
-      else
-        RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path', NewPath);
+      CurrentPath := Paths;
+      Paths := '';
     end;
-  finally
-    Parts.Free;
+    
+    if Uppercase(Trim(CurrentPath)) = BinPath then
+    begin
+      Changed := True;
+    end
+    else if Trim(CurrentPath) <> '' then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + CurrentPath;
+    end;
+  end;
+
+  if Changed then
+  begin
+    if NewPath = '' then
+      RegDeleteValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path')
+    else
+      RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, PATH_REGKEY, 'Path', NewPath);
   end;
 end;
 
