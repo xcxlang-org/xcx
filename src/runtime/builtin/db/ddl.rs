@@ -56,11 +56,6 @@ impl Executor {
         OpResult::Continue
     }
 
-    pub fn handle_database_member_access(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, name: &[u8], ip: usize, locals: &mut [Value], _vm_arc: &Arc<crate::vm::core::vm::VM>, _glbs: &mut Option<parking_lot::RwLockWriteGuard<Vec<Value>>>) -> OpResult {
-        let name_str = String::from_utf8_lossy(name).to_string();
-        self.handle_database_ddl(dst, db_rc, name_str, ip, locals)
-    }
-
     pub fn handle_database_sync(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, args: &[Value], ip: usize, locals: &mut [Value]) -> OpResult {
         if args.is_empty() { return OpResult::Continue; }
         let table_val = &args[0];

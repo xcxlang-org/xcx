@@ -39,24 +39,4 @@ impl<'a> Parser<'a> {
             _ => Precedence::Lowest,
         }
     }
-
-    // Calculates the precedence of the next token.
-    pub fn peek_precedence(&self) -> Precedence {
-        match self.peek.kind {
-            TokenKind::Arrow => Precedence::Lambda,
-            TokenKind::Equal => Precedence::Assignment,
-            TokenKind::Or => Precedence::LogicalOr,
-            TokenKind::And => Precedence::LogicalAnd,
-            TokenKind::EqualEqual | TokenKind::BangEqual => Precedence::Equals,
-            TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual | TokenKind::Has => Precedence::LessGreater,
-            TokenKind::Plus | TokenKind::Minus | TokenKind::PlusPlus => Precedence::Sum,
-            TokenKind::DoubleColon => Precedence::Concatenation,
-            TokenKind::Union | TokenKind::Difference | TokenKind::SymDifference | TokenKind::Intersection => Precedence::SetOp,
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Product,
-            TokenKind::Caret => Precedence::Power,
-            TokenKind::Dot | TokenKind::LeftBracket => Precedence::Call,
-            TokenKind::As => Precedence::AsPrec,
-            _ => Precedence::Lowest,
-        }
-    }
 }

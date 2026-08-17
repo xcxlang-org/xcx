@@ -9,7 +9,7 @@ The bytecode compiler produces a flat array of `OpCode` values packed into a `Ch
 ```
 src/vm/opcode/
 ├── mod.rs       — re-exports
-├── opcode.rs    — OpCode enum, MethodKind enum, TypeTag, calculate_has_loops
+├── opcode.rs    — OpCode enum, MethodKind enum, TypeTag
 ├── chunk.rs     — Chunk struct
 └── decode.rs    — Decoder stub (currently identity; reserved for future use)
 ```
@@ -24,10 +24,8 @@ pub struct Chunk {
     pub spans:        Arc<Vec<crate::error::Span>>,
     pub is_fiber:     bool,
     pub max_locals:   usize,
-    pub has_loops:    bool,
     pub call_count:   Arc<AtomicUsize>,
     pub jit_ptr:      Arc<AtomicPtr<c_void>>,
-    pub jit_segments: Arc<RwLock<HashMap<usize, usize>>>,
     pub name:         String,
     pub arity:        usize,
     pub uses_heap:    Arc<AtomicBool>,
@@ -41,10 +39,8 @@ Each function and the top-level program are compiled into a `Chunk`. Key fields:
 - `spans` — one `Span` per bytecode instruction; same length as `bytecode`. Used for runtime error reporting.
 - `is_fiber` — true for fiber (coroutine) chunks, which have different call/return semantics.
 - `max_locals` — number of local register slots required. The executor allocates exactly this many slots per call frame.
-- `has_loops` — computed by `calculate_has_loops`; used by the JIT to decide whether to record a trace.
 - `call_count` — incremented on each call. When it crosses the dynamic threshold `vm.jit_threshold` (default 50), the JIT compiles the chunk.
 - `jit_ptr` — atomic pointer to the JIT-compiled native function; `null` if not yet compiled.
-- `jit_segments` — maps bytecode IP ranges to JIT-compiled segment offsets, for partial compilation.
 - `used_locals` — bitmask of which local slots are actually referenced, produced by `jit::analysis::analyze_chunk_locals`. Used by the JIT to skip zeroing unused slots.
 
 `Chunk` is `Clone`; all fields use `Arc` so clones share the same underlying data.
@@ -195,7 +191,7 @@ Compiled from the self-concatenation assignment pattern `x = x + expr` (see `com
 | `StrAppendMember` | `container, name_idx, src` | Append `locals[src]` to the string stored at JSON field `name_idx` of `container`. |
 | `StrAppendElement` | `container, index, src` | Append `locals[src]` to the string element at `index` of array `container`. |
 
-All four opcodes are backed by `StringObj::try_extend_bytes`, which mutates the target buffer directly when its `Arc` has a unique owner (`Arc::strong_count <= 1`); when the string is shared, they transparently fall back to an allocating copy-on-write clone instead.
+All four opcodes are backed by copy-on-write string concatenation logic handled inline inside `Value::add`. When the target string's `Arc` is uniquely owned (`Arc::strong_count <= 1`), it mutates the buffer in place; otherwise, it allocates a new copy.
 
 ### Comparison
 
@@ -254,8 +250,6 @@ Specialized combined increment-and-jump instructions for loop optimization:
 | `Call` | `dst, func_idx: u32, base: u8, arg_count: u8` | Call function `func_idx`. Arguments are locals `[base..base+arg_count]`. Result stored in `dst`. |
 | `MethodCall` | `dst, kind: MethodKind, base, arg_count` | Call a built-in method on the value at `locals[base]`. |
 | `MethodCallNamed` | `dst, kind: MethodKind, base, arg_count, names_idx: u32` | Dynamic method dispatch using a string name from the constant pool. Used for row field access and JSON path access. |
-| `CallClosure` | `dst, base, arg_count` | Call the closure in `locals[base]`. |
-| `MakeClosure` | `dst, func_idx: u16, capture_count: u16, capture_start: u8` | Create a closure from function `func_idx` and capture `capture_count` locals starting at `capture_start`. |
 
 ### I/O
 
@@ -412,14 +406,3 @@ All store opcodes follow the pattern `dst, base` where `base` is the register co
 | `StringLength` | `dst, src` | Write string byte length into `dst`. |
 | `CastFloatToInt` | `dst, src` | Truncating float-to-integer cast. |
 | `CastBool` | `dst, src` | Convert to boolean. |
-| `GetMember` | `dst, container, name_idx` | Named member access. |
-
----
-
-## Loop Detection
-
-```rust
-pub fn calculate_has_loops(bytecode: &[OpCode]) -> bool
-```
-
-Returns `true` if any backward jump exists in the bytecode (i.e. a `Jump`, `JumpIfFalse`, `JumpIfTrue`, or any loop-specialized opcode where `target < current_ip`). Called automatically during `Chunk::new`; the result is stored in `Chunk::has_loops` and used by the JIT to decide whether trace recording is worthwhile.

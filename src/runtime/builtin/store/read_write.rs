@@ -75,11 +75,16 @@ pub fn append(dst: u8, base: u8, locals: &mut [Value]) -> OpResult {
     OpResult::Continue
 }
 
-/// Deletes a file.
+/// Deletes a file or directory.
 pub fn delete(dst: u8, base: u8, locals: &mut [Value]) -> OpResult {
     let path_str = locals[base as usize].to_string();
     super::fs_ops::validate_path_safety(&path_str);
-    let ok = std::fs::remove_file(path_str).is_ok();
+    let path = std::path::Path::new(&path_str);
+    let ok = if path.is_dir() {
+        std::fs::remove_dir_all(path).is_ok()
+    } else {
+        std::fs::remove_file(path).is_ok()
+    };
     
     unsafe { locals[dst as usize].dec_ref(); }
     locals[dst as usize] = Value::from_bool(ok);

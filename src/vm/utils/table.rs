@@ -68,61 +68,75 @@ pub fn join_tables(
     }
     let left_rc  = Arc::new(RwLock::new(left.clone()));
     let right_rc = Arc::new(RwLock::new(right.clone()));
-    let mut out_rows: Vec<Vec<Value>> = Vec::new();
+    let mut out_rows: Vec<Value> = Vec::new();
     match pred {
         JoinPred::Keys(lk, rk) => {
             let lc = left.columns.iter().position(|c| &c.name == lk);
             let rc = right.columns.iter().position(|c| &c.name == rk);
             if let (Some(lci), Some(rci)) = (lc, rc) {
-                let mut right_hash: HashMap<HashableValue, Vec<usize>> = HashMap::with_capacity(right.rows.len());
-                for ri in 0..right.rows.len() {
-                    let key = HashableValue(right.rows[ri][rci]);
+                let right_len = right.len();
+                let left_len = left.len();
+                let right_cols = right.columns.len();
+                let left_cols = left.columns.len();
+                let mut right_hash: HashMap<HashableValue, Vec<usize>> = HashMap::with_capacity(right_len);
+                for ri in 0..right_len {
+                    let key = HashableValue(right.rows[ri * right_cols + rci]);
                     right_hash.entry(key).or_default().push(ri);
                 }
-                for li in 0..left.rows.len() {
-                    let left_key = HashableValue(left.rows[li][lci]);
+                for li in 0..left_len {
+                    let left_key = HashableValue(left.rows[li * left_cols + lci]);
                     if let Some(right_indices) = right_hash.get(&left_key) {
                         for &ri in right_indices {
                             let mut row = Vec::with_capacity(out_cols.len());
-                            for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                            let start_l = li * left_cols;
+                            for v in &left.rows[start_l..start_l + left_cols] { unsafe { v.inc_ref(); } row.push(*v); }
                             for (r_col_idx, out_idx) in right_col_map.iter().enumerate() {
                                 if let Some(_oi) = out_idx {
-                                    let v = right.rows[ri][r_col_idx];
+                                    let v = right.rows[ri * right_cols + r_col_idx];
                                     unsafe { v.inc_ref(); }
                                     row.push(v);
                                 }
                             }
-                            out_rows.push(row);
+                            out_rows.extend(row);
                         }
                     }
                 }
             }
         }
         JoinPred::Lambda(fid) => {
-            for li in 0..left.rows.len() {
-                for ri in 0..right.rows.len() {
+            let left_len = left.len();
+            let right_len = right.len();
+            let left_cols = left.columns.len();
+            let right_cols = right.columns.len();
+            for li in 0..left_len {
+                for ri in 0..right_len {
                     let row_a = Value::from_row(Arc::new(RowObj { table: left_rc.clone(), row_idx: li as u32 }));
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
                     let m = matches!(executor.run_frame(executor.ctx.functions[*fid].clone(), &[row_a, row_b], vm_arc), Some(res) if res.is_bool() && res.as_bool());
                     unsafe { row_a.dec_ref(); row_b.dec_ref(); }
                     if m {
                         let mut row = Vec::with_capacity(out_cols.len());
-                        for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                        let start_l = li * left_cols;
+                        for v in &left.rows[start_l..start_l + left_cols] { unsafe { v.inc_ref(); } row.push(*v); }
                         for (rci, out_idx) in right_col_map.iter().enumerate() {
                             if let Some(_oi) = out_idx {
-                                let v = right.rows[ri][rci];
+                                let v = right.rows[ri * right_cols + rci];
                                 unsafe { v.inc_ref(); }
                                 row.push(v);
                             }
                         }
-                        out_rows.push(row);
+                        out_rows.extend(row);
                     }
                 }
             }
         }
         JoinPred::Closure(fid, captures) => {
-            for li in 0..left.rows.len() {
-                for ri in 0..right.rows.len() {
+            let left_len = left.len();
+            let right_len = right.len();
+            let left_cols = left.columns.len();
+            let right_cols = right.columns.len();
+            for li in 0..left_len {
+                for ri in 0..right_len {
                     let row_a = Value::from_row(Arc::new(RowObj { table: left_rc.clone(), row_idx: li as u32 }));
                     let row_b = Value::from_row(Arc::new(RowObj { table: right_rc.clone(), row_idx: ri as u32 }));
                     let mut run_args = vec![row_a, row_b];
@@ -131,15 +145,16 @@ pub fn join_tables(
                     for v in run_args { unsafe { v.dec_ref(); } }
                     if m {
                         let mut row = Vec::with_capacity(out_cols.len());
-                        for v in &left.rows[li] { unsafe { v.inc_ref(); } row.push(*v); }
+                        let start_l = li * left_cols;
+                        for v in &left.rows[start_l..start_l + left_cols] { unsafe { v.inc_ref(); } row.push(*v); }
                         for (rci, out_idx) in right_col_map.iter().enumerate() {
                             if let Some(_oi) = out_idx {
-                                let v = right.rows[ri][rci];
+                                let v = right.rows[ri * right_cols + rci];
                                 unsafe { v.inc_ref(); }
                                 row.push(v);
                             }
                         }
-                        out_rows.push(row);
+                        out_rows.extend(row);
                     }
                 }
             }
@@ -234,39 +249,6 @@ pub fn translate_filter_to_sql(executor: &Executor, func_idx: usize, cols: &[VMC
     }
     
     None
-}
-
-pub fn inject_json_into_table(table: &mut TableObj, json: &crate::vm::object::JsonVal, mapping: &Vec<(Value, Value)>) {
-    let items = match json {
-        crate::vm::object::JsonVal::Array(arr) => arr.read().clone(),
-        _ => vec![json.clone()],
-    };
-    for item in items {
-        let mut new_row = Vec::with_capacity(table.columns.len());
-        for col in &table.columns {
-            let mut found = false;
-            for (k, v) in mapping {
-                if k.is_ptr() && k.tag == TAG_STR &&
-                   v.is_ptr() && v.tag == TAG_STR {
-                    let col_match = k.as_string();
-                    let json_path = v.as_string();
-                    if &**col_match == col.name.as_bytes() {
-                        let pointer = super::path::normalize_json_path(&String::from_utf8_lossy(json_path.as_ref()));
-                        let raw = if pointer.is_empty() { item.clone() }
-                        else { item.pointer(&pointer).unwrap_or(crate::vm::object::JsonVal::Null) };
-                        let val = super::json::json_val_to_value(&raw);
-                        new_row.push(val);
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if !found {
-                new_row.push(Value::from_bool(false));
-            }
-        }
-        table.rows.push(new_row);
-    }
 }
 
 pub fn sqlite_row_to_value(

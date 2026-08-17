@@ -24,8 +24,7 @@ impl FunctionCompiler {
                 let captures_to_pass = sub.captures.clone();
                 
                 let fid = ctx.functions.len();
-                let has_loops = crate::vm::opcode::calculate_has_loops(&sub.bytecode);
-                let chunk = Chunk::new(sub.bytecode, sub.spans, false, sub.max_locals_used.max(sub.next_local), has_loops, "query_where".to_string(), 1);
+                let chunk = Chunk::new(sub.bytecode, sub.spans, false, sub.max_locals_used.max(sub.next_local), "query_where".to_string(), 1);
                 ctx.functions.push(std::sync::Arc::new(chunk));
                 
                 let f_val = Value::from_function(fid as u32);

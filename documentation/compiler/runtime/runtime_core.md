@@ -22,7 +22,7 @@ These namespaces compile cleanly into static symbols that are shared across both
 
 ## FFI Linking and Conventions (`src/runtime/ffi_helpers/`)
 
-To invoke Rust-implemented built-ins from machine code, JIT traces must use a standardized calling convention. The files under `ffi_helpers/` implement cross-linkage interfaces prefixed with `xcx_jit_*` using standard C ABI bindings.
+To invoke Rust-implemented built-ins from machine code, JIT-compiled functions must use a standardized calling convention. The files under `ffi_helpers/` implement cross-linkage interfaces prefixed with `xcx_jit_*` using standard C ABI bindings.
 
 ### ABI Signature Pattern
 FFI functions conform to raw call configurations:
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn xcx_jit_string_index_of(bits: u64, _tag: u64, f_bits: u
 Because the VM stores parameters inside quiet-NaN boxing slots, FFI functions must unpack arguments before processing and repack them before returning:
 
 ```
-    [ JIT Trace / Cranelift IR ]
+    [ JIT function / Cranelift IR ]
                  │
                  │ Passes (bits: u64, tag: u64)
                  ▼
@@ -83,6 +83,6 @@ Because the VM stores parameters inside quiet-NaN boxing slots, FFI functions mu
 ---
 
 ## Panic and Exit Propagation
-If FFI functions run into unrecoverable invalid states (like parsing an alphabetical string as an integer):
-- They trigger a panic `panic!("halt.error:...")`.
-- The compiler JIT or VM executor context catches the panic message to interrupt the JIT loop and translate the execution path back to interpreter error diagnostics.
+If FFI functions run into unrecoverable invalid states (e.g. division by zero, type tag mismatch, or database connection loss):
+- They report errors back by returning non-zero error flags (or sentinel error values) and updating diagnostic state fields within the current thread's executor context.
+- The JIT code checks these return flags after calling FFI functions and branches to deoptimization/exception-handling blocks if an error is flagged, preventing unsafe unwinding over the FFI boundary. Rust panics are NEVER propagated over the C ABI boundary.

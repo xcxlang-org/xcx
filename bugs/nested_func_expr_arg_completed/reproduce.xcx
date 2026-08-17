@@ -1,0 +1,21 @@
+--- reproduce.xcx - Minimal reproducer for nested function call with expression arguments
+
+func inner_check(f: val) {
+    if (val < 0.0) then;
+        halt.error >! "Error: inner_check received negative value: " + s(val);
+        return;
+    end;
+    >! "inner_check received valid value: " + s(val);
+};
+
+func outer_func(f: x, f: y) {
+    --- Passing binary arithmetic expression of float variables as argument
+    inner_check(x * x + y * y);
+};
+
+>! "Testing direct call: inner_check(3.0 * 3.0 + 4.0 * 4.0)...";
+inner_check(3.0 * 3.0 + 4.0 * 4.0);
+
+>! "";
+>! "Testing nested function call: outer_func(3.0, 4.0)...";
+outer_func(3.0, 4.0);

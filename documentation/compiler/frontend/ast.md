@@ -16,8 +16,7 @@ src/frontend/ast/
 ├── lit.rs        — Lit (standalone literal enum, minor use)
 ├── op.rs         — BinOp, UnaryOp (mirror of TokenKind subset)
 ├── ty.rs         — re-export of sema::types::{Type, SetType, DatabaseOpKind}
-├── table.rs      — ColumnDef, ColumnAttribute
-└── visitor.rs    — AstVisitor trait
+└── table.rs      — ColumnDef, ColumnAttribute
 ```
 
 ---
@@ -142,7 +141,6 @@ pub struct Expr {
 | `ModuleCall { module, method, args }` | Call to a built-in module (e.g. `json`, `net`, `store`). `module` is a `TokenKind`. |
 | `As { expr, name }` | `expr as name` — alias binding within an expression context. |
 | `Yield(Box<Expr>)` | Yield expression (yields a value and optionally receives one back). |
-| `Closure { capture_start, capture_count }` | Capturing wrapper evaluated by `MakeClosure` targeting specific external variables. |
 | `Tag(StringId)` | `#tag` literal. |
 
 ### `SetRange`
@@ -238,18 +236,6 @@ pub struct FnSig {
 Represents the signature of a function or fiber. `is_variadic` is a placeholder for future variadic argument support and is currently always `false`.
 
 ---
-
-## Visitor
-
-### `AstVisitor`
-```rust
-pub trait AstVisitor {
-    fn visit_program(&mut self, program: &Program);
-    fn visit_stmt(&mut self, stmt: &Stmt);
-    fn visit_expr(&mut self, expr: &Expr);
-}
-```
-Default implementations walk the entire tree with no-op leaf visits. Implementors override only the node types they care about. Used internally by semantic analysis and optimization passes.
 
 ---
 

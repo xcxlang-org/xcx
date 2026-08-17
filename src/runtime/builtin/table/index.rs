@@ -19,7 +19,7 @@ impl Executor {
     ) -> OpResult {
         let t = t_rc.read();
         if is_first {
-            let res = if let Some(_first_row) = t.rows.first() {
+            let res = if !t.rows.is_empty() {
                 Value::from_row(Arc::new(RowObj {
                     table: t_rc.clone(),
                     row_idx: 0,
@@ -33,7 +33,7 @@ impl Executor {
         }
 
         let idx = if args[0].is_int() { args[0].as_i64() } else { -1 };
-        if idx >= 0 && (idx as usize) < t.rows.len() {
+        if idx >= 0 && (idx as usize) < t.len() {
             let res = Value::from_row(Arc::new(RowObj { table: t_rc.clone(), row_idx: idx as u32 }));
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = res;
@@ -60,7 +60,7 @@ impl Executor {
                 let col_name = args[0].to_string();
                 let t = r.table.read();
                 if let Some(ci) = t.columns.iter().position(|c| c.name == col_name) {
-                    let val = t.rows[r.row_idx as usize][ci];
+                    let val = t.rows[r.row_idx as usize * t.columns.len() + ci];
                     unsafe { val.inc_ref(); }
                     unsafe { locals[dst as usize].dec_ref(); }
                     locals[dst as usize] = val;
@@ -75,14 +75,15 @@ impl Executor {
                 let mut t = r.table.write();
                 if let Some(ci) = t.columns.iter().position(|c| c.name == col_name) {
                     unsafe { val.inc_ref(); }
-                    let old = t.rows[r.row_idx as usize][ci];
-                    t.rows[r.row_idx as usize][ci] = val;
+                    let cell_idx = r.row_idx as usize * t.columns.len() + ci;
+                    let old = t.rows[cell_idx];
+                    t.rows[cell_idx] = val;
                     unsafe { old.dec_ref(); }
                     
                     if let Some(binding) = &t.sql_binding {
                         let pk_idx = t.columns.iter().position(|c| c.is_pk);
                         if let Some(pki) = pk_idx {
-                            let pk_val = t.rows[r.row_idx as usize][pki];
+                            let pk_val = t.rows[r.row_idx as usize * t.columns.len() + pki];
                             let sql = format!("UPDATE [{}] SET [{}] = ? WHERE [{}] = ?", binding.table_name, col_name, t.columns[pki].name);
                             let conn = binding.db_conn.lock();
                             if let Ok(mut stmt) = conn.prepare(&sql) {
@@ -107,8 +108,9 @@ impl Executor {
             MethodKind::ToJson => {
                 let t = r.table.read();
                 let mut obj = Vec::new();
+                let cols_len = t.columns.len();
                 for (i, col) in t.columns.iter().enumerate() {
-                    obj.push((std::sync::Arc::new(col.name.clone()), value_to_json(&t.rows[r.row_idx as usize][i])));
+                    obj.push((crate::vm::object::intern_key(col.name.clone()), value_to_json(&t.rows[r.row_idx as usize * cols_len + i])));
                 }
                 let res = Value::from_json(Arc::new(JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(RwLock::new(obj))))));
                 unsafe { locals[dst as usize].dec_ref(); }
@@ -117,8 +119,9 @@ impl Executor {
             MethodKind::Show => {
                 let t = r.table.read();
                 let mut s = String::new();
+                let cols_len = t.columns.len();
                 for (i, col) in t.columns.iter().enumerate() {
-                    s.push_str(&format!("{}: {}, ", col.name, t.rows[r.row_idx as usize][i].to_string()));
+                    s.push_str(&format!("{}: {}, ", col.name, t.rows[r.row_idx as usize * cols_len + i].to_string()));
                 }
                 println!("{}", s);
                 let res = Value::from_bool(true);
@@ -145,7 +148,7 @@ impl Executor {
         let col_name = String::from_utf8_lossy(col_name_bytes);
         let t = r.table.read();
         if let Some(ci) = t.columns.iter().position(|c| c.name == col_name) {
-            let val = t.rows[r.row_idx as usize][ci];
+            let val = t.rows[r.row_idx as usize * t.columns.len() + ci];
             unsafe { val.inc_ref(); }
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = val;

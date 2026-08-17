@@ -90,10 +90,13 @@ impl Executor {
                 }
                 
                 let sql = format!("INSERT INTO [{}] ({}) VALUES ({})", table.table_name, col_names.join(", "), placeholders.join(", "));
-                for row in &table.rows {
+                let num_cols = table.columns.len();
+                let num_rows = table.len();
+                for r_idx in 0..num_rows {
                     let mut params = Vec::new();
-                    for &idx in &col_indices {
-                        params.push(Box::new(row[idx].to_sql_value()) as Box<dyn rusqlite::ToSql>);
+                    for &col_idx in &col_indices {
+                        let cell_idx = r_idx * num_cols + col_idx;
+                        params.push(Box::new(table.rows[cell_idx].to_sql_value()) as Box<dyn rusqlite::ToSql>);
                     }
                     sqls.push(sql.clone());
                     params_list.push(params);
@@ -130,10 +133,13 @@ impl Executor {
                 let sql = format!("INSERT INTO [{}] ({}) VALUES ({}) ON CONFLICT([{}]) DO UPDATE SET {}", 
                     table.table_name, col_names.join(", "), placeholders.join(", "), pk_name, updates.join(", "));
                 
-                for row in &table.rows {
+                let num_cols = table.columns.len();
+                let num_rows = table.len();
+                for r_idx in 0..num_rows {
                     let mut params = Vec::new();
-                    for &idx in &col_indices {
-                        params.push(Box::new(row[idx].to_sql_value()) as Box<dyn rusqlite::ToSql>);
+                    for &col_idx in &col_indices {
+                        let cell_idx = r_idx * num_cols + col_idx;
+                        params.push(Box::new(table.rows[cell_idx].to_sql_value()) as Box<dyn rusqlite::ToSql>);
                     }
                     sqls.push(sql.clone());
                     params_list.push(params);

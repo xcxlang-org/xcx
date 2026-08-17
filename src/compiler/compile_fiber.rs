@@ -16,9 +16,8 @@ impl FunctionCompiler {
             if fc.bytecode.is_empty() || !matches!(fc.bytecode.last(), Some(OpCode::Return { .. }) | Some(OpCode::ReturnVoid)) {
                 fc.emit(OpCode::ReturnVoid, &stmt.span);
             }
-            let has_loops = crate::vm::opcode::calculate_has_loops(&fc.bytecode);
             let name_str = ctx.interner.lookup(*name).to_string();
-            let chunk = Chunk::new(fc.bytecode, fc.spans, true, fc.max_locals_used.max(fc.next_local), has_loops, name_str, params.len());
+            let chunk = Chunk::new(fc.bytecode, fc.spans, true, fc.max_locals_used.max(fc.next_local), name_str, params.len());
             let fid = ctx.func_indices.get(name).copied().unwrap_or(0);
             ctx.functions[fid] = std::sync::Arc::new(chunk);
         }

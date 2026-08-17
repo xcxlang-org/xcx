@@ -122,24 +122,12 @@ impl Repl {
     fn show_jit_stats(&self) {
         let disabled = self.vm.disable_jit.load(std::sync::atomic::Ordering::Acquire);
         let threshold = self.vm.jit_threshold;
-        
-        let traces = self.vm.traces.read();
-        let total_traces = traces.len();
-        let mut compiled_traces = 0;
-        for trace_lock in traces.values() {
-            let trace = trace_lock.read();
-            if !trace.native_ptr.load(std::sync::atomic::Ordering::Acquire).is_null() {
-                compiled_traces += 1;
-            }
-        }
-        
+
         println!("+---------------------------------------+");
         println!("| XCX JIT Compiler Diagnostics          |");
         println!("+---------------------------------------+");
         println!("| JIT Enabled:    {:<21} |", if disabled { "No" } else { "Yes" });
-        println!("| Hotspot Limit:  {:<21} |", threshold);
-        println!("| Loop Traces:    {:<21} |", total_traces);
-        println!("| JIT-Compiled:   {:<21} |", compiled_traces);
+        println!("| Warmup Limit:   {:<21} |", threshold);
         println!("+---------------------------------------+");
     }
 

@@ -15,8 +15,11 @@ src/frontend/parser/
 ├── parse_expr.rs   — parse_prefix, parse_infix, and expression parser forms
 ├── parse_stmt.rs   — parse_statement_internal, and statement formatting
 ├── parse_type.rs   — parse_type, is_type_intro
-├── parse_misc.rs   — parse_var_decl, parse_include_stmt, parse_serve_stmt,
-│                     parse_database_decl
+├── parse_control.rs — parse_if_statement, parse_for_statement, parse_while_statement
+├── parse_decl.rs   — parse_var_decl, parse_database_decl
+├── parse_fiber.rs  — parse_fiber_statement
+├── parse_fn.rs     — parse_func_def
+├── parse_table.rs  — parse_table_literal, parse_column_def
 ├── recovery.rs     — error, synchronize, expect, expect_semicolon
 ├── token_stream.rs — advance
 └── expander.rs     — Expander (operational processing for include resolution and alias prefixing)
@@ -111,7 +114,7 @@ pub enum Precedence {
 
 `Precedence` derives `PartialOrd` so that `<` comparisons in the Pratt loop work directly. Higher variants = higher binding power.
 
-`Precedence::for_token(kind)` maps a `TokenKind` to its precedence. The same mapping is duplicated in `current_precedence()` and `peek_precedence()` on the parser for efficiency.
+The precedence of the current token is retrieved via `current_precedence()` on the parser struct which maps `TokenKind` to `Precedence`. (Note: `Precedence::for_token(kind)` and `peek_precedence()` were removed as part of parsing consolidation).
 
 ---
 
@@ -127,9 +130,9 @@ The core Pratt loop:
 
 The `depth` guard applies here identically to statement parsing to prevent stack overflows on recursive logic drops.
 
-### `current_precedence() / peek_precedence()`
+### `current_precedence()`
 
-Both inspect the respective token and return the matching `Precedence` variant, or `Lowest` for anything unrecognized. The distinction matters during infix parsing where the parser must compare the current lookahead's precedence against the caller's minimum constraint boundary.
+Inspects the current token and returns the matching `Precedence` variant, or `Lowest` if unrecognized. Used during infix parsing to compare lookahead precedence against the caller's constraint boundaries.
 
 ---
 

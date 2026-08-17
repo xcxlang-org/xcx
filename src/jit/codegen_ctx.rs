@@ -66,6 +66,10 @@ pub struct CodegenCtx<'a, 'b> {
     pub non_ptr_regs: HashSet<u8>,
     pub may_contain_ptr: Vec<[u64; 4]>,
     pub defined_locals: [bool; 256],
+    /// Registers currently holding an un-owned (inc-elided) copy of a global
+    /// loaded for an upcoming specialized MethodCall receiver. Consumers must
+    /// skip the matching dst-dec_ref; `def_local` clears the bit.
+    pub unowned_recv_regs: [bool; 256],
 }
 
 
@@ -127,6 +131,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             non_ptr_regs: HashSet::new(),
             may_contain_ptr: Vec::new(),
             defined_locals: [false; 256],
+            unowned_recv_regs: [false; 256],
         }
     }
 
@@ -222,33 +227,13 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.use_slot(r, self.locals_ptr, (r as i64) * (VALUE_SIZE as i64))
     }
 
-    /// Returns the raw single-word quiet-NaN Value directly.
-    pub fn use_local_nanboxed(&mut self, reg: u8) -> Value {
-        let (bits, tag) = self.use_local(reg);
-        let r = reg as usize;
-        self.mark_used(r);
-        
-        let ty = self.get_reg_type(r);
-        match ty {
-            crate::vm::opcode::TypeTag::Int => {
-                super::nan_ops::make_int_nanboxed(self.b, bits)
-            }
-            crate::vm::opcode::TypeTag::Bool => {
-                super::nan_ops::make_bool_nanboxed(self.b, bits)
-            }
-            crate::vm::opcode::TypeTag::Float => {
-                super::nan_ops::make_float_nanboxed(self.b, bits)
-            }
-            _ => super::nan_ops::pack_value(self.b, bits, tag)
-        }
-    }
-
     /// Defines a local register with a (bits, tag) pair.
     pub fn def_local(&mut self, reg: u8, bits: Value, tag: Value) {
         let r = reg as usize;
         self.mark_used(r);
         self.mark_dirty(r);
         self.defined_locals[r] = true;
+        self.unowned_recv_regs[r] = false;
         let slots = self.ensure_slot(r);
 
         let ty = self.get_def_reg_type(r);
@@ -290,28 +275,6 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         self.known_types[r] = ty;
     }
 
-
-    /// Convenience: define a local register from a known-integer raw i64.
-    pub fn def_local_int(&mut self, reg: u8, raw_i64: Value) {
-        let val = super::nan_ops::make_int_nanboxed(self.b, raw_i64);
-        self.def_local_nanboxed(reg, val);
-        self.known_types[reg as usize] = crate::vm::opcode::TypeTag::Int;
-    }
-
-    /// Convenience: define a local register from a known-bool 0/1 bit.
-    pub fn def_local_bool(&mut self, reg: u8, bit: Value) {
-        let val = super::nan_ops::make_bool_nanboxed(self.b, bit);
-        self.def_local_nanboxed(reg, val);
-        self.known_types[reg as usize] = crate::vm::opcode::TypeTag::Bool;
-    }
-
-    /// Convenience: define a local register from a known-float raw f64.
-    pub fn def_local_float(&mut self, reg: u8, raw_f64: Value) {
-        let val = super::nan_ops::make_float_nanboxed(self.b, raw_f64);
-        self.def_local_nanboxed(reg, val);
-        self.known_types[reg as usize] = crate::vm::opcode::TypeTag::Float;
-    }
-
     // --- Globals ---
 
     pub fn ensure_global_var(&mut self, idx: u32) -> (Variable, Variable) {
@@ -342,20 +305,10 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         }
     }
 
-    pub fn use_global_nanboxed(&mut self, idx: u32) -> Value {
-        let (bits, tag) = self.use_global(idx);
-        super::nan_ops::pack_value(self.b, bits, tag)
-    }
-
     pub fn def_global(&mut self, idx: u32, bits: Value, tag: Value) {
         let (bv, tv) = self.ensure_global_var(idx);
         self.b.def_var(bv, bits);
         self.b.def_var(tv, tag);
-    }
-
-    pub fn def_global_nanboxed(&mut self, idx: u32, val: Value) {
-        let (bits, tag) = super::nan_ops::unpack_value(self.b, val);
-        self.def_global(idx, bits, tag);
     }
 
     pub fn spill_globals(&mut self) {
@@ -383,12 +336,6 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
     pub fn load_const(&mut self, idx: u32) -> (Value, Value) {
         let offset = (idx as i64) * (VALUE_SIZE as i64);
         self.load_value_from(self.consts_ptr, offset)
-    }
-
-    pub fn load_const_nanboxed(&mut self, idx: u32) -> Value {
-        let offset = (idx as i64) * (VALUE_SIZE as i64);
-        let (bits, tag) = self.load_value_from(self.consts_ptr, offset);
-        super::nan_ops::pack_value(self.b, bits, tag)
     }
 
     // --- Preload / Spill ---
@@ -622,10 +569,5 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         let res_bits = self.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 0);
         let res_tag  = self.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 8);
         (res_bits, res_tag)
-    }
-
-    pub fn call_ffi_value_nanboxed(&mut self, func: cranelift::codegen::ir::FuncRef, args: &[Value]) -> Value {
-        let (bits, tag) = self.call_ffi_value(func, args);
-        super::nan_ops::pack_value(self.b, bits, tag)
     }
 }

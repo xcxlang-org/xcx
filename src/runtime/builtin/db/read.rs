@@ -77,7 +77,7 @@ impl Executor {
                             let name = Arc::new(col_names[i].clone());
                             if let Ok(v) = row.get::<_, i64>(i) { jrow.push((name, crate::vm::object::JsonVal::Int(v))); }
                             else if let Ok(v) = row.get::<_, f64>(i) { jrow.push((name, crate::vm::object::JsonVal::Float(v))); }
-                            else if let Ok(v) = row.get::<_, String>(i) { jrow.push((name, crate::vm::object::JsonVal::String(Arc::new(v)))); }
+                            else if let Ok(v) = row.get::<_, String>(i) { jrow.push((name, crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(v.into_bytes()))))); }
                             else if let Ok(v) = row.get::<_, bool>(i) { jrow.push((name, crate::vm::object::JsonVal::Bool(v))); }
                             else { jrow.push((name, crate::vm::object::JsonVal::Null)); }
                         }
@@ -90,7 +90,7 @@ impl Executor {
                             else if let Ok(v) = row.get::<_, String>(i) { xrow.push(Value::from_string(Arc::new(StringObj::new(v.into_bytes())))); }
                             else { xrow.push(Value::from_bool(false)); }
                         }
-                        xrows.push(xrow);
+                        xrows.extend(xrow);
                     }
                 }
 

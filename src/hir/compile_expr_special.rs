@@ -81,6 +81,74 @@ pub(crate) fn compile_special_method_call(
                 return Some(dst);
             }
         }
+        let is_terminal = ctx.interner.lookup(*rid) == "terminal";
+        if is_terminal {
+            match method_name {
+                "write" => {
+                    if let Some(arg) = args.first() {
+                        let dst = fc.push_reg();
+                        let src = compile_expr(fc, arg.expr(), ctx);
+                        fc.emit(OpCode::TerminalWrite { dst, src }, expr_span);
+                        fc.pop_reg();
+                        return Some(dst);
+                    }
+                }
+                "clear" => {
+                    let dst = fc.push_reg();
+                    fc.emit(OpCode::TerminalClear { dst }, expr_span);
+                    return Some(dst);
+                }
+                "raw" => {
+                    let dst = fc.push_reg();
+                    fc.emit(OpCode::TerminalRaw { dst }, expr_span);
+                    return Some(dst);
+                }
+                "normal" | "cooked" => {
+                    let dst = fc.push_reg();
+                    fc.emit(OpCode::TerminalNormal { dst }, expr_span);
+                    return Some(dst);
+                }
+                "cursor" => {
+                    if let Some(arg) = args.first() {
+                        let val_str = match &arg.expr().kind {
+                            HirExprKind::Tag(id) => ctx.interner.lookup(*id),
+                            HirExprKind::StringLiteral(id) => ctx.interner.lookup(*id),
+                            _ => "",
+                        };
+                        let on = val_str == "on";
+                        let dst = fc.push_reg();
+                        fc.emit(OpCode::TerminalCursor { dst, on }, expr_span);
+                        return Some(dst);
+                    }
+                }
+                "move" => {
+                    if args.len() >= 2 {
+                        let dst = fc.push_reg();
+                        let x_src = compile_expr(fc, args[0].expr(), ctx);
+                        let y_src = compile_expr(fc, args[1].expr(), ctx);
+                        fc.emit(OpCode::TerminalMove { dst, x_src, y_src }, expr_span);
+                        fc.pop_reg();
+                        fc.pop_reg();
+                        return Some(dst);
+                    }
+                }
+                "exit" => {
+                    let dst = fc.push_reg();
+                    fc.emit(OpCode::TerminalExit { dst }, expr_span);
+                    return Some(dst);
+                }
+                "run" => {
+                    if let Some(arg) = args.first() {
+                        let dst = fc.push_reg();
+                        let cmd_src = compile_expr(fc, arg.expr(), ctx);
+                        fc.emit(OpCode::TerminalRun { dst, cmd_src }, expr_span);
+                        fc.pop_reg();
+                        return Some(dst);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     // 2. json fast get push check
@@ -289,13 +357,11 @@ pub(crate) fn compile_query_where_hir(
             let captures_to_pass = sub.captures.clone();
             
             let fid = ctx.functions.len();
-            let has_loops = crate::vm::opcode::calculate_has_loops(&sub.bytecode);
             let chunk = Chunk::new(
                 sub.bytecode,
                 sub.spans,
                 false,
                 sub.max_locals_used.max(sub.next_local),
-                has_loops,
                 "query_where".to_string(),
                 1,
             );

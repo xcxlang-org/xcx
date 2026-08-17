@@ -14,7 +14,6 @@ mod parse_type;
 mod parse_fn;
 mod parse_fiber;
 mod parse_table;
-mod parse_query;
 
 pub use parser::Parser;
 pub use precedence::Precedence;

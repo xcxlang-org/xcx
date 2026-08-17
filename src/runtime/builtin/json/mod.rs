@@ -20,7 +20,7 @@ impl Executor {
         kind: MethodKind,
         args: &[Value],
         _names: Option<&[String]>,
-        _ip: usize,
+        ip: usize,
         locals: &mut [Value],
         _vm_arc: &Arc<VM>,
     ) -> OpResult {
@@ -119,24 +119,25 @@ impl Executor {
                 };
                 let val = args[1];
                 let is_simple = !path.starts_with('/') && !path.contains('.') && !path.contains('[') && !path.contains(']');
-                if is_simple {
-                    json_rc.version.fetch_add(1, std::sync::atomic::Ordering::Release);
-                    if let crate::vm::object::JsonVal::Object(o) = &json_rc.root {
-                        let mut obj = o.write();
-                        if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == path) {
-                            obj[pos].1 = value_to_json(&val);
-                        } else {
-                            obj.push((std::sync::Arc::new(path.to_string()), value_to_json(&val)));
+                let json_ptr = Arc::as_ptr(&json_rc) as *mut JsonObj;
+                unsafe {
+                    (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
+                    (*json_ptr).root.make_mutable();
+                    if is_simple {
+                        if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
+                            let mut obj = o.write();
+                            if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == path) {
+                                obj[pos].1 = value_to_json(&val);
+                            } else {
+                                obj.push((std::sync::Arc::new(path.to_string()), value_to_json(&val)));
+                            }
                         }
+                    } else {
+                        let mut root_copy = (*json_ptr).root.clone();
+                        crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));
+                        (*json_ptr).root = root_copy;
                     }
-                } else {
-                    json_rc.version.fetch_add(1, std::sync::atomic::Ordering::Release);
-                    let mut root_copy = json_rc.root.clone();
-                    crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));
                 }
-                // Wait, if `set_json_value_at_path` mutates `root_copy`, and `root_copy` is a clone of the top level object,
-                // it won't mutate the parent if it reassigns at the root. But wait, `root` is wrapped in an Arc? No, JsonVal::Object holds the Arc.
-                // Mutating internal structure works anyway!
                 let res = Value::from_bool(true);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
@@ -152,10 +153,15 @@ impl Executor {
                         return OpResult::Continue;
                     }
                 }
-                let mut buf = String::with_capacity(4096);
+                
+                let capacity = match &json_rc.root {
+                    crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
+                    crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
+                    _ => 1024,
+                };
+                let mut buf = String::with_capacity(capacity.max(4096));
                 json_rc.root.to_string_buf(&mut buf);
-                let s = buf;
-                let string_obj = Arc::new(StringObj::new(s.into_bytes()));
+                let string_obj = Arc::new(StringObj::new(buf.into_bytes()));
                 
                 let mut lock = json_rc.cached_str.lock();
                 if json_rc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
@@ -179,11 +185,16 @@ impl Executor {
                         return OpResult::Continue;
                     }
                 }
-                let mut buf = String::with_capacity(4096);
+                
+                let capacity = match &json_rc.root {
+                    crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
+                    crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
+                    _ => 1024,
+                };
+                let mut buf = String::with_capacity(capacity.max(4096));
                 json_rc.root.to_string_buf(&mut buf);
-                let s = buf;
-                println!("{}", s);
-                let string_obj = Arc::new(StringObj::new(s.into_bytes()));
+                println!("{}", buf);
+                let string_obj = Arc::new(StringObj::new(buf.into_bytes()));
                 
                 let mut lock = json_rc.cached_str.lock();
                 if json_rc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
@@ -219,24 +230,28 @@ impl Executor {
             }
             MethodKind::Push => {
                 let val = args[0];
-                if let crate::vm::object::JsonVal::Array(a) = &json_rc.root {
-                    let mut arr = a.write();
-                    arr.push(value_to_json(&val));
-                    let res = Value::from_bool(true);
-                    unsafe { locals[dst as usize].dec_ref(); }
-                    locals[dst as usize] = res;
-                } else {
-                    // eprintln!("Method Push called on non-array JSON value");
-                    self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    return OpResult::Halt;
+                let json_ptr = Arc::as_ptr(&json_rc) as *mut JsonObj;
+                unsafe {
+                    (*json_ptr).root.make_mutable();
+                    if let crate::vm::object::JsonVal::Array(a) = &mut (*json_ptr).root {
+                        let mut arr = a.write();
+                        arr.push(value_to_json(&val));
+                        let res = Value::from_bool(true);
+                        locals[dst as usize].dec_ref();
+                        locals[dst as usize] = res;
+                    } else {
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        return OpResult::Halt;
+                    }
                 }
             }
+
             MethodKind::First => {
                 if let crate::vm::object::JsonVal::Array(a) = &json_rc.root {
                     let arr = a.read();
                     if arr.is_empty() {
                         self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        crate::runtime::builtin::io::eprint_buffered(&format!("HALT.ERROR: JSON array is empty on .first(){}\n", self.current_span_info(_ip)));
+                        crate::runtime::builtin::io::eprint_buffered(&format!("HALT.ERROR: JSON array is empty on .first(){}\n", self.current_span_info(ip)));
                         return OpResult::Halt;
                     } else {
                         let res = crate::vm::utils::json::json_val_to_value(&arr[0]);
@@ -246,7 +261,7 @@ impl Executor {
                     }
                 } else {
                     self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    crate::runtime::builtin::io::eprint_buffered(&format!("HALT.ERROR: .first() called on non-array JSON{}\n", self.current_span_info(_ip)));
+                    crate::runtime::builtin::io::eprint_buffered(&format!("HALT.ERROR: .first() called on non-array JSON{}\n", self.current_span_info(ip)));
                     return OpResult::Halt;
                 }
             }
@@ -305,11 +320,10 @@ impl Executor {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
-            _ => { 
-                eprintln!("DEBUG: Method {:?} not supported for JSON", kind);
-                // eprintln!("Method {:?} not supported for JSON{}", kind, self.current_span_info(ip)); 
+            _ => {
+                eprintln!("Method {:?} not supported for JSON{}", kind, self.current_span_info(ip));
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                return OpResult::Halt; 
+                return OpResult::Halt;
             }
         }
         OpResult::Continue
@@ -378,8 +392,12 @@ impl Executor {
             }
         } else {
             let val = args[0];
-            let mut root_copy = json_rc.root.clone();
-            crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));
+            let json_ptr = Arc::as_ptr(&json_rc) as *mut JsonObj;
+            unsafe {
+                let mut root_copy = (*json_ptr).root.clone();
+                crate::vm::utils::set_json_value_at_path(&mut root_copy, path, value_to_json(&val));
+                (*json_ptr).root = root_copy;
+            }
             let res = Value::from_bool(true);
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = res;

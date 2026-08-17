@@ -747,8 +747,7 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
             });
 
             let fid = ctx.functions.len();
-            let has_loops = crate::vm::opcode::calculate_has_loops(&sub.bytecode);
-            ctx.functions.push(std::sync::Arc::new(Chunk::new(sub.bytecode, sub.spans, false, sub.max_locals_used.max(sub.next_local), has_loops, "lambda".to_string(), params.len())));
+            ctx.functions.push(std::sync::Arc::new(Chunk::new(sub.bytecode, sub.spans, false, sub.max_locals_used.max(sub.next_local), "lambda".to_string(), params.len())));
             let f_val = Value::from_function(fid as u32);
             let f_idx = ctx.add_constant(f_val);
             let dst = compiler.push_reg();

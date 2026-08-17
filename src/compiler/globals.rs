@@ -26,13 +26,13 @@ pub(crate) fn register_globals_recursive(
             StmtKind::FunctionDef { name, body, .. } => {
                 let idx = functions.len();
                 func_indices.insert(*name, idx);
-                functions.push(Arc::new(Chunk::new(Vec::new(), Vec::new(), false, 0, false, SKELETON_CHUNK_NAME.to_string(), 0)));
+                functions.push(Arc::new(Chunk::new(Vec::new(), Vec::new(), false, 0, SKELETON_CHUNK_NAME.to_string(), 0)));
                 register_globals_recursive(body, globals, func_indices, functions, global_types, false);
             }
             StmtKind::FiberDef { name, body, .. } => {
                 let idx = functions.len();
                 func_indices.insert(*name, idx);
-                functions.push(Arc::new(Chunk::new(Vec::new(), Vec::new(), true, 0, false, SKELETON_CHUNK_NAME.to_string(), 0)));
+                functions.push(Arc::new(Chunk::new(Vec::new(), Vec::new(), true, 0, SKELETON_CHUNK_NAME.to_string(), 0)));
                 register_globals_recursive(body, globals, func_indices, functions, global_types, false);
             }
             StmtKind::VarDecl { name, ty, .. } if is_main_script => {

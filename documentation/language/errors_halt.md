@@ -1,4 +1,4 @@
-# XCX 4.2 Error Handling and the Halt Instruction
+# XCX 4.3 Error Handling and the Halt Instruction
 
 The XCX language utilizes a structured `halt` system to manage runtime errors and semantic (compiler) errors detected during the compilation and analysis phases.
 

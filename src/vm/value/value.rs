@@ -6,7 +6,7 @@ use crate::vm::object::{TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringO
 use super::tag::{
     Tag, TAG_FLOAT, TAG_INT, TAG_BOOL, TAG_DATE, TAG_STR, TAG_ARR, TAG_SET,
     TAG_MAP, TAG_TBL, TAG_FUNC, TAG_ROW, TAG_JSON, TAG_FIB, TAG_DB,
-    TAG_CLOSURE, TAG_ARENA, TAG_FIRST_PTR, TAG_FUNC_PTR, TAG_BOOL_ARR,
+    TAG_FIRST_PTR, TAG_FUNC_PTR, TAG_BOOL_ARR,
 };
 use super::nan_boxing::{pack_float_bits, unpack_float_bits};
 use super::ref_count;
@@ -108,16 +108,6 @@ impl Value {
                         unsafe {
                             (*obj_ptr).hash = None;
                             (*obj_ptr).data.extend_from_slice(&rhs_s.data);
-                            Arc::increment_strong_count(ptr);
-                        }
-                        let bits = Arc::into_raw(arc) as u64;
-                        return Self { bits, tag: TAG_STR };
-                    } else if rhs.tag == TAG_ARENA && heap_object::arena_inner_tag(&rhs) == TAG_STR as u64 {
-                        let p_arena = heap_object::arena_ptr::<StringObj>(&rhs);
-                        let obj_ptr = ptr as *mut StringObj;
-                        unsafe {
-                            (*obj_ptr).hash = None;
-                            (*obj_ptr).data.extend_from_slice(&(*p_arena).data);
                             Arc::increment_strong_count(ptr);
                         }
                         let bits = Arc::into_raw(arc) as u64;
@@ -274,19 +264,17 @@ impl Value {
     #[inline] pub fn is_bool(&self)    -> bool { self.tag == TAG_BOOL }
     #[inline] pub fn is_date(&self)    -> bool { self.tag == TAG_DATE }
     #[inline] pub fn is_ptr(&self)     -> bool { self.tag >= TAG_FIRST_PTR }
-    #[inline] pub fn is_arena(&self)   -> bool { self.tag == TAG_ARENA }
-    #[inline] pub fn is_string(&self)  -> bool { self.tag == TAG_STR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_STR) }
-    #[inline] pub fn is_array(&self)   -> bool { self.tag == TAG_ARR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_ARR) }
-    #[inline] pub fn is_bool_array(&self) -> bool { self.tag == TAG_BOOL_ARR || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_BOOL_ARR) }
-    #[inline] pub fn is_set(&self)     -> bool { self.tag == TAG_SET || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_SET) }
-    #[inline] pub fn is_map(&self)     -> bool { self.tag == TAG_MAP || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_MAP) }
-    #[inline] pub fn is_table(&self)   -> bool { self.tag == TAG_TBL || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_TBL) }
-    #[inline] pub fn is_func(&self)    -> bool { self.tag == TAG_FUNC || self.tag == TAG_FUNC_PTR || (self.tag == TAG_ARENA && (heap_object::arena_inner_tag(self) == TAG_FUNC || heap_object::arena_inner_tag(self) == TAG_FUNC_PTR)) }
-    #[inline] pub fn is_json(&self)    -> bool { self.tag == TAG_JSON || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_JSON) }
-    #[inline] pub fn is_fiber(&self)   -> bool { self.tag == TAG_FIB || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_FIB) }
-    #[inline] pub fn is_row(&self)     -> bool { self.tag == TAG_ROW || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_ROW) }
-    #[inline] pub fn is_db(&self)      -> bool { self.tag == TAG_DB || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_DB) }
-    #[inline] pub fn is_closure(&self) -> bool { self.tag == TAG_CLOSURE || (self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_CLOSURE) }
+    #[inline] pub fn is_string(&self)  -> bool { self.tag == TAG_STR }
+    #[inline] pub fn is_array(&self)   -> bool { self.tag == TAG_ARR }
+    #[inline] pub fn is_bool_array(&self) -> bool { self.tag == TAG_BOOL_ARR }
+    #[inline] pub fn is_set(&self)     -> bool { self.tag == TAG_SET }
+    #[inline] pub fn is_map(&self)     -> bool { self.tag == TAG_MAP }
+    #[inline] pub fn is_table(&self)   -> bool { self.tag == TAG_TBL }
+    #[inline] pub fn is_func(&self)    -> bool { self.tag == TAG_FUNC || self.tag == TAG_FUNC_PTR }
+    #[inline] pub fn is_json(&self)    -> bool { self.tag == TAG_JSON }
+    #[inline] pub fn is_fiber(&self)   -> bool { self.tag == TAG_FIB }
+    #[inline] pub fn is_row(&self)     -> bool { self.tag == TAG_ROW }
+    #[inline] pub fn is_db(&self)      -> bool { self.tag == TAG_DB }
     #[inline] pub fn is_numeric(&self) -> bool { self.tag == TAG_INT || self.tag == TAG_FLOAT }
     #[inline] pub fn is_bool_false(&self) -> bool { self.tag == TAG_BOOL && self.bits == 0 }
 
@@ -308,23 +296,6 @@ impl Value {
             TAG_JSON    => Tag::Json,
             TAG_FIB     => Tag::Fiber,
             TAG_DB      => Tag::Database,
-            TAG_ARENA   => {
-                match heap_object::arena_inner_tag(self) {
-                    TAG_STR     => Tag::String,
-                    TAG_ARR     => Tag::Array,
-                    TAG_BOOL_ARR => Tag::BoolArray,
-                    TAG_SET     => Tag::Set,
-                    TAG_MAP     => Tag::Map,
-                    TAG_TBL     => Tag::Table,
-                    TAG_FUNC | TAG_FUNC_PTR => Tag::Function,
-                    TAG_ROW     => Tag::Row,
-                    TAG_JSON    => Tag::Json,
-                    TAG_FIB     => Tag::Fiber,
-                    TAG_DB      => Tag::Database,
-                    TAG_CLOSURE => Tag::Unknown,
-                    _           => Tag::Unknown,
-                }
-            }
             _ => Tag::Unknown,
         }
     }
@@ -346,13 +317,11 @@ impl Value {
 
     #[inline]
     pub unsafe fn inc_ref(&self) {
-        if self.tag == TAG_ARENA { return; }
         unsafe { ref_count::inc_ref(self) }
     }
 
     #[inline]
     pub unsafe fn dec_ref(&self) {
-        if self.tag == TAG_ARENA { return; }
         unsafe { ref_count::dec_ref(self) }
     }
 
@@ -370,15 +339,6 @@ impl Value {
         if dest.is_ptr() { unsafe { dest.dec_ref(); } }
         *dest = *self;
     }
-
-    // --- Comparison helpers ---
-
-    pub fn xcx_eq(&self, rhs: &Self) -> bool { self == rhs }
-    pub fn xcx_ne(&self, rhs: &Self) -> bool { self != rhs }
-    pub fn xcx_lt(&self, rhs: &Self) -> bool { self < rhs }
-    pub fn xcx_le(&self, rhs: &Self) -> bool { self <= rhs }
-    pub fn xcx_gt(&self, rhs: &Self) -> bool { self > rhs }
-    pub fn xcx_ge(&self, rhs: &Self) -> bool { self >= rhs }
 
     pub fn variant_rank(&self) -> u8 {
         match self.tag {
@@ -442,10 +402,6 @@ impl Value {
     #[inline] pub fn as_function_idx(&self) -> u32          { heap_object::as_function_idx(self) }
     pub fn as_function(&self) -> Arc<crate::vm::object::FunctionObj> { heap_object::as_function(self) }
 
-    pub fn as_array_opt(&self) -> Option<Arc<RwLock<ArrayObj>>> {
-        if self.is_array() { Some(self.as_array()) } else { None }
-    }
-
     pub fn to_sql_value(&self) -> rusqlite::types::Value { heap_object::to_sql_value(self) }
 
     #[inline]
@@ -455,18 +411,13 @@ impl Value {
         s.data.as_slice() == other.as_bytes()
     }
 
-    /// Safely borrows the underlying string slice if this is a String or an Arena String.
+    /// Safely borrows the underlying string slice if this is a String.
     /// Returns None for other types. In order to avoid allocating new String objects, this
     /// method returns a direct, zero-copy borrowed string reference.
     pub unsafe fn as_str_borrow<'a>(&'a self) -> Option<&'a str> {
         if self.tag == TAG_STR {
             unsafe {
                 let p = self.unpack_ptr::<StringObj>();
-                Some(std::str::from_utf8_unchecked(&(*p).data))
-            }
-        } else if self.tag == TAG_ARENA && heap_object::arena_inner_tag(self) == TAG_STR {
-            unsafe {
-                let p = heap_object::arena_ptr::<StringObj>(self);
                 Some(std::str::from_utf8_unchecked(&(*p).data))
             }
         } else {
@@ -481,7 +432,6 @@ impl Value {
     }
 
     pub fn to_string(&self) -> String { heap_object::to_string(self) }
-    pub fn typeof_str(&self) -> &'static str { self.type_name() }
 
     pub fn cast_int(&self) -> i64 {
         if self.is_int()    { self.as_i64() }

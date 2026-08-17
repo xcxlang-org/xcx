@@ -3,6 +3,5 @@ pub mod executor;
 pub mod dispatch;
 pub mod step;
 pub mod jit_helpers;
-pub mod arena;
 pub mod runtime_ops;
 mod tests;

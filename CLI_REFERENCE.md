@@ -27,7 +27,7 @@ Flagi mogą być przekazywane po nazwie pliku. Dodatkowo XCX wspiera unikalne ł
 | `--version` | `-v`, `version` | Wyświetla wersję kompilatora, system operacyjny oraz architekturę (np. `xcx 4.2 (linux/x86_64)`). |
 | `--no-jit` | — | Wyłącza kompilator JIT. Kod jest wykonywany wyłącznie przez czysty interpreter bajtokodu. |
 | `--no-inline` | — | Wyłącza pass optymalizacyjny inlinowania na poziomie HIR (High-Level IR). |
-| `--threshold=N` | `--th=N` | Ustawia próg detekcji hot-spotów (pętli) aktywujących kompilację JIT (domyślnie: `50`). |
+| `--threshold=N` | `--th=N` | Ustawia próg nagrzewania (liczbę wywołań funkcji), po przekroczeniu którego funkcja jest kompilowana przez JIT (domyślnie: `50`). |
 | `--check` | — | Tryb sprawdzania ("dry run"). Analizuje składnię i semantykę (typy) pliku bez uruchamiania go w VM. |
 | `--bytecode` | — | Generuje i zrzuca na `stdout` pulę stałych oraz bajtokod sekcji głównej i funkcji, po czym kończy działanie. |
 
@@ -61,7 +61,7 @@ Wewnątrz sesji REPL polecenia specjalne rozpoczynają się od znaku `!`:
 | `!exec` | Wykonuje aktualnie wpisany wielowierszowy bufor kodu. |
 | `!help` | Wyświetla wbudowany system pomocy XCX (składnia, typy danych, wbudowane funkcje). |
 | `!globals` | Wyświetla tabelę zaktualizowanych zmiennych globalnych, ich typy oraz wartości. |
-| `!jit` | Wyświetla diagnostykę kompilatora JIT (próg, liczba wykrytych pętli i skompilowanych ścieżek). |
+| `!jit` | Wyświetla diagnostykę kompilatora JIT (czy JIT jest włączony oraz próg kompilacji). |
 | `!clear` | Czyści ekran terminala. |
 | `!reset` | Resetuje stan maszynki VM, czyści zmienne i resetuje powłokę REPL. |
 | `!exit` | Zamyka powłokę REPL i wychodzi z programu (alternatywa: `.terminal !exit;`). |

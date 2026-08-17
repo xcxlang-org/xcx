@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use parking_lot::RwLock;
 use crate::vm::object::{
-    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, FunctionObj, ClosureObj, BoolArrayObj
+    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, FunctionObj, BoolArrayObj
 };
 use super::value::Value;
 use super::nan_boxing::*;
@@ -19,7 +19,6 @@ pub fn from_json(j: Arc<JsonObj>)               -> Value { Value::pack_ptr(Arc::
 pub fn from_fiber(f: Arc<RwLock<FiberObj>>)     -> Value { Value::pack_ptr(Arc::into_raw(f), TAG_FIB) }
 pub fn from_db(d: Arc<DatabaseObj>)             -> Value { Value::pack_ptr(Arc::into_raw(d), TAG_DB) }
 pub fn from_function_ptr(f: Arc<FunctionObj>)   -> Value { Value::pack_ptr(Arc::into_raw(f), TAG_FUNC_PTR) }
-pub fn from_closure(c: Arc<ClosureObj>)         -> Value { Value::pack_ptr(Arc::into_raw(c), TAG_CLOSURE) }
 pub fn from_row(r: Arc<RowObj>)                 -> Value { Value::pack_ptr(Arc::into_raw(r), TAG_ROW) }
 
 /// Date is stored inline: bits = timestamp in ms, tag = TAG_DATE.
@@ -27,35 +26,9 @@ pub fn from_date(ts: i64) -> Value {
     Value { bits: ts as u64, tag: TAG_DATE }
 }
 
-/// Arena strings and JSON are stored as raw pointers with TAG_ARENA.
-/// The inner type is encoded in the upper 4 bits of the bits field.
-pub fn from_arena_string(s: *const StringObj) -> Value {
-    Value { bits: (s as u64) | ((TAG_STR as u64) << 48), tag: TAG_ARENA }
-}
-
-pub fn from_arena_json(j: *const JsonObj) -> Value {
-    Value { bits: (j as u64) | ((TAG_JSON as u64) << 48), tag: TAG_ARENA }
-}
-
-/// Returns the inner type tag for arena values.
-/// The inner tag is stored in bits 48-55 of `bits`.
-pub fn arena_inner_tag(val: &Value) -> u64 {
-    debug_assert_eq!(val.tag, TAG_ARENA);
-    (val.bits >> 48) & 0xFF
-}
-
-/// Returns the raw pointer for arena values (bits 0-47).
-pub fn arena_ptr<T>(val: &Value) -> *const T {
-    (val.bits & 0x0000_FFFF_FFFF_FFFF) as *const T
-}
-
 // --- Accessors ---
 
 pub fn as_string(val: &Value) -> Arc<StringObj> {
-    if val.tag == TAG_ARENA {
-        let p = arena_ptr::<StringObj>(val);
-        return Arc::new(unsafe { (*p).clone() });
-    }
     debug_assert!(val.is_string(), "Expected String, found {:?}", val.tag());
     unsafe {
         let p = val.unpack_ptr::<StringObj>();
@@ -122,10 +95,6 @@ pub fn as_table(val: &Value) -> Arc<RwLock<TableObj>> {
 }
 
 pub fn as_json(val: &Value) -> Arc<JsonObj> {
-    if val.tag == TAG_ARENA {
-        let p = arena_ptr::<JsonObj>(val);
-        return Arc::new(unsafe { (*p).clone() });
-    }
     debug_assert!(val.is_json(), "Expected JSON, found {:?}", val.tag());
     unsafe {
         let p = val.unpack_ptr::<JsonObj>();
@@ -177,16 +146,6 @@ pub fn as_function(val: &Value) -> Arc<FunctionObj> {
     }
 }
 
-pub fn as_closure(val: &Value) -> Arc<ClosureObj> {
-    unsafe {
-        let p = val.unpack_ptr::<ClosureObj>();
-        let arc: Arc<ClosureObj> = Arc::from_raw(p);
-        let cl = arc.clone();
-        std::mem::forget(arc);
-        cl
-    }
-}
-
 /// Date: bits field IS the timestamp in milliseconds.
 pub fn as_date(val: &Value) -> i64 {
     debug_assert_eq!(val.tag, TAG_DATE, "Expected Date");
@@ -222,17 +181,22 @@ pub fn to_string(val: &Value) -> String {
                     return String::from_utf8_lossy(&s.data).into_owned();
                 }
             }
-            let mut buf = String::with_capacity(4096);
+            let capacity = match &arc.root {
+                crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
+                crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
+                _ => 1024,
+            };
+            let mut buf = String::with_capacity(capacity.max(4096));
             arc.root.to_string_buf(&mut buf);
-            let s = buf;
-            let string_obj = Arc::new(StringObj::new(s.into_bytes()));
+            let result_str = buf.clone();
+            let string_obj = Arc::new(StringObj::new(buf.into_bytes()));
             
             let mut lock = arc.cached_str.lock();
             if arc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
                 *lock = Some(string_obj.clone());
                 arc.cached_version.store(ver, std::sync::atomic::Ordering::Release);
             }
-            String::from_utf8_lossy(&string_obj.data).into_owned()
+            result_str
         }
         TAG_ARR   => {
             let arc = as_array(val);
@@ -288,11 +252,6 @@ pub fn to_string(val: &Value) -> String {
         TAG_DB    => {
             let arc = as_db(val);
             format!("Database(engine={}, path={})", arc.engine, arc.path)
-        }
-        TAG_ARENA => {
-            let inner = arena_inner_tag(val);
-            let tmp = Value { bits: arena_ptr::<()>(val) as u64, tag: inner as u64 };
-            to_string(&tmp)
         }
         _ => format!("Value(tag={}, bits={:x})", val.tag, val.bits),
     }

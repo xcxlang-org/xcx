@@ -1,0 +1,17 @@
+table: payload_tbl {
+    columns = [ id :: i, name :: s, active :: b ]
+    rows = [EMPTY]
+};
+
+for i in 0 to 9999 do;
+    payload_tbl.add(i, "User_" + s(i), true);
+end;
+
+i: t0 = perf.us();
+json: data = payload_tbl.toJson();
+json: item = data.get(5000);
+s: extracted_name;
+item.bind("name", extracted_name);
+i: t1 = perf.us();
+f: json_ms = f(t1 - t0) / 1000.0;
+>! "json_elapsed_ms: " + s(json_ms);

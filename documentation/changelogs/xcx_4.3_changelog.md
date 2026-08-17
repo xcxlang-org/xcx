@@ -38,3 +38,34 @@ Dotyczy: FreeBSD 14+ (kernel W^X), oraz każdy system, na którym JIT nie może 
 - **[FIX] Obsługa standardowego wyjścia i statusu wyjścia**:
   - `OpCode::TerminalRun` oraz `xcx_jit_terminal_run` (w ścieżka JIT) wypisują przechwycony bufor `stdout` procesu potomnego bezpośrednio na konsolę terminala (`write_buffered` + `flush_buffered`).
   - Funkcje zwracają ciąg wyjściowy `Value::from_string(stdout)` przy sukcesie (lub `Value::from_bool(true)` gdy wyjście jest puste) oraz `Value::from_bool(false)` przy błędzie/niepowodzeniu procesu, umożliwiając prawidłową ewaluację wyrażeń warunkowych (np. `if (NOT .terminal !run target)` w menedżerze pakietów `PAX`).
+
+---
+
+## Crypto: Fix random token length representation
+
+- **[FIX]** Modified `crypto.token(len)` to generate `len * 2` hexadecimal characters rather than `len` characters. The parameter `len` represents the length of the token in bytes, meaning the output hexadecimal string representation is now correctly `2 * len` characters long.
+
+---
+
+## JIT: Poprawa precyzji wnioskowania typów parametrów (Type Inference)
+
+- **[FIX]** Wprowadzono dwukierunkową propagację ograniczeń typów w `infer_param_types`. Poprzednio mechanizm wnioskowania typów przypisywał statyczny typ `TypeTag::Int` do parametrów na podstawie samego wystąpienia operacji arytmetycznych (`Add`, `Sub`, `Mul` itp.) lub porównań (`Less`, `Greater` itp.). Powodowało to błędy (np. w `nested_func_expr_arg`), gdzie wartości zmiennoprzecinkowe przekazywane do zagnieżdżonych funkcji były nieprawidłowo traktowane jako liczby całkowite, co prowadziło do uszkodzenia wartości rejestrów / zwracania `0` w JIT.
+- **[REF]** Nowy mechanizm propaguje typy wstecz i w przód, na podstawie typów stałych (`LoadConst`), rzutowań (`Cast*`) i instrukcji specyficznych dla typu (np. operacji pętlowych i inkrementacji). Zabezpiecza to poprawność typowania zmiennych zmiennoprzecinkowych, jednocześnie w pełni zachowując optymalizacje JIT dla operacji na liczbach całkowitych (np. w benchmarku `fib(30)`).
+
+---
+
+## Store: Rekurencyjne usuwanie katalogów (Directory Deletion)
+
+- **[FIX]** Zmodyfikowano funkcję `store.delete()` w ścieżce interpretera (`read_write.rs`) oraz pomocnika JIT `xcx_jit_store_delete` (`jit_helpers.rs`). Poprzednio obie funkcje bezwarunkowo wywoływały `std::fs::remove_file`, co skutkowało błędem i zwróceniem `false` przy próbie usunięcia katalogu. Obecnie sprawdzane jest czy ścieżka to katalog – w takim przypadku usuwana jest rekurencyjnie za pomocą `std::fs::remove_dir_all`, w przeciwnym razie przez `std::fs::remove_file`.
+
+---
+
+## Terminal: Zapobieganie nieprawidłowemu wzrostowi licznika błędów w funkcjach i zasięgu globalnym (Fix `terminal_error_count`)
+
+- **[FIX]** Zmodyfikowano kompilatory AST (`call.rs`) oraz HIR (`compile_expr_special.rs`), dodając obsługę przestrzeni nazw `terminal`. Metody takie jak `.write()`, `.clear()`, `.raw()`, `.normal()`, `.cursor()`, `.move()`, `.exit()`, `.run()` są teraz prawidłowo wykrywane i bezpośrednio kompilowane do ich dedykowanych kodów operacji VM (opcodes), zamiast wywoływania ogólnej metody pomocniczej JIT/VM `xcx_jit_method_call_custom` z odbiornikiem `TAG_STR` ("terminal"), co uprzednio skutkowało błędnym podbiciem wewnętrznego licznika błędów (`error_count`) przy każdym wywołaniu.
+
+---
+
+## Input: Filtrowanie zdarzeń zwolnienia klawiszy w trybie surowym (Fix `double_input_event`)
+
+- **[FIX]** Zmodyfikowano obsługę wejścia w funkcjach `input()`, `read_key()` oraz `wait_key()` w pliku `input.rs` tak, aby odfiltrowywały zdarzenia `KeyEventKind::Release` (czyli puszczenie klawisza) podczas pobierania zdarzeń klawiatury za pomocą biblioteki `crossterm`. Poprzednio brak filtrowania powodował, że jedno fizyczne naciśnięcie klawisza na systemie Windows generowało dwa zdarzenia o tym samym kodzie klawisza (wcisku i puszczenia), co podwójnie wyzwalało rejestrację zdarzenia w maszynie wirtualnej.

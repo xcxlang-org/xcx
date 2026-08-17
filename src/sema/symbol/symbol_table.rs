@@ -77,20 +77,6 @@ impl<'a> SymbolTable<'a> {
         None
     }
 
-    pub fn lookup_symbol(&self, name: &str) -> Option<Symbol> {
-        let name = name.trim();
-        let mut curr = Some(self);
-        while let Some(st) = curr {
-            for scope in st.scopes.iter().rev() {
-                if let Some(symbol) = scope.lookup(name) {
-                    return Some(symbol.clone());
-                }
-            }
-            curr = st.parent;
-        }
-        None
-    }
-    
     pub fn is_const(&self, name: &str) -> bool {
         let name = name.trim();
         let mut curr = Some(self);
@@ -103,16 +89,5 @@ impl<'a> SymbolTable<'a> {
             curr = st.parent;
         }
         false
-    }
-
-    pub fn _copy_globals(&self) -> Self {
-        let mut curr = self;
-        while let Some(p) = curr.parent {
-            curr = p;
-        }
-        Self {
-            parent: None,
-            scopes: vec![curr.scopes[0].clone()],
-        }
     }
 }

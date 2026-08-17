@@ -1,4 +1,4 @@
-XCX 4.2 — Compiler & Runtime (Windows)
+XCX 4.3 — Compiler & Runtime (Windows)
 
 XCX is a backend programming language with a built-in JIT-enabled runtime.
 

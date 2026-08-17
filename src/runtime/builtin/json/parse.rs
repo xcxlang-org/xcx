@@ -1,17 +1,59 @@
 use crate::vm::value::Value;
 use crate::vm::utils::json::json_val_to_value;
 
+struct JsonCache {
+    map: std::collections::HashMap<String, crate::vm::object::JsonVal>,
+    order: std::collections::VecDeque<String>,
+    total_len: usize,
+}
+
+impl JsonCache {
+    fn new() -> Self {
+        Self {
+            map: std::collections::HashMap::with_capacity(16),
+            order: std::collections::VecDeque::with_capacity(16),
+            total_len: 0,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<crate::vm::object::JsonVal> {
+        self.map.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: String, val: crate::vm::object::JsonVal) {
+        let key_len = key.len();
+        
+        if self.map.contains_key(&key) {
+            self.map.insert(key.clone(), val);
+            if let Some(pos) = self.order.iter().position(|x| x == &key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key);
+            return;
+        }
+
+        while (self.order.len() >= 16 || self.total_len + key_len > 512_000) && !self.order.is_empty() {
+            if let Some(oldest) = self.order.pop_front() {
+                self.total_len = self.total_len.saturating_sub(oldest.len());
+                self.map.remove(&oldest);
+            }
+        }
+
+        self.total_len += key_len;
+        self.order.push_back(key.clone());
+        self.map.insert(key, val);
+    }
+}
+
 // Implementation of JSON parsing for the XCX runtime.
 // Parses a JSON string into an XCX Value (Map, Array, or primitive).
 pub fn handle_json_parse(json_str: &str) -> Value {
     thread_local! {
-        static JSON_CACHE: std::cell::RefCell<std::collections::HashMap<String, crate::vm::object::JsonVal>> = 
-            std::cell::RefCell::new(std::collections::HashMap::with_capacity(128));
+        static JSON_CACHE: std::cell::RefCell<JsonCache> = std::cell::RefCell::new(JsonCache::new());
     }
 
     let cached_val = JSON_CACHE.with(|c| {
-        let cache = c.borrow();
-        cache.get(json_str).map(|v| v.deep_clone())
+        c.borrow().get(json_str)
     });
 
     if let Some(val) = cached_val {
@@ -32,13 +74,11 @@ pub fn handle_json_parse(json_str: &str) -> Value {
         }
     };
 
-    JSON_CACHE.with(|c| {
-        let mut cache = c.borrow_mut();
-        if cache.len() >= 128 {
-            cache.clear();
-        }
-        cache.insert(json_str.to_string(), json_val.clone());
-    });
+    if json_str.len() <= 16384 {
+        JSON_CACHE.with(|c| {
+            c.borrow_mut().insert(json_str.to_string(), json_val.clone());
+        });
+    }
 
     let res = json_val_to_value(&json_val);
     unsafe { res.inc_ref(); }

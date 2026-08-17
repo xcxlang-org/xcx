@@ -1,6 +1,6 @@
 # XCX Compiler Technical Documentation Suite
 
-This directory contains the comprehensive technical architectural specifications and compiler documentation for the XCX language compiler system (v4.2).
+This directory contains the comprehensive technical architectural specifications and compiler documentation for the XCX language compiler system (v4.3).
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ This directory contains the comprehensive technical architectural specifications
 - [HIR Codegen](hir/hir_codegen.md): HIR-to-bytecode compilation, shared with the AST codegen path.
 
 ### 5. [JIT Compilation Engine](jit/)
-- [Core JIT Engine](jit/jit_core.md): Trace compiler integration, wrapper/inner call conventions, symbol registration helpers.
+- [Core JIT Engine](jit/jit_core.md): Cranelift integration, the method compilation pipeline, wrapper/inner call conventions, symbol registration helpers.
 - [JIT Code Gen Context](jit/jit_codegen.md): Cranelift variable setups, pointer-elision static analysis, JIT type tag inferences, and NaN-boxing bit rules.
 - [JIT Emitters](jit/jit_emitters.md): Low-level machine representations.
 

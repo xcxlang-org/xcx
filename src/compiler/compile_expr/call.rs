@@ -101,6 +101,73 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                         return dst;
                     }
                 }
+                if rname == "terminal" {
+                    match method_name.as_str() {
+                        "write" => {
+                            if let Some(arg) = args.first() {
+                                let dst = fc.push_reg();
+                                let src = fc.compile_expr(arg.expr(), ctx);
+                                fc.emit(OpCode::TerminalWrite { dst, src }, &expr.span);
+                                fc.pop_reg();
+                                return dst;
+                            }
+                        }
+                        "clear" => {
+                            let dst = fc.push_reg();
+                            fc.emit(OpCode::TerminalClear { dst }, &expr.span);
+                            return dst;
+                        }
+                        "raw" => {
+                            let dst = fc.push_reg();
+                            fc.emit(OpCode::TerminalRaw { dst }, &expr.span);
+                            return dst;
+                        }
+                        "normal" | "cooked" => {
+                            let dst = fc.push_reg();
+                            fc.emit(OpCode::TerminalNormal { dst }, &expr.span);
+                            return dst;
+                        }
+                        "cursor" => {
+                            if let Some(arg) = args.first() {
+                                let val_str = match &arg.expr().kind {
+                                    ExprKind::Tag(id) => ctx.interner.lookup(*id),
+                                    ExprKind::StringLiteral(id) => ctx.interner.lookup(*id),
+                                    _ => "",
+                                };
+                                let on = val_str == "on";
+                                let dst = fc.push_reg();
+                                fc.emit(OpCode::TerminalCursor { dst, on }, &expr.span);
+                                return dst;
+                            }
+                        }
+                        "move" => {
+                            if args.len() >= 2 {
+                                let dst = fc.push_reg();
+                                let x_src = fc.compile_expr(args[0].expr(), ctx);
+                                let y_src = fc.compile_expr(args[1].expr(), ctx);
+                                fc.emit(OpCode::TerminalMove { dst, x_src, y_src }, &expr.span);
+                                fc.pop_reg();
+                                fc.pop_reg();
+                                return dst;
+                            }
+                        }
+                        "exit" => {
+                            let dst = fc.push_reg();
+                            fc.emit(OpCode::TerminalExit { dst }, &expr.span);
+                            return dst;
+                        }
+                        "run" => {
+                            if let Some(arg) = args.first() {
+                                let dst = fc.push_reg();
+                                let cmd_src = fc.compile_expr(arg.expr(), ctx);
+                                fc.emit(OpCode::TerminalRun { dst, cmd_src }, &expr.span);
+                                fc.pop_reg();
+                                return dst;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
             
             if is_net {

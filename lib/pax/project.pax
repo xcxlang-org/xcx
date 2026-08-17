@@ -3,12 +3,19 @@ PAX Project Configuration
 *---
 /
     name        :: "pax",
-    version     :: "4.2.0",
+    version     :: "4.3.0",
     author      :: "xcx-official",
     description :: "PAX project",
-    tags  :: [],
-    files :: [],
+    tags  :: ["package-manager", "cli", "tui"],
+    files :: [
+        "src/colors.xcx",
+        "src/progress.xcx",
+        "src/tui.xcx",
+        "src/demo.xcx",
+        "src/pax.xcx"
+    ],
     deps  :: [
 
     ]
 /
+

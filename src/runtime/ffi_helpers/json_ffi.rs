@@ -18,14 +18,8 @@ pub unsafe extern "C" fn xcx_jit_json_get(out: *mut Value, json_bits: u64, json_
         }
     };
     
-    let json_ptr = {
-        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val)
-        } else {
-            json_val.unpack_ptr::<crate::vm::object::JsonObj>()
-        }
-    };
-    
+    let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>();
+
     let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     let v_opt = if is_simple {
@@ -74,22 +68,17 @@ pub unsafe extern "C" fn xcx_jit_json_set(json_bits: u64, json_tag: u64, path_bi
         }
     };
     
-    let json_ptr = {
-        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
-        } else {
-            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
-        }
-    };
+    let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj;
     
     let val = Value { bits: val_bits, tag: val_tag };
     let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     unsafe {
         (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
+        (*json_ptr).root.make_mutable();
         
         if is_simple {
-            if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
+            if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
                 let obj = &mut *(*o).data_ptr();
                 if let Some(pos) = obj.iter().position(|(k, _)| k.as_str() == path_str) {
                     obj[pos].1 = value_to_json(&val);
@@ -111,19 +100,14 @@ pub unsafe extern "C" fn xcx_jit_json_push(json_bits: u64, json_tag: u64, val_bi
     let json_val = Value { bits: json_bits, tag: json_tag };
     if !json_val.is_json() { return 0; }
 
-    let json_ptr = {
-        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
-        } else {
-            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
-        }
-    };
+    let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj;
 
     let val = Value { bits: val_bits, tag: val_tag };
 
     unsafe {
         (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
-        if let crate::vm::object::JsonVal::Array(a) = &(*json_ptr).root {
+        (*json_ptr).root.make_mutable();
+        if let crate::vm::object::JsonVal::Array(a) = &mut (*json_ptr).root {
             let arr = &mut *(*a).data_ptr();
             arr.push(value_to_json(&val));
             1
@@ -150,13 +134,7 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
         }
     };
     
-    let json_ptr = {
-        if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-            crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val) as *mut crate::vm::object::JsonObj
-        } else {
-            json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
-        }
-    };
+    let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj;
     
     let val = Value { bits: val_bits, tag: val_tag };
     let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
@@ -165,9 +143,11 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
         (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
         
         if is_simple {
-            if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
+            (*json_ptr).root.make_mutable();
+            if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
                 let o_write = &mut *(*o).data_ptr();
                 if let Some(pos) = o_write.iter().position(|(k, _)| k.as_str() == path_str) {
+                    o_write[pos].1.make_mutable();
                     if let crate::vm::object::JsonVal::Array(a) = &mut o_write[pos].1 {
                         let arr = &mut *(*a).data_ptr();
                         arr.push(value_to_json(&val));
@@ -177,17 +157,9 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
             }
         }
         
-        let pointer = normalize_json_path(path_str);
-        if let Some(target) = (*json_ptr).root.pointer(&pointer) {
-            if let crate::vm::object::JsonVal::Array(a) = target {
-                let arr = &mut *(*a).data_ptr();
-                arr.push(value_to_json(&val));
-            } else {
-                panic!("halt.error: Cannot push to a non-array JSON object (R306)");
-            }
-        } else {
-            panic!("halt.error: Target array not found in JSON (R306)");
-        }
+        let mut root_copy = (*json_ptr).root.clone();
+        crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, value_to_json(&val));
+        (*json_ptr).root = root_copy;
     }
 }
 
@@ -199,11 +171,7 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
         return;
     }
 
-    let json_ptr = if json_val.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-        crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json_val)
-    } else {
-        json_val.unpack_ptr::<crate::vm::object::JsonObj>()
-    };
+    let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>();
 
     unsafe {
         let ver = (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire);
@@ -217,18 +185,15 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
             }
         }
 
-        thread_local! {
-            static SERIALIZE_BUF: std::cell::RefCell<String> = std::cell::RefCell::new(String::with_capacity(4096));
-        }
+        let capacity = match &(*json_ptr).root {
+            crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
+            crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
+            _ => 1024,
+        };
+        let mut buf = String::with_capacity(capacity.max(4096));
+        (*json_ptr).root.to_string_buf(&mut buf);
 
-        let s = SERIALIZE_BUF.with(|cell| {
-            let mut buf = cell.borrow_mut();
-            buf.clear();
-            (*json_ptr).root.to_string_buf(&mut buf);
-            buf.clone()
-        });
-
-        let string_obj = std::sync::Arc::new(crate::vm::object::StringObj::new(s.into_bytes()));
+        let string_obj = std::sync::Arc::new(crate::vm::object::StringObj::new(buf.into_bytes()));
         
         let mut lock = (*json_ptr).cached_str.lock();
         if (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire) == ver {
@@ -240,3 +205,4 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
         *out = res;
     }
 }
+

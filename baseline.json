@@ -1,0 +1,34 @@
+// main suite
+{
+  "#": "11",
+  "Language / runtime": "XCX 4.3 [JIT]",
+  "FIB (30)": "10.92ms",
+  "LCG (100M)": "105.70ms",
+  "SIEVE": "36.76ms",
+  "JSON": "0.12ms"
+}
+// loop suite
+{
+  "#": "08",
+  "Language / runtime": "XCX 4.3 [JIT]",
+  "NESTED": "260.65ms",
+  "STEP": "40.10ms",
+  "WHILE": "237.33ms",
+  "WHILE_CD": "225.72ms",
+  "ARRAY": "5.01ms",
+  "SET": "4.70ms",
+  "BREAK": "431.38ms",
+  "CONTINUE": "574.54ms",
+  "ARITH": "2.19ms",
+  "CONCAT": "2.64ms",
+  "TOTAL": "1784.26ms"
+}
+// func & arith
+{
+  "#": "09",
+  "Language / runtime": "XCX 4.3 [JIT]",
+  "CROSS FUNC (1M)": "16.390ms",
+  "INLINE ARITH (1M)": "0.522ms",
+  "ARRAY ALLOC (1M)": "22.316ms",
+  "GEO MEAN": "5.66ms"
+}

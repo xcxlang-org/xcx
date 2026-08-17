@@ -1,0 +1,36 @@
+--- decompose sieve into parts to find the hot loop ---
+i: limit = 10000000;
+array:b: sieve;
+
+for i in 0 to limit do;
+    sieve.push(true);
+end;
+sieve.update(0, false);
+sieve.update(1, false);
+
+--- Part 1: while + inner @step loop only (no counting) ---
+i: t4 = perf.us();
+i: p = 2;
+while (p * p <= limit) do;
+    if (sieve.get(p)) then;
+        for m in (p * p) to limit @step p do;
+            sieve.update(m, false);
+        end;
+    end;
+    p = p + 1;
+end;
+i: t5 = perf.us();
+f: p1 = f(t5 - t4) / 1000.0;
+>! "part1 (sieve loops): " + s(p1) + " ms";
+
+--- Part 2: counting loop only ---
+i: t6 = perf.us();
+i: prime_count = 0;
+for i in 2 to limit do;
+    if (sieve.get(i)) then;
+        prime_count = prime_count + 1;
+    end;
+end;
+i: t7 = perf.us();
+f: p2 = f(t7 - t6) / 1000.0;
+>! "part2 (count loop): " + s(p2) + " ms (primes=" + s(prime_count) + ")";

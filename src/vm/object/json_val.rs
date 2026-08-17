@@ -1,5 +1,26 @@
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::collections::HashMap;
+use std::cell::RefCell;
+
+thread_local! {
+    static KEY_CACHE: RefCell<HashMap<String, Arc<String>>> = RefCell::new(HashMap::with_capacity(64));
+}
+
+pub fn intern_key(k: String) -> Arc<String> {
+    KEY_CACHE.with(|cache| {
+        let mut map = cache.borrow_mut();
+        if let Some(arc) = map.get(&k) {
+            Arc::clone(arc)
+        } else {
+            let arc = Arc::new(k.clone());
+            if map.len() < 1000 {
+                map.insert(k, Arc::clone(&arc));
+            }
+            arc
+        }
+    })
+}
 
 #[derive(Clone)]
 pub enum JsonVal {
@@ -7,7 +28,7 @@ pub enum JsonVal {
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(Arc<String>),
+    String(Arc<crate::vm::object::StringObj>),
     Array(Arc<RwLock<Vec<JsonVal>>>),
     Object(Arc<RwLock<Vec<(Arc<String>, JsonVal)>>>),
 }
@@ -79,13 +100,13 @@ impl JsonVal {
                     JsonVal::Null
                 }
             }
-            serde_json::Value::String(s) => JsonVal::String(Arc::new(s)),
+            serde_json::Value::String(s) => JsonVal::String(Arc::new(crate::vm::object::StringObj::new(s.into_bytes()))),
             serde_json::Value::Array(arr) => {
                 let vec: Vec<JsonVal> = arr.into_iter().map(JsonVal::from_serde).collect();
                 JsonVal::Array(Arc::new(RwLock::new(vec)))
             }
             serde_json::Value::Object(o) => {
-                let vec: Vec<(Arc<String>, JsonVal)> = o.into_iter().map(|(k, v)| (Arc::new(k), JsonVal::from_serde(v))).collect();
+                let vec: Vec<(Arc<String>, JsonVal)> = o.into_iter().map(|(k, v)| (intern_key(k), JsonVal::from_serde(v))).collect();
                 JsonVal::Object(Arc::new(RwLock::new(vec)))
             }
         }
@@ -97,7 +118,7 @@ impl JsonVal {
             JsonVal::Bool(b) => serde_json::Value::Bool(*b),
             JsonVal::Int(i) => serde_json::Value::Number((*i).into()),
             JsonVal::Float(f) => serde_json::Value::Number(serde_json::Number::from_f64(*f).unwrap_or_else(|| serde_json::Number::from(0))),
-            JsonVal::String(s) => serde_json::Value::String((**s).clone()),
+            JsonVal::String(s) => serde_json::Value::String(String::from_utf8_lossy(&s.data).into_owned()),
             JsonVal::Array(a) => {
                 let mut arr = vec![];
                 for v in a.read().iter() {
@@ -164,7 +185,11 @@ impl JsonVal {
                 write!(buf, "{}", f).unwrap();
             }
             JsonVal::String(s) => {
-                escape_str_to_buf(s, buf);
+                if let Ok(s_str) = std::str::from_utf8(&s.data) {
+                    escape_str_to_buf(s_str, buf);
+                } else {
+                    escape_str_to_buf(&String::from_utf8_lossy(&s.data), buf);
+                }
             }
             JsonVal::Array(a) => {
                 buf.push('[');
@@ -228,17 +253,21 @@ impl JsonVal {
         Some(current)
     }
 
-    pub fn shallow_clone(&self) -> Self {
+    pub fn make_mutable(&mut self) {
         match self {
             JsonVal::Array(a) => {
-                let vec = unsafe { &*(*a).data_ptr() };
-                JsonVal::Array(Arc::new(RwLock::new(vec.clone())))
+                if Arc::strong_count(a) > 1 {
+                    let vec = unsafe { &*(*a).data_ptr() };
+                    *self = JsonVal::Array(Arc::new(RwLock::new(vec.clone())));
+                }
             }
             JsonVal::Object(o) => {
-                let vec = unsafe { &*(*o).data_ptr() };
-                JsonVal::Object(Arc::new(RwLock::new(vec.clone())))
+                if Arc::strong_count(o) > 1 {
+                    let vec = unsafe { &*(*o).data_ptr() };
+                    *self = JsonVal::Object(Arc::new(RwLock::new(vec.clone())));
+                }
             }
-            other => other.clone(),
+            _ => {}
         }
     }
 
@@ -258,3 +287,4 @@ impl JsonVal {
         }
     }
 }
+

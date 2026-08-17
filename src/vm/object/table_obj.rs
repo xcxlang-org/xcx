@@ -22,7 +22,7 @@ pub struct VMColumn {
 pub struct TableObj {
     pub table_name: String,
     pub columns: Vec<VMColumn>,
-    pub rows: Vec<Vec<Value>>,
+    pub rows: Vec<Value>,
     pub sql_binding: Option<SqlBinding>,
     pub sql_where: Option<String>,
     pub pending_op: Option<MethodKind>,
@@ -30,10 +30,8 @@ pub struct TableObj {
 
 impl Clone for TableObj {
     fn clone(&self) -> Self {
-        for row in &self.rows {
-            for val in row {
-                unsafe { val.inc_ref(); }
-            }
+        for val in &self.rows {
+            unsafe { val.inc_ref(); }
         }
         TableObj {
             table_name: self.table_name.clone(),
@@ -61,32 +59,39 @@ impl std::fmt::Debug for SqlBinding {
 }
 
 impl TableObj {
+    pub fn len(&self) -> usize {
+        let cols = self.columns.len();
+        if cols == 0 { 0 } else { self.rows.len() / cols }
+    }
+
     pub fn to_json(&self) -> crate::vm::object::JsonVal {
         let col_keys: Vec<std::sync::Arc<String>> = self.columns
             .iter()
-            .map(|c| std::sync::Arc::new(c.name.clone()))
+            .map(|c| crate::vm::object::intern_key(c.name.clone()))
             .collect();
-        let mut rows = Vec::with_capacity(self.rows.len());
-        for row in &self.rows {
-            let mut obj = Vec::with_capacity(self.columns.len());
-            for (i, _col) in self.columns.iter().enumerate() {
-                if i < row.len() {
-                    obj.push((std::sync::Arc::clone(&col_keys[i]), crate::vm::utils::json::value_to_json(&row[i])));
-                }
+        let num_cols = self.columns.len();
+        let num_rows = self.len();
+        let mut json_rows = Vec::with_capacity(num_rows);
+        for r_idx in 0..num_rows {
+            let mut obj = Vec::with_capacity(num_cols);
+            for c_idx in 0..num_cols {
+                let cell_idx = r_idx * num_cols + c_idx;
+                obj.push((std::sync::Arc::clone(&col_keys[c_idx]), crate::vm::utils::json::value_to_json(&self.rows[cell_idx])));
             }
-            rows.push(crate::vm::object::JsonVal::Object(std::sync::Arc::new(parking_lot::RwLock::new(obj))));
+            json_rows.push(crate::vm::object::JsonVal::Object(std::sync::Arc::new(parking_lot::RwLock::new(obj))));
         }
-        crate::vm::object::JsonVal::Array(std::sync::Arc::new(parking_lot::RwLock::new(rows)))
+        crate::vm::object::JsonVal::Array(std::sync::Arc::new(parking_lot::RwLock::new(json_rows)))
     }
 
     pub fn to_formatted_grid(&self) -> String {
         if self.columns.is_empty() { return String::new(); }
         let mut widths: Vec<usize> = self.columns.iter().map(|c| c.name.len()).collect();
-        for row in &self.rows {
-            for (i, v) in row.iter().enumerate() {
-                if i < widths.len() {
-                    widths[i] = widths[i].max(v.to_string().len());
-                }
+        let num_cols = self.columns.len();
+        let num_rows = self.len();
+        for r_idx in 0..num_rows {
+            for c_idx in 0..num_cols {
+                let cell_idx = r_idx * num_cols + c_idx;
+                widths[c_idx] = widths[c_idx].max(self.rows[cell_idx].to_string().len());
             }
         }
         
@@ -101,12 +106,11 @@ impl TableObj {
             s.push_str(&"-".repeat(*w));
         }
         s.push('\n');
-        for row in &self.rows {
-            for (i, v) in row.iter().enumerate() {
-                if i > 0 { s.push_str(" | "); }
-                if i < widths.len() {
-                    s.push_str(&format!("{:width$}", v.to_string(), width = widths[i]));
-                }
+        for r_idx in 0..num_rows {
+            for c_idx in 0..num_cols {
+                if c_idx > 0 { s.push_str(" | "); }
+                let cell_idx = r_idx * num_cols + c_idx;
+                s.push_str(&format!("{:width$}", self.rows[cell_idx].to_string(), width = widths[c_idx]));
             }
             s.push('\n');
         }
@@ -122,10 +126,8 @@ impl PartialEq for TableObj {
 
 impl Drop for TableObj {
     fn drop(&mut self) {
-        for row in self.rows.iter() {
-            for val in row.iter() {
-                unsafe { val.dec_ref(); }
-            }
+        for val in self.rows.iter() {
+            unsafe { val.dec_ref(); }
         }
     }
 }

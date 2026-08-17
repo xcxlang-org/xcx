@@ -40,9 +40,9 @@ Function calls evaluate all arguments sequentially. Argument evaluation results 
 
 Built-in type casting operates differently and is optimized away into `CastInt`, `CastFloat`, `CastString`, and `CastBool` without function call overhead.
 
-### Closure Operations
+### Lambda Capture Operations
 
-If an inline `fn` or lambda expression captures variables from its enclosing environment, the compiler instead produces a `MakeClosure` opcode, generating an inline closure execution context. Call operations on identifiers bound to closures will evaluate as standard variables and use the `CallClosure` instruction for dynamic dispatch on the captured environment.
+If a lambda expression captures variables from its enclosing environment, `collect_captures` (`src/compiler/upvalue.rs`) computes the captured set. The captured values are passed as consecutive leading arguments: either moved into the argument registers at a call site (`compile_expr/call.rs`) or pre-bound as leading locals of a sub-compiler whose flat-local map already contains them (`compile_expr/control.rs`, `compile_query.rs`). The lambda itself compiles to a plain function value (`Value::from_function` + `LoadConst`); there is no separate closure object or closure opcode.
 
 ### Method Calls & Receiver Dispatch
 

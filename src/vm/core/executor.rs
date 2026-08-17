@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::vm::{VM, SharedContext, OpResult, Chunk, Value, OpCode, MethodKind};
-use crate::vm::trace::Trace;
 
 pub static SHUTDOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub const RECURSION_LIMIT: usize = 800;
@@ -12,9 +11,6 @@ pub struct Executor {
     pub ctx: Arc<SharedContext>,
     pub current_spans: Option<Arc<Vec<crate::error::Span>>>,
     pub fiber_yielded: bool,
-    pub hotspot: crate::vm::trace::Hotspot,
-    pub recorder: crate::vm::trace::Recorder,
-    pub trace_cache: Vec<Option<Arc<parking_lot::RwLock<Trace>>>>,
     pub terminal_raw_enabled: bool,
     pub fiber_next_ip: usize,
     pub current_bytecode_ptr: usize,
@@ -28,8 +24,6 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(vm: Arc<VM>, ctx: Arc<SharedContext>) -> Self {
-        let mut hotspot = crate::vm::trace::Hotspot::new();
-        hotspot.threshold = vm.jit_threshold;
         let globals_raw = vm.globals.read().as_ptr() as *mut Value;
         debug_assert_eq!(
             vm.globals.read().len(),
@@ -49,9 +43,6 @@ impl Executor {
             ctx,
             current_spans: None,
             fiber_yielded: false,
-            hotspot,
-            recorder: crate::vm::trace::Recorder::new(),
-            trace_cache: Vec::new(),
             terminal_raw_enabled: false,
             fiber_next_ip: 0,
             current_bytecode_ptr: 0,
@@ -395,7 +386,7 @@ impl Executor {
                         }
                     }
                 }
-                table.rows.push(row_vals);
+                table.rows.extend(row_vals);
             }
         }
         unsafe { source_val.dec_ref(); }

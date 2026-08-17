@@ -16,7 +16,7 @@ impl Executor {
         kind: MethodKind,
         args: &[Value],
         _names: Option<&[String]>,
-        _ip: usize,
+        ip: usize,
         locals: &mut [Value],
         _vm_arc: &Arc<VM>,
     ) -> OpResult {
@@ -195,10 +195,10 @@ impl Executor {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
-            _ => { 
-                // eprintln!("Method {:?} not supported for Map{}", kind, self.current_span_info(ip)); 
+            _ => {
+                eprintln!("Method {:?} not supported for Map{}", kind, self.current_span_info(ip));
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                return OpResult::Halt; 
+                return OpResult::Halt;
             }
         }
         OpResult::Continue

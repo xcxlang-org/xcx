@@ -34,7 +34,7 @@ impl Executor {
         }
 
         if !receiver.is_ptr() && !receiver.is_date() {
-            eprintln!("DEBUG: receiver is not ptr/date. Tag: {}, bits: {}, kind: {:?}", receiver.tag, receiver.bits, kind);
+            eprintln!("Method call on non-object receiver (tag {}, bits {:#x}, kind {:?}){}", receiver.tag, receiver.bits, kind, self.current_span_info(ip));
             self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return OpResult::Halt;
         }
@@ -58,7 +58,7 @@ impl Executor {
             TAG_FIB  => self.handle_fiber_method(dst, receiver.as_fiber(), kind, args, names, ip, locals, vm_arc),
             TAG_ROW  => self.handle_row_method(dst, receiver.as_row(), kind, args, names, ip, locals, vm_arc),
             _ => {
-                eprintln!("DEBUG: unknown tag {} in dispatch_method for kind: {:?}", tag, kind);
+                eprintln!("Unknown receiver tag {} in method dispatch (kind {:?}){}", tag, kind, self.current_span_info(ip));
                 self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 OpResult::Halt
             }

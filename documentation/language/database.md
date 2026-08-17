@@ -1,6 +1,6 @@
-# XCX 4.2 Database
+# XCX 4.3 Database
 Delta:
-XCX 4.2 introduces native relational database support via the `database:` type and a set of built-in methods. Version 4.2 supports **SQLite** only.
+XCX 4.3 introduces native relational database support via the `database:` type and a set of built-in methods. Version 4.3 supports **SQLite** only.
 
 ---
 

@@ -32,7 +32,7 @@ impl Executor {
                     }
                 }
             }
-            if (idx as usize) < t_mut.rows.len() {
+            if (idx as usize) < t_mut.len() {
                 if vals.is_ptr() && vals.tag == TAG_ARR {
                     let arr_rc = vals.as_array();
                     let arr = arr_rc.read();
@@ -42,8 +42,9 @@ impl Executor {
                             if ai < arr.elements.len() {
                                 let val = arr.elements[ai];
                                 unsafe { val.inc_ref(); }
-                                let old = t_mut.rows[idx as usize][ci];
-                                t_mut.rows[idx as usize][ci] = val;
+                                let cell_idx = idx as usize * t_mut.columns.len() + ci;
+                                let old = t_mut.rows[cell_idx];
+                                t_mut.rows[cell_idx] = val;
                                 unsafe { old.dec_ref(); }
                                 ai += 1;
                             }

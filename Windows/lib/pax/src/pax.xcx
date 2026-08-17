@@ -1,4 +1,4 @@
---- pax.xcx - PAX Package Manager for XCX v4.2
+--- pax.xcx - PAX Package Manager for XCX v4.3
 const s: REGISTRY_HOST = "pax.xcxlang.com";
 const s: TOKEN_FILE    = ".pax_token";
 const s: CONFIG_FILE   = ".pax_config";
@@ -37,7 +37,7 @@ func main() {
     array:s: args = env.args();
     
     if (args.size() < 3) then;
-        >! "PAX Package Manager v4.2";
+        >! "PAX Package Manager v4.3";
         >! "Usage: xcx pax <command> [args]";
         >! "";
         >! "Core Commands:";

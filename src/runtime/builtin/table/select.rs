@@ -38,7 +38,7 @@ impl Executor {
                     }
                 }
 
-                let row_count = t.rows.len();
+                let row_count = t.len();
                 drop(t);
                 let mut filtered = Vec::new();
 
@@ -68,8 +68,10 @@ impl Executor {
                         if res.is_bool() && res.as_bool() {
                             let mut row_copy = Vec::new();
                             let guard = t_rc.read();
-                            for v in &(*guard).rows[i] { unsafe { (v as &Value).inc_ref(); } row_copy.push(*v); }
-                            filtered.push(row_copy);
+                            let cols_len = guard.columns.len();
+                            let start_idx = i * cols_len;
+                            for v in &guard.rows[start_idx..start_idx + cols_len] { unsafe { (v as &Value).inc_ref(); } row_copy.push(*v); }
+                            filtered.extend(row_copy);
                         }
                         unsafe { res.dec_ref(); }
                     }
@@ -120,14 +122,13 @@ impl Executor {
                     let count: i64 = conn.query_row(&sql, [], |row| row.get(0)).unwrap_or(0);
                     Value::from_i64(count)
                 } else {
-                    Value::from_i64(t.rows.len() as i64)
+                    Value::from_i64(t.len() as i64)
                 };
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
             MethodKind::Find => {
                 if args.is_empty() { 
-                    // eprintln!("Table.find: missing predicate argument{}", self.current_span_info(ip));
                     return OpResult::Halt; 
                 }
                 let filter_func = if args[0].is_func() {
@@ -135,10 +136,9 @@ impl Executor {
                 } else if args[0].is_fiber() {
                     args[0].as_fiber().read().func_id as u32
                 } else {
-                    // eprintln!("Table.find: first argument must be a function or fiber{}", self.current_span_info(ip));
                     return OpResult::Halt;
                 };
-                let row_count = t.rows.len();
+                let row_count = t.len();
                 drop(t);
                 let mut found_idx: i64 = -1;
                 for i in 0..row_count {
@@ -208,7 +208,7 @@ impl Executor {
                         }
                         Ok(row_vals)
                     }) {
-                        for r in rows_iter { if let Ok(row) = r { new_rows.push(row); } }
+                        for r in rows_iter { if let Ok(row) = r { new_rows.extend(row); } }
                         ok = true;
                     }
                 }
@@ -232,9 +232,7 @@ impl Executor {
                 locals[dst as usize] = Value::from_bool(false);
             }
         } else {
-            let rows_copy = t.rows.iter().map(|r: &Vec<Value>| {
-                r.iter().map(|v: &Value| { unsafe { (v as &Value).inc_ref(); } *v }).collect::<Vec<Value>>()
-            }).collect::<Vec<Vec<Value>>>();
+            let rows_copy = t.rows.iter().map(|v: &Value| { unsafe { (v as &Value).inc_ref(); } *v }).collect::<Vec<Value>>();
             drop(t);
             let res = Value::from_table(Arc::new(RwLock::new(TableObj {
                 table_name: String::new(),

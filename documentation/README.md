@@ -1,6 +1,6 @@
 # XCX Technical Documentation Suite
 
-Welcome to the official technical documentation for XCX 4.2 and the XCX Compiler.
+Welcome to the official technical documentation for XCX 4.3 and the XCX Compiler.
 
 ## 📖 Language Reference
 Comprehensive guides on the XCX language syntax and features.
@@ -27,7 +27,7 @@ Technical deep-dives into how the XCX compiler, JIT, and VM work.
   - [Semantic Analysis](compiler/sema/): Type checking and scoping validators.
   - [Compiler Code Gen](compiler/compiler/): Register mapping and VM bytecode translation.
   - [HIR Pipeline](compiler/hir/): High-level IR lowering, inlining, and compiler passes.
-  - [JIT Engine](compiler/jit/): Cranelift trace compilation and NaN-boxing.
+  - [JIT Engine](compiler/jit/): Cranelift method (per-function) compilation and NaN-boxing.
   - [Virtual Machine](compiler/vm/): Bytecode execution interpreter loop and heap values.
   - [Runtime Services](compiler/runtime/): Linked collection APIs and FFI linkages.
   - [Diagnostics Gutter](compiler/diagnostics/): Spans, Severity types, and formatted errors.
@@ -40,4 +40,4 @@ Guides for the XCX ecosystem tools.
 - [DOC Tool Manual](tooling/doc_manual.md): Offline error code reference utility.
 
 ---
-*Documentation Version: 4.2.0 *
+*Documentation Version: 4.3.0 *

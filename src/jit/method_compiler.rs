@@ -73,7 +73,7 @@
                 OpCode::JsonInjectLocal { .. } | OpCode::FiberCreate { .. } | OpCode::Yield { .. } |
                 OpCode::YieldWithTarget { .. } | OpCode::HttpCall { .. } | OpCode::HttpRequest { .. } |
                 OpCode::HttpServe { .. } | OpCode::CryptoHash { .. } | OpCode::CryptoVerify { .. } |
-                OpCode::CryptoToken { .. } | OpCode::CastString { .. } | OpCode::MakeClosure { .. } |
+                OpCode::CryptoToken { .. } | OpCode::CastString { .. } |
                 OpCode::GetIndex { .. } | OpCode::SetIndex { .. } | OpCode::GetMember { .. } |
                 OpCode::SetMember { .. } | OpCode::DatabaseInit { .. } | OpCode::TablePushRow { .. } |
                 OpCode::TableCloneSkeleton { .. } => {

@@ -93,7 +93,7 @@ impl Executor {
             OpCode::TerminalRun {..} | OpCode::TerminalExit {..} |
             OpCode::InputKey {..} | OpCode::InputKeyWait {..} | OpCode::InputReady {..} |
             OpCode::DatabaseInit {..} | OpCode::HaltAlert {..} | OpCode::HaltError {..} | OpCode::HaltFatal {..} => {
-                module::handle(self, op, locals, vm_arc)
+                module::handle(self, op, locals, vm_arc, *ip)
             }
 
             OpCode::Jump {..} | OpCode::JumpIfFalse {..} | OpCode::JumpIfTrue {..} |
@@ -156,9 +156,6 @@ impl Executor {
                 vm_arc.set_global(idx, val);
                 Some(OpResult::Continue)
             }
-
-
-            _ => None,
         }
     }
 

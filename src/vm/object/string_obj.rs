@@ -16,15 +16,6 @@ impl StringObj {
     pub fn new(data: Vec<u8>) -> Self {
         Self { data, hash: None }
     }
-
-    pub fn try_extend_bytes(arc: &mut std::sync::Arc<StringObj>, suffix: &[u8]) -> bool {
-        if let Some(obj) = std::sync::Arc::get_mut(arc) {
-            obj.hash = None;
-            obj.data.extend_from_slice(suffix);
-            return true;
-        }
-        false
-    }
 }
 
 impl Deref for StringObj {

@@ -1,6 +1,6 @@
-# VM — Executor, Trace Recording, and VM Struct
+# VM — Executor and VM Struct
 
-This document covers the execution engine: the `VM` struct, `SharedContext`, `Executor`, the main dispatch loop, trace recording infrastructure, and the JIT FFI helpers.
+This document covers the execution engine: the `VM` struct, `SharedContext`, `Executor`, the main dispatch loop, and the JIT FFI helpers. (A former trace-recording subsystem under `vm/trace/` is no longer part of the engine; see `documentation/work/2026-08-17_phase3b_tracejit_fiberjit_removal.md`.)
 
 ---
 
@@ -13,7 +13,6 @@ src/vm/core/
 ├── dispatch.rs        — handle_method_call / handle_method_call_custom
 ├── runtime_ops.rs     — RuntimeOps (get_member, table_init, etc.)
 ├── jit_helpers.rs     — #[no_mangle] extern "C" functions exposed to JIT
-├── arena.rs           — Arena bump allocator
 ├── step/
 │   ├── arith.rs       — arithmetic step handlers
 │   ├── cast.rs        — cast step handlers
@@ -64,7 +63,7 @@ Main entry point. Creates an `Executor`, calls `executor.run_chunk(chunk, ctx, a
 pub struct SharedContext {
     pub constants: Vec<Value>,
     pub functions: Vec<Arc<Chunk>>,
-    pub http_req:  Option<HttpRequest>,
+    pub http_req:  Option<Arc<std::sync::Mutex<Option<tiny_http::Request>>>>,
 }
 ```
 
@@ -109,9 +108,6 @@ pub struct Executor {
     pub ctx:                  Arc<SharedContext>,
     pub current_spans:        Option<Arc<Vec<Span>>>,
     pub fiber_yielded:        bool,
-    pub hotspot:              Hotspot,
-    pub recorder:             Recorder,
-    pub trace_cache:          Vec<Option<Arc<RwLock<Trace>>>>,
     pub terminal_raw_enabled: bool,
     pub fiber_next_ip:        usize,
     pub current_bytecode_ptr: usize,
@@ -134,7 +130,7 @@ One `Executor` instance per running call stack (including fibers). Fibers get th
 
 **`row_cache`:** A map from a table's heap address (`Arc::as_ptr(&t_rc) as usize`) to a vector of previously-constructed `RowObj` values, one per row index, used by `table.where(...)` (see `compiler/runtime/runtime_collections.md`) to avoid reallocating a `RowObj` for every row on every filter invocation. `insert`, `delete`, `update`, and `clear` on a table invalidate its entry in `row_cache` so that stale row handles are never read after a structural mutation.
 
-**JIT Hotspot Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted.
+**JIT Warmup Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted.
 
 ### Main Dispatch Loop
 
@@ -142,10 +138,7 @@ The executor runs a `loop` over the bytecode array. On each iteration:
 
 1. Check `SHUTDOWN`.
 2. Load `chunk.bytecode[ip]`.
-3. Optionally record the op for trace recording (if `recorder.is_recording`).
-4. If `hotspot.tick(ip)` returns `true` (loop back-edge hit threshold), attempt trace compilation.
-5. If a compiled trace exists in `trace_cache[ip]`, call the JIT-compiled function via `dispatch_jit_call`.
-6. Otherwise dispatch to the appropriate step handler.
+3. Dispatch to the appropriate step handler.
 
 Step handlers are split into modules and called as free functions taking `(op, locals, &mut exec, vm_arc)`. This keeps the main dispatch function manageable and allows the compiler to inline hot paths.
 
@@ -198,56 +191,6 @@ Non-pointer values that receive any other method produce an error and return `Ha
 For methods identified by a string name rather than a `MethodKind` enum value. Currently used for:
 - `TAG_ROW` — field access by name (`handle_row_custom`).
 - `TAG_JSON` — dynamic key access (`handle_json_custom`).
-
----
-
-## Trace Recording (`vm/trace/`)
-
-### `Hotspot`
-
-```rust
-pub struct Hotspot {
-    pub counts:         Vec<u32>,
-    pub threshold:      u32,          // default: 50
-    pub blacklist:      HashSet<usize>,
-    pub guard_failures: HashMap<usize, u32>,
-}
-```
-
-Tracks per-IP execution counts. `tick(ip)` increments the count and returns `true` when the count crosses `threshold`. IPs in `blacklist` are never triggered.
-
-`on_guard_failure(ip)` increments the guard failure count for an IP. After 3 guard failures, the IP is blacklisted permanently. Guard failures occur when a JIT-compiled trace is invalidated by a type mismatch at a guard check.
-
-### `Recorder`
-
-```rust
-pub struct Recorder {
-    pub recording_trace: Option<RwLock<Trace>>,
-    pub is_recording:    bool,
-    pub start_ip:        Option<usize>,
-}
-```
-
-When trace recording is active (`is_recording = true`), `record(op: TraceOp)` appends the typed trace operation to the current trace. `start(trace)` begins recording; `stop()` returns the completed trace.
-
-### `Trace` and `TraceOp`
-
-A `Trace` is a sequence of `TraceOp` values recorded during a hot loop execution. `TraceOp` is a type-specialized version of `OpCode` — for example, instead of a generic `Add`, the trace records either `AddInt` or `AddFloat` based on the observed operand types. This type information is what allows the JIT to emit specialized native code without runtime type checks.
-
-`TraceOp::to_opcode()` maps a `TraceOp` back to the corresponding `OpCode` (used for fallback when JIT compilation fails or is invalidated).
-
-### `recording_helper.rs`
-
-`Executor::record_op(op, locals, ip)` is called on each instruction while recording is active. It inspects the current operand types (by reading `locals[src].tag`) and emits the appropriate typed `TraceOp`. For example:
-
-```
-OpCode::Add { dst, src1, src2 } →
-    if both are TAG_INT → TraceOp::AddInt
-    if either is TAG_FLOAT → TraceOp::AddFloat
-    etc.
-```
-
-Loop back-edges emit a `TraceOp::LoopNext` or similar to mark the trace boundary.
 
 ---
 
@@ -348,7 +291,7 @@ The full compilation and execution pipeline:
 7. Spawn `xcx-executor` thread with 64MB stack; call `vm.run(main_chunk, ctx, &[])`.
 8. Join thread; flush stdout/stderr; exit with code 1 if `error_count > 0`.
 
-The `--no-jit` flag sets `vm.disable_jit = true`, skipping trace compilation entirely. The REPL path creates a `Repl` instance instead of running a file.
+The `--no-jit` flag sets `vm.disable_jit = true`, skipping JIT compilation entirely. The REPL path creates a `Repl` instance instead of running a file.
 
 The `pax` subcommand looks for `lib/pax.xcx` relative to the executable directory (walks up parent directories) and runs it as a normal XCX file.
 

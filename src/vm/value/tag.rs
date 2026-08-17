@@ -12,8 +12,6 @@ pub const TAG_ROW:     u64 = 10;
 pub const TAG_JSON:    u64 = 11;
 pub const TAG_FIB:     u64 = 12;
 pub const TAG_DB:      u64 = 13;
-pub const TAG_CLOSURE: u64 = 14;
-pub const TAG_ARENA:   u64 = 15;
 pub const TAG_FUNC_PTR: u64 = 16;
 pub const TAG_BOOL_ARR: u64 = 17;
 
