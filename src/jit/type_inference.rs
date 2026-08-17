@@ -2,44 +2,125 @@ use crate::vm::opcode::{OpCode, TypeTag};
 use crate::vm::value::Value as VMValue;
 use std::collections::{VecDeque, HashSet};
 
-pub fn infer_param_types(bytecode: &[OpCode], arity: usize, _constants: &[VMValue]) -> [TypeTag; 256] {
+pub fn infer_param_types(bytecode: &[OpCode], _arity: usize, constants: &[VMValue]) -> [TypeTag; 256] {
     let mut types = [TypeTag::Unknown; 256];
-    for reg in 0..arity as u8 {
+
+    for _ in 0..5 {
+        // Forward propagation pass
         for op in bytecode {
-            match op {
-                OpCode::Less { src1, src2, .. } | OpCode::Greater { src1, src2, .. } |
-                OpCode::LessEqual { src1, src2, .. } | OpCode::GreaterEqual { src1, src2, .. } => {
-                    if *src1 == reg || *src2 == reg {
-                        types[reg as usize] = TypeTag::Int;
-                        break;
-                    }
-                }
-                OpCode::Add { src1, src2, .. } | OpCode::Sub { src1, src2, .. } |
-                OpCode::Mul { src1, src2, .. } | OpCode::Div { src1, src2, .. } |
-                OpCode::Mod { src1, src2, .. } => {
-                    if *src1 == reg || *src2 == reg {
-                        types[reg as usize] = TypeTag::Int;
-                        break;
-                    }
-                }
-                OpCode::IncLocal { reg: r } | OpCode::DecLocal { reg: r } => {
-                    if *r == reg {
-                        types[reg as usize] = TypeTag::Int;
-                        break;
-                    }
-                }
-                OpCode::JumpIfTrue { src, .. } | OpCode::JumpIfFalse { src, .. } |
-                OpCode::Not { src, .. } => {
-                    if *src == reg {
-                        types[reg as usize] = TypeTag::Bool;
-                        break;
-                    }
-                }
-                _ => {}
-            }
+            propagate_op_types(*op, &mut types, constants);
+        }
+        // Backward propagation pass
+        for op in bytecode.iter().rev() {
+            propagate_op_types(*op, &mut types, constants);
         }
     }
+
     types
+}
+
+fn propagate_op_types(op: OpCode, types: &mut [TypeTag; 256], constants: &[VMValue]) {
+    match op {
+        OpCode::LoadConst { dst, idx } => {
+            if let Some(val) = constants.get(idx as usize) {
+                let ty = if val.is_int() { TypeTag::Int }
+                        else if val.is_float() { TypeTag::Float }
+                        else if val.is_bool() { TypeTag::Bool }
+                        else if val.is_string() { TypeTag::String }
+                        else if val.is_date() { TypeTag::Date }
+                        else if val.is_array() { TypeTag::Array }
+                        else if val.is_bool_array() { TypeTag::BoolArray }
+                        else if val.is_map() { TypeTag::Map }
+                        else if val.is_set() { TypeTag::Set }
+                        else if val.is_table() { TypeTag::Table }
+                        else if val.is_func() { TypeTag::Function }
+                        else if val.is_row() { TypeTag::Row }
+                        else if val.is_json() { TypeTag::Json }
+                        else if val.is_fiber() { TypeTag::Fiber }
+                        else if val.is_db() { TypeTag::Database }
+                        else { TypeTag::Unknown };
+                if ty != TypeTag::Unknown {
+                    types[dst as usize] = ty;
+                }
+            }
+        }
+        OpCode::Move { dst, src } | OpCode::Neg { dst, src } => {
+            let t1 = types[dst as usize];
+            let t2 = types[src as usize];
+            if t1 == TypeTag::Unknown && t2 != TypeTag::Unknown {
+                types[dst as usize] = t2;
+            } else if t2 == TypeTag::Unknown && t1 != TypeTag::Unknown {
+                types[src as usize] = t1;
+            }
+        }
+        OpCode::CastInt { dst, .. } => {
+            types[dst as usize] = TypeTag::Int;
+        }
+        OpCode::CastFloat { dst, .. } => {
+            types[dst as usize] = TypeTag::Float;
+        }
+        OpCode::CastString { dst, .. } => {
+            types[dst as usize] = TypeTag::String;
+        }
+        OpCode::CastBool { dst, .. } => {
+            types[dst as usize] = TypeTag::Bool;
+        }
+        OpCode::Add { dst, src1, src2 } | OpCode::Sub { dst, src1, src2 } |
+        OpCode::Mul { dst, src1, src2 } | OpCode::Div { dst, src1, src2 } |
+        OpCode::Mod { dst, src1, src2 } | OpCode::Pow { dst, src1, src2 } => {
+            let mut t = types[dst as usize];
+            if t == TypeTag::Unknown { t = types[src1 as usize]; }
+            if t == TypeTag::Unknown { t = types[src2 as usize]; }
+            if t != TypeTag::Unknown {
+                types[dst as usize] = t;
+                types[src1 as usize] = t;
+                types[src2 as usize] = t;
+            }
+        }
+        OpCode::Less { dst, src1, src2 } | OpCode::Greater { dst, src1, src2 } |
+        OpCode::LessEqual { dst, src1, src2 } | OpCode::GreaterEqual { dst, src1, src2 } |
+        OpCode::Equal { dst, src1, src2 } | OpCode::NotEqual { dst, src1, src2 } => {
+            let mut t = types[src1 as usize];
+            if t == TypeTag::Unknown { t = types[src2 as usize]; }
+            if t != TypeTag::Unknown {
+                types[src1 as usize] = t;
+                types[src2 as usize] = t;
+            }
+            types[dst as usize] = TypeTag::Bool;
+        }
+        OpCode::And { dst, src1, src2 } | OpCode::Or { dst, src1, src2 } => {
+            types[dst as usize] = TypeTag::Bool;
+            types[src1 as usize] = TypeTag::Bool;
+            types[src2 as usize] = TypeTag::Bool;
+        }
+        OpCode::Not { dst, src } => {
+            types[dst as usize] = TypeTag::Bool;
+            types[src as usize] = TypeTag::Bool;
+        }
+        OpCode::JumpIfTrue { src, .. } | OpCode::JumpIfFalse { src, .. } => {
+            types[src as usize] = TypeTag::Bool;
+        }
+        OpCode::IncLocal { reg } | OpCode::DecLocal { reg } => {
+            types[reg as usize] = TypeTag::Int;
+        }
+        OpCode::LoopNext { reg, limit_reg, .. } | OpCode::LoopPrev { reg, limit_reg, .. } |
+        OpCode::IncVarLoopNext { reg, limit_reg, .. } | OpCode::DecVarLoopPrev { reg, limit_reg, .. } |
+        OpCode::ArrayLoopNext { idx_reg: reg, size_reg: limit_reg, .. } => {
+            types[reg as usize] = TypeTag::Int;
+            types[limit_reg as usize] = TypeTag::Int;
+        }
+        OpCode::IncLocalLoopNext { inc_reg, reg, limit_reg, .. } => {
+            types[inc_reg as usize] = TypeTag::Int;
+            types[reg as usize] = TypeTag::Int;
+            types[limit_reg as usize] = TypeTag::Int;
+        }
+        OpCode::DecLocalLoopPrev { dec_reg, reg, limit_reg, .. } => {
+            types[dec_reg as usize] = TypeTag::Int;
+            types[reg as usize] = TypeTag::Int;
+            types[limit_reg as usize] = TypeTag::Int;
+        }
+        _ => {}
+    }
 }
 
 pub fn analyze_chunk_types(

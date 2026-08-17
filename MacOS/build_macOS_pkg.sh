@@ -42,6 +42,6 @@ cp "$PROJECT_ROOT/MacOS/README.txt" "$DIST_DIR/resources/" 2>/dev/null || true
 
 echo "Creating tarball..."
 cd "$SCRIPT_DIR/dist"
-tar -czvf "xcx-installer-macos-v4.2.tar.gz" "xcx-installer-macos"
+tar -czvf "xcx-installer-macos-v4.3.tar.gz" "xcx-installer-macos"
 
-echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-macos-v4.2.tar.gz"
+echo "Package successfully built at: $SCRIPT_DIR/dist/xcx-installer-macos-v4.3.tar.gz"

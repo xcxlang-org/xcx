@@ -6,36 +6,6 @@ use crate::vm::core::vm::{VM, OpResult};
 use crate::vm::core::executor::Executor;
 use crossterm::event::{self, Event, KeyCode};
 
-#[cfg(windows)]
-type HANDLE = *mut std::ffi::c_void;
-
-#[cfg(windows)]
-unsafe extern "system" {
-    fn GetStdHandle(nStdHandle: u32) -> HANDLE;
-    fn FlushConsoleInputBuffer(hConsoleInput: HANDLE) -> i32;
-}
-
-#[cfg(unix)]
-unsafe extern "C" {
-    fn tcflush(fd: i32, queue_selector: i32) -> i32;
-}
-
-/// Discards all queued/buffered keystroke events in the OS/kernel standard-input device.
-pub fn flush_stdin_device() {
-    #[cfg(windows)]
-    unsafe {
-        let handle = GetStdHandle(0xfffffff6); // STD_INPUT_HANDLE
-        if !handle.is_null() && handle != !0 as HANDLE {
-            let _ = FlushConsoleInputBuffer(handle);
-        }
-    }
-
-    #[cfg(unix)]
-    unsafe {
-        let _ = tcflush(0, 0); // fd 0 = stdin, 0 = TCIFLUSH flag
-    }
-}
-
 pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor, _vm_arc: &Arc<VM>) -> OpResult {
     if executor.terminal_raw_enabled {
         return read_key(dst, locals, executor);
@@ -47,6 +17,9 @@ pub fn input(dst: u8, ty: TypeTag, locals: &mut [Value], executor: &mut Executor
         let res = loop {
             match event::read() {
                 Ok(Event::Key(ke)) => {
+                    if ke.kind == event::KeyEventKind::Release {
+                        continue;
+                    }
                     let kv = map_key_code_to_value(ke.code);
                     if !kv.to_string().is_empty() {
                         break kv;
@@ -150,6 +123,10 @@ pub fn read_key(dst: u8, locals: &mut [Value], executor: &Executor) -> OpResult 
     while has_event {
         match event::read() {
             Ok(Event::Key(ke)) => {
+                if ke.kind == event::KeyEventKind::Release {
+                    has_event = event::poll(std::time::Duration::from_millis(0)).unwrap_or(false);
+                    continue;
+                }
                 let kv = map_key_code_to_value(ke.code);
                 if !kv.to_string().is_empty() {
                     last_key_val = kv;
@@ -180,6 +157,9 @@ pub fn wait_key(dst: u8, locals: &mut [Value], executor: &Executor, _vm_arc: &Ar
     let res = loop {
         match event::read() {
             Ok(Event::Key(ke)) => {
+                if ke.kind == event::KeyEventKind::Release {
+                    continue;
+                }
                 let kv = map_key_code_to_value(ke.code);
                 if !kv.to_string().is_empty() {
                     break kv;

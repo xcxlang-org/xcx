@@ -1,6 +1,6 @@
 # XCX JIT Engine: Core Architecture and Pipeline
 
-The XCX JIT Compiler uses Cranelift as its backend to dynamically compile traces of virtual machine bytecode into native x86_64 machine code. 
+The XCX JIT Compiler uses Cranelift as its backend to dynamically compile VM functions (bytecode chunks) into native x86_64 machine code. Compilation is per-function ("method JIT"): a chunk is compiled once its call count reaches the warmup threshold (`VM::jit_threshold`, default 50), triggered from `Executor::check_jit_warmup` and the FFI entry warmup path in `vm/core/jit_helpers.rs`. Fibers execute through the interpreter; a former fiber-segment JIT and a trace (hot-loop) compiler existed in earlier revisions but were unreachable and have been removed.
 
 ---
 
@@ -10,19 +10,18 @@ The JIT engine is represented by the `JIT` struct (`src/jit/jit.rs`). It acts as
 
 ```rust
 pub struct JIT {
-    pub builder_context: FunctionBuilderContext,
-    pub ctx: codegen::Context,
-    pub module: JITModule,
-    pub symbols: Symbols,
+    pub(crate) ctx: codegen::Context,
+    pub(crate) module: JITModule,
+    pub(crate) in_progress: std::collections::HashSet<usize>,
 }
 ```
 
-### Trace Compilation Pipeline
-Trace compilation is initiated by invoking `JIT::compile`:
+### Method Compilation Pipeline
+Compilation of one function is initiated by `JIT::compile_method` (implemented in `src/jit/compiler_method.rs`):
 1. **Clear Context:** Instantiates/clears JIT function generation state (`module.clear_context`).
-2. **Signature Verification:** Validates the target trace's calling conventions.
-3. **Register Pre-Analysis:** Sweeps bytecode to build pointer tracking maps, type tag inference grids, and liveness regions.
-4. **Symbol Importation:** Maps FFI symbols into the Cranelift internal function representation.
+2. **Signature Verification:** Builds and validates the target function's calling convention.
+3. **Register Pre-Analysis:** Sweeps the chunk's bytecode to build pointer tracking maps, type tag inference grids, and liveness regions (`src/jit/analysis.rs`).
+4. **Symbol Importation:** Maps FFI symbols into the Cranelift internal function representation (`SymbolRegistry::import_in_func`).
 5. **Cranelift IR Builder Execution:** Loops over bytecode, generating Cranelift IR for each operation.
 6. **Code Generation:** Emits compiled machine code into executable memory using Cranelift's JIT infrastructure.
 
@@ -33,7 +32,7 @@ Trace compilation is initiated by invoking `JIT::compile`:
 Modern compilers optimize execution speed by defining custom ABIs for local paths while exposing standard APIs for FFI interaction. The JIT uses two distinct compilation strategies to reduce stack parameter unpacking overhead.
 
 ### Parameters Map
-A standard JIT-compiled trace conforms to the following ABI:
+A JIT-compiled function conforms to the following ABI:
 - **`out_ptr`:** Pointer to a 16-byte stack slot where the 64-bit bits and 64-bit type tag representing the returned `Value` are written.
 - **`locals_ptr`:** Pointer to the VM register/locals array.
 - **`globals_ptr`:** Pointer to the VM globals array.
@@ -105,4 +104,4 @@ To avoid manually repeating binding declarations, the compiler uses the `declare
 1. Generates the fields of the `SymbolRegistry` struct (declaring `FuncId` imports for Cranelift).
 2. Generates the fields of the `ImportedSymbols` struct (defining `FuncRef` function call reference mappings).
 3. Automates the linkage imports declaration block inside `SymbolRegistry::new`.
-4. Automates the declaration of target function imports in individual trace functions inside `SymbolRegistry::import_in_func`.
+4. Automates the declaration of target function imports in each compiled function inside `SymbolRegistry::import_in_func`.

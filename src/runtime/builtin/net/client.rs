@@ -34,7 +34,7 @@ pub unsafe extern "C" fn xcx_jit_net_call(out: *mut Value, method_idx_bits: u64,
         let mut map = Vec::new();
         map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
         map.push((std::sync::Arc::new("status".to_string()), crate::vm::object::JsonVal::Int(0)));
-        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(e))));
+        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
         let val = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(map))))));
         unsafe { *out = val; }
         return;
@@ -100,7 +100,7 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
         }
         let mut map = Vec::new();
         map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
-        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(e))));
+        map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
         let res = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(map))))));
         unsafe { locals[dst as usize].dec_ref(); }
         locals[dst as usize] = res;
@@ -195,11 +195,11 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
             let map = o.read();
             url = map.iter().find(|(k, _)| k.as_str() == "url").map(|(_, v)| {
                 let mut buf = String::new();
-                if let crate::vm::object::JsonVal::String(s) = v { s.to_string() } else { v.to_string_buf(&mut buf); buf }
+                if let crate::vm::object::JsonVal::String(s) = v { String::from_utf8_lossy(&s.data).into_owned() } else { v.to_string_buf(&mut buf); buf }
             }).unwrap_or_default();
             method = map.iter().find(|(k, _)| k.as_str() == "method").map(|(_, v)| {
                 let mut buf = String::new();
-                if let crate::vm::object::JsonVal::String(s) = v { s.to_string() } else { v.to_string_buf(&mut buf); buf }
+                if let crate::vm::object::JsonVal::String(s) = v { String::from_utf8_lossy(&s.data).into_owned() } else { v.to_string_buf(&mut buf); buf }
             }).unwrap_or_else(|| "GET".to_string());
             if let Some((_, crate::vm::object::JsonVal::Int(t))) = map.iter().find(|(k, _)| k.as_str() == "timeout") {
                 timeout = std::time::Duration::from_millis(*t as u64);
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
         let mut res_map = Vec::new();
         res_map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
         res_map.push((std::sync::Arc::new("status".to_string()), crate::vm::object::JsonVal::Int(0)));
-        res_map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(e))));
+        res_map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
         let val = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(res_map))))));
         unsafe { *out = val; }
         return;
@@ -256,7 +256,8 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
                 let h_map = headers.read();
                 for (k, v) in h_map.iter() {
                     if let crate::vm::object::JsonVal::String(s) = v {
-                        req = req.set(k, s.as_str());
+                        let s_str = std::str::from_utf8(&s.data).unwrap_or("");
+                        req = req.set(k, s_str);
                     } else {
                         let mut buf = String::new();
                         v.to_string_buf(&mut buf);
@@ -296,7 +297,7 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
             if let Some(b) = body_val {
                 let mut buf = String::new();
                 if let crate::vm::object::JsonVal::String(s) = b {
-                    buf.push_str(s);
+                    buf.push_str(&String::from_utf8_lossy(&s.data));
                 } else {
                     b.to_string_buf(&mut buf);
                 }
@@ -357,7 +358,7 @@ pub fn request(dst: u8, arg_src: u8, locals: &mut [Value], http_req_val: Option<
             }
             let mut res_map = Vec::new();
             res_map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
-            res_map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(e))));
+            res_map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
             let val = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(res_map))))));
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = val;

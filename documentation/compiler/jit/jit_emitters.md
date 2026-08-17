@@ -55,10 +55,10 @@ Calculates call offsets and invokes local JIT frames or VM wrappers.
 ## 3. Control Flow Emitters (`emit_control.rs`)
 
 Manages execution bounds, conditional checks, loop construction, and fiber state machine yielding.
-- **Type Guards (`emit_guard_int`, `emit_guard_float`, `emit_guard_bool`):** Inserts assertions checking that dynamic registers store expected type tags. On tag mismatch, they trigger deoptimization pathways by calling `xcx_jit_report_guard_failure`. A guard is skipped entirely when `ctx.known_types` already records the expected tag for that register.
+- **Type Guards:** Inserts assertions checking that dynamic registers store expected type tags. On tag mismatch, they trigger deoptimization/fallback pathways by calling `xcx_jit_report_guard_failure` via standard checks. A guard is skipped entirely when `ctx.known_types` already records the expected tag for that register. (Note: `emit_guard_int/float/bool` were removed in Phase 3B).
 - **Conditional Branches (`emit_jump_if`):** Backs `JumpIfFalse`/`JumpIfTrue`. When the source register is statically known to be `TypeTag::Bool`, the branch condition reduces to a single bit comparison (`icmp_imm`) instead of comparing both the type tag and the bit pattern against the boxed `false` value. After branching, `clear_block_state` resets any tracked register constants (`ctx.register_const`) for the continuation block, since a value known constant on one incoming path cannot be assumed constant after merging with a path where it wasn't.
 - **Loop Structs:** Standard loop operations (`LoopNext`, `LoopPrev`, `IncLocalLoopNext`, `ArrayLoopNext`, `TableIter`) translate into Cranelift block branches. Loops evaluate constraints against limits, jumping backwards to block headers or forward to exit targets.
-- **Yield and Return (`emit_yield`, `emit_return`):** Serializes current compiler registers to `locals_ptr` and returns control to the interpreter parent frame, passing status states.
+- **Return (`emit_return`):** Returns control to the interpreter parent frame, passing execution status states. (Note: `emit_yield`, `emit_method_yield`, and `emit_return_fiber` were removed in Phase 3B since fibers are strictly interpreted).
 
 ---
 
@@ -85,7 +85,7 @@ Links variables to tables, disk arrays, and structured I/O endpoints:
 
 Handles environment lookups and fatal errors.
 - **Halt Handling (`emit_halt_alert`, `emit_halt_error`, `emit_halt_fatal`):** Halts compiler execution, registers error context fields, and executes clean return patterns.
-- **OS Environment:** Accesses variables and startup scripts (`emit_env_get`, `emit_env_args`).
+- **OS Environment:** Note: environment getters `emit_env_get` and `emit_env_args` were removed in Phase 3B since environment extraction is resolved statically or via interpreter fallback.
 
 ---
 

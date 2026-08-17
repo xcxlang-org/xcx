@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use parking_lot::RwLock;
 use crate::vm::object::{
-    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, ClosureObj, FunctionObj, BoolArrayObj
+    TableObj, SetObj, FiberObj, RowObj, DatabaseObj, StringObj, ArrayObj, MapObj, JsonObj, FunctionObj, BoolArrayObj
 };
 use super::value::Value;
 use super::nan_boxing::*;
@@ -22,7 +22,6 @@ pub unsafe fn inc_ref(val: &Value) {
         TAG_FIB     => unsafe { Arc::increment_strong_count(p as *const RwLock<FiberObj>); }
         TAG_ROW     => unsafe { Arc::increment_strong_count(p as *const RowObj); }
         TAG_DB      => unsafe { Arc::increment_strong_count(p as *const DatabaseObj); }
-        TAG_CLOSURE => unsafe { Arc::increment_strong_count(p as *const ClosureObj); }
         TAG_FUNC_PTR => unsafe { Arc::increment_strong_count(p as *const FunctionObj); }
         _ => {}
     }
@@ -43,7 +42,6 @@ pub unsafe fn dec_ref(val: &Value) {
         TAG_FIB     => unsafe { Arc::decrement_strong_count(p as *const RwLock<FiberObj>); }
         TAG_ROW     => unsafe { Arc::decrement_strong_count(p as *const RowObj); }
         TAG_DB      => unsafe { Arc::decrement_strong_count(p as *const DatabaseObj); }
-        TAG_CLOSURE => unsafe { Arc::decrement_strong_count(p as *const ClosureObj); }
         TAG_FUNC_PTR => unsafe { Arc::decrement_strong_count(p as *const FunctionObj); }
         _ => {}
     }

@@ -64,7 +64,7 @@ Interactive commands bypass semantic validation and are handled directly in the 
 | `!clear` | Clears all scrollback content and returns input cursor to terminal origin. | Renders ANSI code sequence `\x1B[2J\x1B[1;1H`. |
 | `!exit` | Breaks execution loops and halts interactive runtime immediately. | Halts command reading iteration, returning exit status. |
 | `!globals` | Inspects global variable state. | Lists the names, types, and values of all registered variables in global scope. |
-| `!jit` | Displays JIT compiler information and state. | Inspects compilation thresholds, JIT metadata, and active trace definitions. |
+| `!jit` | Displays JIT compiler information and state. | Prints whether JIT is enabled and the warmup compilation threshold. |
 | `!reset` | Clears interpreter state. | Resets persistent interpreter bindings, clearing variables and type definitions. |
 
 ---

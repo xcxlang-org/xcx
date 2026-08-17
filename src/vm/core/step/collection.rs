@@ -102,14 +102,14 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                 let tbl = c.as_table();
                 let tbl_read = tbl.read();
                 let i = idx.as_i64() as usize;
-                if i < tbl_read.rows.len() {
+                if i < tbl_read.len() {
                     res = Value::from_row(Arc::new(RowObj {
                         table: tbl.clone(),
                         row_idx: i as u32,
                     }));
                 } else {
                     exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    eprintln!("R303: Table index out of bounds: {} (Table length: {})", idx.as_i64(), tbl_read.rows.len());
+                    eprintln!("R303: Table index out of bounds: {} (Table length: {})", idx.as_i64(), tbl_read.len());
                     return Some(OpResult::Halt);
                 }
             }
@@ -399,7 +399,8 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                 let row = row_val.as_row();
                 let table = row.table.read();
                 if (col_idx as usize) < table.columns.len() {
-                    let val = table.rows[row.row_idx as usize][col_idx as usize];
+                    let idx = row.row_idx as usize * table.columns.len() + col_idx as usize;
+                    let val = table.rows[idx];
                     unsafe { val.inc_ref(); }
                     unsafe { locals[dst as usize].dec_ref(); }
                     locals[dst as usize] = val;
@@ -415,14 +416,16 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                 
                 let mut table = t_rc.write();
                 let r_table = r_obj.table.read();
-                let row_data = &r_table.rows[r_obj.row_idx as usize];
+                let cols_len = r_table.columns.len();
+                let start_idx = r_obj.row_idx as usize * cols_len;
+                let row_data = &r_table.rows[start_idx..start_idx + cols_len];
                 
                 let mut row_copy = Vec::with_capacity(row_data.len());
                 for v in row_data {
                     unsafe { v.inc_ref(); }
                     row_copy.push(*v);
                 }
-                table.rows.push(row_copy);
+                table.rows.extend(row_copy);
             }
         }
         OpCode::TableCloneSkeleton { dst, src } => {
@@ -452,7 +455,7 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                 };
                 let row_idx = {
                     let r = tbl.read();
-                    r.rows.len()
+                    r.len()
                 };
                 let start = base as usize;
                 let mut current_offset = 0;
@@ -460,16 +463,16 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
                 for c in 0..cols.len() {
                     if cols[c].is_auto {
                         row.push(Value::from_i64(row_idx as i64 + 1));
-                    } else {
-                        let val = locals[start + current_offset];
-                        if val.is_ptr() { unsafe { val.inc_ref(); } }
-                        row.push(val);
-                        current_offset += 1;
-                    }
-                }
-                tbl.write().rows.push(row);
-            }
-        }
+                      } else {
+                          let val = locals[start + current_offset];
+                          if val.is_ptr() { unsafe { val.inc_ref(); } }
+                          row.push(val);
+                          current_offset += 1;
+                      }
+                  }
+                  tbl.write().rows.extend(row);
+              }
+          }
         _ => return None,
     }
     Some(OpResult::Continue)

@@ -8,13 +8,11 @@ pub mod emit_load_store;
 pub mod emit_call;
 pub mod emit_object;
 pub mod symbols;
-pub mod loop_context;
 pub mod codegen_ctx;
 pub mod type_inference;
 pub mod analysis;
 pub mod emit_misc;
 
 pub mod compiler_method;
-pub mod compiler_fiber;
 pub use abi::{JITFunction, MethodJitFunction};
 pub use jit::JIT;

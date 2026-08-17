@@ -53,3 +53,21 @@ pub struct LoopFrame {
 ```
 
 `start_pc` is the address of the beginning of the loop (the target of a `continue` jump), `breaks`/`continues` are lists of locations to backpatch once the loop end address is finalized, and `fiber_reg` stores the fiber register if the loop iterates over its results (`TableIter`/`ArrayLoopNext` on a fiber).
+
+---
+
+## Special Emitters (`compile_expr_special.rs`)
+
+Special built-in function calls and method invocations are compiled using specialized, optimized bytecode generation routines rather than regular function boundaries:
+
+- **Type Casts**: Calls to `i(x)`, `f(x)`, `s(x)`, and `b(x)` emit specialized cast opcodes directly (e.g. `CastInt`, `CastFloat`, `CastString`, `CastBool`).
+- **Terminal Inputs & Controls**: Method calls on the `terminal` or `input` globals are transformed directly into `InputKey`, `InputKeyWait`, `InputReady`, `TerminalWrite`, `TerminalClear`, `TerminalRaw`, `TerminalNormal`, `TerminalCursor`, `TerminalMove`, `TerminalExit`, or `TerminalRun` opcodes.
+- **Micro-Optimizations**: Method calls containing JSON gets combined with pushes (e.g. `obj.get(path).push(val)`) are matched and directly optimized into a single `JsonFastGetPush` instruction.
+- **Built-in Modules**:
+  - `date.now()` $\rightarrow$ `DateNow`
+  - `perf.ms()` / `perf.us()` / `perf.ns()` $\rightarrow$ `PerfMs` / `PerfUs` / `PerfNs`
+  - `json.parse(str)` $\rightarrow$ `JsonParse`
+  - `env.get(name)` / `env.args()` $\rightarrow$ `EnvGet` / `EnvArgs`
+  - `crypto.hash(...)` / `crypto.verify(...)` / `crypto.token(...)` $\rightarrow$ `CryptoHash` / `CryptoVerify` / `CryptoToken`
+  - `net.serve(...)` / `net.respond(...)` $\rightarrow$ `HttpServe` / `HttpRespond`
+- **SQLite Database Filters (`.where(...)`)**: Method calls to database tables with a `.where(...)` filter are compiled by resolving variables captured by the filter predicate dynamically, allocating a dedicated query chunk, and emitting a dedicated `MethodCall` with `MethodKind::Where`.

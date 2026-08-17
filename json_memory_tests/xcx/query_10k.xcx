@@ -1,0 +1,49 @@
+table: payload_tbl {
+    columns = [ id :: i, val :: i, active :: b ]
+    rows = [EMPTY]
+};
+
+for i in 0 to 9999 do;
+    payload_tbl.add(i, i * 2, true);
+end;
+
+i: t0 = perf.us();
+
+json: arr = payload_tbl.toJson();
+json: filtered_arr <<< [] >>>;
+i: size = arr.size();
+for i in 0 to (size - 1) do;
+    json: item = arr.get(i);
+    i: val;
+    item.bind("val", val);
+    
+    if ((val % 4) == 0) then;
+        map: item_map {
+            schema = [s <-> i]
+            data = [ "val" :: val ]
+        };
+        json: map_json = item_map.toJson();
+        map_json.set("id", i);
+        filtered_arr.push(map_json);
+    end;
+end;
+
+json: last_elem = filtered_arr.get(filtered_arr.size() - 1);
+array:s: keys = last_elem.keys();
+
+table: final_tbl {
+    columns = [ uid :: i, uval :: i ]
+    rows = [EMPTY]
+};
+map: mapping {
+    schema = [s <-> s]
+    data = [ "uid" :: "id", "uval" :: "val" ]
+};
+
+json: wrapper <<< {"items": []} >>>;
+wrapper.set("items", filtered_arr);
+wrapper.inject("items", mapping, final_tbl);
+
+i: t1 = perf.us();
+f: json_ms = f(t1 - t0) / 1000.0;
+>! "json_elapsed_ms: " + s(json_ms);

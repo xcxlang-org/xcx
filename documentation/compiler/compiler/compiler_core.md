@@ -13,7 +13,6 @@ src/compiler/
 ├── globals.rs           — global variable resolution
 ├── constant_pool.rs     — compile-time constant deduplication
 ├── defaults.rs          — default type value generators
-├── patch.rs             — backpatching for jump instructions
 ├── upvalue.rs           — AST upvalue capturing structures
 ... (other modules covered in dedicated docs)
 ```
@@ -107,7 +106,7 @@ The compiler treats arguments and local variables equally as `u8` local register
 - `push_reg()`: Allocates the next sequential register and bumps `max_locals_used`.
 - `pop_reg()`: Reclaims the most recently pushed register.
 
-XCX's compiler uses an unoptimized flat register allocator during this phase; dense optimization and parameter pinning are deferred to the `RegisterManager` pass.
+Register reuse is resolved statically using lexical scopes and scope-based lifetime analysis during the lowering phase to minimize local variable index allocation. (Note: The speculative `RegisterManager` optimization pass was deleted in Phase 3A as scope-based reuse was sufficient).
 
 ### Compilation Dispatch
 
@@ -143,9 +142,6 @@ This results in a tightly bounded one-level closure structure; deeply nested clo
 
 ---
 
-## Backpatching (`patch.rs`)
+## Backpatching
 
-When compiling jumps (e.g., `if`, `while`, `or`, `and`), the jump target IP is not known until the body is compiled. The compiler emits a placeholder instruction, records its IP, and backpatches it later.
-
-`emit_jump(OpCode::Jump { target: 0 }) -> usize` returns the IP.
-`patch_jump(ip)` overwrites the `target` parameter of the instruction at that IP with the current end of `bytecode`.
+When compiling jumps (e.g., `if`, `while`, `or`, `and`), the jump target instruction pointer (IP) is not known until the body has been compiled. The compiler emits placeholder instructions, records their IPs, and backpatches them inline during bytecode emission (e.g. inside `compile_control.rs`). (Note: The separate `patch.rs` helper has been retired and backpatching logic is resolved inline).

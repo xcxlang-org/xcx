@@ -1,0 +1,47 @@
+--- progress.xcx - Animated Spinners and Progress Bars for PAX
+
+func getSpinnerFrame(i: step -> s) {
+    i: idx = step % 4;
+    if (idx == 0) then; return C_BOLD + C_BCYAN + "⠋" + C_RESET;
+    elif (idx == 1) then; return C_BOLD + C_BCYAN + "⠙" + C_RESET;
+    elif (idx == 2) then; return C_BOLD + C_BCYAN + "⠹" + C_RESET;
+    else; return C_BOLD + C_BCYAN + "⠸" + C_RESET;
+    end;
+};
+
+func renderProgressBar(i: current, i: total, s: label -> s) {
+    i: width = 24;
+    i: filled = (current * width) / total;
+    if (filled > width) then; filled = width; end;
+
+    s: bar = C_BOLD + C_BGREEN;
+    for k in 0 to (width - 1) do;
+        if (k < filled) then;
+            bar = bar + "█";
+        else;
+            bar = bar + C_RESET + C_DIM + "░";
+        end;
+    end;
+    bar = bar + C_RESET;
+
+    i: pct = (current * 100) / total;
+    s: pctStr = s(pct);
+    if (pct < 10) then; pctStr = "  " + pctStr;
+    elif (pct < 100) then; pctStr = " " + pctStr; end;
+
+    s: line = tagPax() + " " + label + " [" + bar + "] " + C_BOLD + C_BYELLOW + pctStr + "%" + C_RESET;
+    return line;
+};
+
+func showDownloadProgress(s: pkgName, i: totalKbs) {
+    >! tagPax() + " Fetching " + C_BOLD + C_CYAN + pkgName + C_RESET + " (" + s(totalKbs) + " KB)...";
+    i: steps = 20;
+    for i in 1 to steps do;
+        i: currentKbs = (i * totalKbs) / steps;
+        s: pb = renderProgressBar(currentKbs, totalKbs, "Downloading");
+        >! "\r" + pb;
+        @wait(30);
+    end;
+    >! "";
+    >! tagOk() + " Successfully downloaded " + C_BOLD + C_GREEN + pkgName + C_RESET;
+};

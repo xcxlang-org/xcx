@@ -11,7 +11,7 @@
 ![Last Commit](https://img.shields.io/github/last-commit/xcxlang-org/xcx)
 ![Repo Size](https://img.shields.io/github/repo-size/xcxlang-org/xcx)
 
-> XCX 4.2 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
+> XCX 4.3 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 ---
 
@@ -21,7 +21,7 @@ Most backend languages make you choose between two bad options: high-level langu
 
 XCX is an experiment in a third path: a statically typed language where HTTP, SQLite, JSON, crypto, and file I/O are part of the language itself, not libraries you bolt on. No `package.json`. No ORM. No middleware boilerplate. You write logic; the runtime handles the rest.
 
-It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.2 is the current release, built on a redesigned VM and JIT with substantially improved performance. One contributor so far.
+It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.3 is the current release, built on a redesigned VM and JIT with substantially improved performance. One contributor so far.
 
 ---
 
@@ -115,12 +115,12 @@ XCX is not trying to replace Go or Node. It occupies a different space: small ba
 
 ## Performance
 
-With XCX 4.2, the benchmark suite was overhauled and moved to its own repo:
+With XCX 4.3, the benchmark suite was overhauled and moved to its own repo:
 **[xcxlang-org/xcx-benchmarks](https://github.com/xcxlang-org/xcx-benchmarks)**.
 This is the new Main Suite, run under a stricter, more transparent methodology
 than previous releases.
 
-> ⚠️ These benchmarks reflect the **current state of XCX 4.2**.
+> ⚠️ These benchmarks reflect the **current state of XCX 4.3**.
 > The runtime, VM, and JIT are still under active development and will change.
 >
 > The goal of this section is **transparency**, not competition.
@@ -139,7 +139,7 @@ than previous releases.
 | 8 | Java [JIT] | 2.64ms | 217.88ms | 24.38ms | 0.18*ms |
 | 9 | Nim [AOT] | 17.50ms | 193.00ms | 19.50ms | 0.31*ms |
 | 10 | Bun [JIT] | 5.35ms | 400.84ms | 32.52ms | 0.40ms |
-| 11 | **XCX 4.2** [JIT] | 12.303ms | 106.480ms | 97.814ms | 0.238ms |
+| 11 | **XCX 4.3** [JIT] | 12.303ms | 106.480ms | 97.814ms | 0.238ms |
 | 12 | PyPy [JIT] | 19.47ms | 119.28ms | 101.21ms | 0.32ms |
 | 13 | LuaJIT [JIT] | 6.71ms | 378.47ms | 88.69ms | 0.46*ms |
 | 14 | C# [JIT] | 5.66ms | 208.82ms | 15.94ms | 5.58ms |
@@ -154,7 +154,7 @@ than previous releases.
 
 `*` = JSON value is a computed stdlib penalty, not a direct measurement (see methodology).
 
-XCX 4.2 ranks 11th by geometric mean, ahead of PyPy, C#, LuaJIT, Node.js, and
+XCX 4.3 ranks 11th by geometric mean, ahead of PyPy, C#, LuaJIT, Node.js, and
 every interpreted language tested. `lcg` and `fib` are competitive with JIT
 peers; `sieve` remains the main target for optimization in upcoming releases.
 
@@ -184,14 +184,14 @@ Source (.xcx)
   -> Sema         type checker, symbol table, collects all errors before codegen
   -> Compiler     two-pass, emits register-based bytecode + source spans
   -> VM           register VM, 16-byte { bits, tag } values, Arc ref counting
-  -> JIT          Cranelift tracing JIT, hot loops compiled to native machine code
+  -> JIT          Cranelift method JIT, hot functions compiled to native machine code
 ```
 
-**Value representation:** every value is a 16-byte `{ bits: u64, tag: u64 }` struct. The explicit integer tag means zero bitwise operations when reading the type in the interpreter. Scalars (int, float, bool, date) require zero heap allocation. Pointers to heap objects (strings, arrays, JSON, tables, fibers) are packed into `bits`. The JIT uses NaN-boxing internally (Cranelift registers hold a single NaN-boxed `u64`), with `pack_value`/`unpack_value` adapters at the boundary, which keeps CPU register usage lower and block signatures simpler in compiled traces.
+**Value representation:** every value is a 16-byte `{ bits: u64, tag: u64 }` struct. The explicit integer tag means zero bitwise operations when reading the type in the interpreter. Scalars (int, float, bool, date) require zero heap allocation. Pointers to heap objects (strings, arrays, JSON, tables, fibers) are packed into `bits`. The JIT uses NaN-boxing internally (Cranelift registers hold a single NaN-boxed `u64`), with `pack_value`/`unpack_value` adapters at the boundary, which keeps CPU register usage lower and block signatures simpler in compiled functions.
 
 **Fibers** are cooperative coroutines backed by saved `Vec<Value>` state. Not OS threads. Suspend/resume moves the locals vector without copying. Each HTTP handler runs as a fiber; the server spawns N OS worker threads, each with its own executor. Globals are shared via `Arc<RwLock<Vec<Value>>>`. Fiber scoping works correctly on all platforms.
 
-**JIT**: backward jumps (loop edges) are counted per instruction pointer. After 50 visits to a given IP, trace recording starts. The threshold is configurable via `--threshold` / `--th`. The trace is specialized for the runtime types seen (integer guards, float guards), then compiled by Cranelift to native code. Functions have a separate threshold: compiled from the 5th call onward. Recursive calls compile to direct native `call` instructions. After 3 guard failures at a given IP, the trace is blacklisted to prevent re-compilation of unstable paths. General string operations are not JIT-compiled, with one exception: the self-concatenation pattern (`x = x + expr`) is recognized and compiled to a dedicated in-place-append fast path.
+**JIT**: compilation is per function ("method JIT"). Every chunk counts its calls; when the count crosses the warmup threshold (`--threshold` / `--th`, default 50), the whole function is compiled by Cranelift to native code, specialized for the statically inferred register types. Functions invoked from already-compiled code are compiled from the 5th call onward. Calls between compiled functions become direct native `call` instructions (with a native 800-frame recursion guard); calls into uncompiled functions fall back through an FFI trampoline. Fibers execute on the interpreter. General string operations are not JIT-compiled, with one exception: the self-concatenation pattern (`x = x + expr`) is recognized and compiled to a dedicated in-place-append fast path.
 
 Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
@@ -199,13 +199,13 @@ Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
 ## Project status
 
-XCX 4.2 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
+XCX 4.3 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
 **Known rough edges:** 
 
-**Linux and macOS**: XCX 4.2 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+**Linux and macOS**: XCX 4.3 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 

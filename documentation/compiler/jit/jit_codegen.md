@@ -45,7 +45,7 @@ Downstream emitters consult `register_const` to skip runtime checks entirely whe
 
 ## Static Analysis Passes
 
-The compiler implements a static analysis layer inside `src/jit/analysis.rs` to gather trace info before generating any Cranelift IR.
+The compiler implements a static analysis layer inside `src/jit/analysis.rs` to gather chunk-level info before generating any Cranelift IR.
 
 ### Local/Global Register Analyses
 - **`analyze_chunk_locals`:** Performs a linear code sweep to find which VM registers (0-255) are read or mutated, avoiding compiling loads/stores for dead registers.
@@ -88,7 +88,7 @@ This eliminates FFI and `RwLock` overhead entirely for correctly-typed, in-bound
 
 ## Bytecode Type Inference
 
-Bytecode instructions do not natively carry static types. The compiler runs abstract type analysis on traces using the engine inside `src/jit/type_inference.rs`.
+Bytecode instructions do not natively carry static types. The compiler runs abstract type analysis on each chunk using the engine inside `src/jit/type_inference.rs`.
 
 ### Flow Propagation Rules
 `analyze_chunk_types` propagates type tags (`TypeTag`) through registers by processing the bytecode layout forwards:
@@ -117,7 +117,7 @@ For floating-point fast paths specifically, both operands must be statically kno
 `JumpIfFalse`/`JumpIfTrue` compile through `emit_jump_if`, which checks `ctx.get_reg_type(src)` before deciding how to test the branch condition. When the source register is statically known to be `TypeTag::Bool`, the test reduces to a single `icmp_imm` against the raw bits; when the type is not statically known, the emitter falls back to comparing both the type tag and the bit pattern against the boxed `false` representation.
 
 ### GC Escape Analysis (`uses_heap`)
-Type inference also tracks whether a trace actually uses the heap (`uses_heap` flag). If a function is pure math and lacks pointer allocation opcodes, allocator escapes are elided entirely. Global-variable reloading after a call (in `emit_call`) is likewise conditional on the callee's `uses_heap` flag — a call known not to touch the heap does not force a reload of globals on return.
+Type inference also tracks whether a compiled function actually uses the heap (`uses_heap` flag). If a function is pure math and lacks pointer allocation opcodes, allocator escapes are elided entirely. Global-variable reloading after a call (in `emit_call`) is likewise conditional on the callee's `uses_heap` flag — a call known not to touch the heap does not force a reload of globals on return.
 
 ---
 

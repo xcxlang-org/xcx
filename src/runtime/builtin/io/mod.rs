@@ -1,8 +1,6 @@
-pub mod print;
 pub mod input;
 pub mod terminal;
 
-pub use print::*;
 pub use input::*;
 pub use terminal::*;
 

@@ -24,10 +24,6 @@ impl<'a> Reporter<'a> {
         self.diagnostics.push(diagnostic);
     }
 
-    pub fn has_errors(&self) -> bool {
-        self.diagnostics.iter().any(|d| d.severity == Severity::Error)
-    }
-
     fn print_diagnostic(&self, d: &Diagnostic) {
         let level_color = match d.severity {
             Severity::Error => ANSI_RED,

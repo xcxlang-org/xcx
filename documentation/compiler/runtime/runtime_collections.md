@@ -14,11 +14,11 @@ Represented by `ArrayObj` wrapping `RwLock<Vec<Value>>`.
 - **Allocation:** `xcx_jit_array_init` allocates contiguous heap blocks on the VM heap.
 
 ### Maps (`map/`)
-Represented by `MapObj` wrapping `RwLock<HashMap<Value, Value>>`.
-- **Symbol mappings:** Supports element retrievals, mutations, and membership validations (`xcx_jit_map_init`, `xcx_jit_has`).
+Represented by `MapObj` wrapping `RwLock<Vec<(Value, Value)>>`.
+- **Symbol mappings:** Preserves insertion order with linear lookup. Supports element retrievals, mutations, and membership validations (`xcx_jit_map_init`, `xcx_jit_has`).
 
 ### Sets (`set/`)
-Represented by `SetObj` wrapping `RwLock<HashSet<Value>>`.
+Represented by `SetObj` wrapping `RwLock<BTreeSet<Value>>`.
 - **Set Arithmetic:** Supports algebraic operations via optimized C-linkage helpers:
   - **Union:** `set_union` (combines two sets into a single distinct set).
   - **Intersection:** `set_intersection` (returns a set with values present in both operands).
@@ -36,13 +36,10 @@ Before either stage runs, `handle_json_parse` checks a `thread_local` cache (`JS
 
 **Cache versioning:** Because a JSON value can be read concurrently by the interpreter and JIT-compiled code, the cached serialized-string representation of a JSON object is invalidated using a pair of `AtomicU64` counters, `version` and `cached_version`, with `Acquire`/`Release` ordering, rather than a single `dirty: AtomicBool` flag. A mismatch between the two indicates the cached string is stale and must be regenerated; a match allows a lock-free cache hit. This closes a race window that existed with a boolean flag, where a reader could observe a serialized string mid-update.
 
-### Fiber Schedulers and JIT Segments (`fiber/`)
+### Fiber Schedulers (`fiber/`)
 Fibers execute as co-routines on the interpreter stack frame (`ops.rs`):
 - **Cooperative Yields:** Fiber schedules support `Status`, `IsDone`, and cooperatively yield values via execution frame contexts.
-- **Segmented JIT compilation:** High-frequency fiber loops execute compiled machine code blocks or compile bytecode segments inline:
-  1. Checks the chunk's virtual trace cache (`jit_segments`) matching the current `ip`. If a compiled function resides in the map, it transmsites and runs it directly.
-  2. If the current segment hits the hotspot tick threshold (`hotspot.tick`), the runtime compiles that specific loop segment (`compile_fiber_segment`) and updates the instruction map.
-  3. When JIT is not active or compiling, execution falls back seamlessly to the interpreter interpreter-loop.
+- **Execution model:** Fiber bodies run on the interpreter; JIT compilation is per-function (`jit_ptr` warmup) and fiber yields/resumes switch the executor's bytecode context. A former per-segment fiber JIT was unreachable and has been removed (see `documentation/work/2026-08-17_phase3b_tracejit_fiberjit_removal.md`).
 
 ---
 

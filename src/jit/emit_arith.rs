@@ -65,102 +65,6 @@ pub fn emit_mul_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymb
     emit_binop_int(ctx, symbols, dst, src1, src2, true, |b, l, r| b.ins().imul(l, r));
 }
 
-pub fn emit_div_int(
-    ctx: &mut CodegenCtx,
-    symbols: &super::symbols::ImportedSymbols,
-    dst: u8,
-    src1: u8,
-    src2: u8,
-    fail_ip: usize,
-    is_mod: bool,
-) {
-    let (l_bits, _) = ctx.use_local(src1);
-    let (r_bits, _) = ctx.use_local(src2);
-    
-    let divisor_opt = ctx.register_const[src2 as usize];
-    if is_mod {
-        if let Some(divisor) = divisor_opt {
-            if divisor > 0 && (divisor & (divisor - 1)) == 0 {
-                let temp = ctx.b.ins().sshr_imm(l_bits, 63);
-                let mask = ctx.b.ins().band_imm(temp, divisor - 1);
-                let adjusted = ctx.b.ins().iadd(l_bits, mask);
-                let res = ctx.b.ins().band_imm(adjusted, divisor - 1);
-                let s = ctx.b.ins().isub(res, mask);
-                
-                if ctx.uses_heap && !ctx.should_skip_dec_ref(dst) {
-                    let (v_bits, v_tag) = ctx.use_local(dst);
-                    super::nan_ops::emit_conditional_dec_ref(ctx, symbols, v_bits, v_tag);
-                }
-                
-                let int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
-                ctx.def_local(dst, s, int_tag);
-                ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Int;
-                return;
-            }
-        }
-    }
-
-    let needs_guard = if let Some(divisor) = divisor_opt {
-        divisor == 0 || divisor == -1
-    } else {
-        true
-    };
-
-    let s = if !needs_guard {
-        if is_mod {
-            ctx.b.ins().srem(l_bits, r_bits)
-        } else {
-            ctx.b.ins().sdiv(l_bits, r_bits)
-        }
-    } else {
-        let is_zero = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, 0);
-        let is_min = ctx.b.ins().icmp_imm(IntCC::Equal, l_bits, i64::MIN);
-        let is_minus_one = ctx.b.ins().icmp_imm(IntCC::Equal, r_bits, -1);
-        let is_overflow = ctx.b.ins().band(is_min, is_minus_one);
-        let should_fail = ctx.b.ins().bor(is_zero, is_overflow);
-        
-        let fail = ctx.create_block();
-        let ok = ctx.create_block();
-        
-        ctx.b.ins().brif(should_fail, fail, &[], ok, &[]);
-        ctx.b.switch_to_block(fail);
-        
-        let sip = ctx.b.ins().iconst(types::I64, ctx.start_ip as i64);
-        ctx.b.ins().call(symbols.xcx_jit_report_guard_failure, &[ctx.executor_ptr, sip]);
-        
-        ctx.spill_all();
-        let rv = ctx.b.ins().iconst(types::I32, fail_ip as i64);
-        ctx.b.ins().return_(&[rv]);
-        
-        ctx.b.switch_to_block(ok);
-        if is_mod {
-            ctx.b.ins().srem(l_bits, r_bits)
-        } else {
-            ctx.b.ins().sdiv(l_bits, r_bits)
-        }
-    };
-    
-    if ctx.uses_heap && !ctx.should_skip_dec_ref(dst) {
-        let (v_bits, v_tag) = ctx.use_local(dst);
-        super::nan_ops::emit_conditional_dec_ref(ctx, symbols, v_bits, v_tag);
-    }
-    
-    let int_tag = ctx.b.ins().iconst(types::I64, TAG_INT as i64);
-    ctx.def_local(dst, s, int_tag);
-    ctx.known_types[dst as usize] = crate::vm::opcode::TypeTag::Int;
-}
-
-pub fn emit_mod_int(
-    ctx: &mut CodegenCtx,
-    symbols: &super::symbols::ImportedSymbols,
-    dst: u8,
-    src1: u8,
-    src2: u8,
-    fail_ip: usize,
-) {
-    emit_div_int(ctx, symbols, dst, src1, src2, fail_ip, true);
-}
-
 pub fn emit_binop_float<F>(
     ctx: &mut CodegenCtx,
     symbols: &super::symbols::ImportedSymbols,
@@ -671,14 +575,6 @@ pub fn emit_poly_div_mod_fast_path(
     }
     ctx.def_local(dst, final_bits, final_tag);
     ctx.clear_block_state(true);
-}
-
-pub fn emit_div_poly(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymbols, dst: u8, src1: u8, src2: u8) {
-    emit_poly_div_mod_fast_path(ctx, symbols, dst, src1, src2, symbols.xcx_jit_div, false);
-}
-
-pub fn emit_mod_poly(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymbols, dst: u8, src1: u8, src2: u8) {
-    emit_poly_div_mod_fast_path(ctx, symbols, dst, src1, src2, symbols.xcx_jit_mod, true);
 }
 
 pub fn emit_neg_poly(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymbols, dst: u8, src: u8) {

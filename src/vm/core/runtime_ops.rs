@@ -77,13 +77,12 @@ impl RuntimeOps {
         let cols = skeleton_rd.columns.clone();
         let ncol = cols.len();
 
-        let mut rows = Vec::with_capacity(row_count as usize);
+        let mut rows = Vec::with_capacity((row_count as usize) * ncol);
         let mut current_offset = 0;
         for row_idx in 0..row_count {
-            let mut row = Vec::with_capacity(ncol);
             for c in 0..ncol {
                 if cols[c].is_auto {
-                    row.push(Value::from_i64(row_idx as i64 + 1));
+                    rows.push(Value::from_i64(row_idx as i64 + 1));
                 } else {
                     if current_offset >= locals.len() {
                         return Err("Not enough values for table initialization".to_string());
@@ -96,11 +95,10 @@ impl RuntimeOps {
                         ));
                     }
                     unsafe { val.inc_ref(); }
-                    row.push(val);
+                    rows.push(val);
                     current_offset += 1;
                 }
             }
-            rows.push(row);
         }
 
         let table_name = skeleton_rd.table_name.clone();
@@ -171,7 +169,7 @@ impl RuntimeOps {
                 let tbl = c.as_table();
                 let tbl_rd = tbl.read();
                 if name == "count" || name == "size" {
-                    res = Value::from_i64(tbl_rd.rows.len() as i64);
+                    res = Value::from_i64(tbl_rd.len() as i64);
                 } else if name == "name" {
                     res = Value::from_string(Arc::new(crate::vm::object::StringObj::new(tbl_rd.table_name.as_bytes().to_vec())));
                 }
@@ -197,9 +195,11 @@ impl RuntimeOps {
                 let row_ref = c.as_row();
                 let tbl = row_ref.table.read();
                 let row_idx = row_ref.row_idx as usize;
-                if row_idx < tbl.rows.len() {
-                    let values = &tbl.rows[row_idx];
-                    for i in 0..tbl.columns.len() {
+                if row_idx < tbl.len() {
+                    let cols_len = tbl.columns.len();
+                    let start_idx = row_idx * cols_len;
+                    let values = &tbl.rows[start_idx..start_idx + cols_len];
+                    for i in 0..cols_len {
                         if tbl.columns[i].name == name {
                             res = values[i];
                             unsafe { res.inc_ref(); }
@@ -224,29 +224,27 @@ impl RuntimeOps {
                             let table_name = binding.table_name.clone();
                             let conn = binding.db_conn.lock();
                             let sql = format!("SELECT * FROM [{}]", table_name);
-                            if let Ok(mut stmt) = conn.prepare(&sql) {
-                                let mut new_rows = Vec::new();
-                                if let Ok(rows_iter) = stmt.query_map(rusqlite::params![], |row| {
-                                    let mut row_vals = Vec::with_capacity(cols.len());
-                                    for (i, col) in cols.iter().enumerate() {
-                                        let v = crate::vm::utils::table::sqlite_row_to_value(row, &col.ty, i);
-                                        row_vals.push(v);
-                                    }
-                                    Ok(row_vals)
-                                }) {
-                                    for r in rows_iter {
-                                        if let Ok(row) = r {
-                                            new_rows.push(row);
-                                        }
-                                    }
-                                }
-                                let mut tbl_write = tbl_rc.write();
-                                for old_row in std::mem::replace(&mut tbl_write.rows, new_rows) {
-                                    for v in old_row {
-                                        unsafe { v.dec_ref(); }
-                                    }
-                                }
-                            }
+                             if let Ok(mut stmt) = conn.prepare(&sql) {
+                                 let mut new_rows = Vec::new();
+                                 if let Ok(rows_iter) = stmt.query_map(rusqlite::params![], |row| {
+                                     let mut row_vals = Vec::with_capacity(cols.len());
+                                     for (i, col) in cols.iter().enumerate() {
+                                         let v = crate::vm::utils::table::sqlite_row_to_value(row, &col.ty, i);
+                                         row_vals.push(v);
+                                     }
+                                     Ok(row_vals)
+                                 }) {
+                                     for r in rows_iter {
+                                         if let Ok(row) = r {
+                                             new_rows.extend(row);
+                                         }
+                                     }
+                                 }
+                                 let mut tbl_write = tbl_rc.write();
+                                 for old_val in std::mem::replace(&mut tbl_write.rows, new_rows) {
+                                     unsafe { old_val.dec_ref(); }
+                                 }
+                             }
                         }
                     }
                 }
@@ -291,10 +289,10 @@ impl RuntimeOps {
 
                         if let crate::vm::object::JsonVal::String(arc_str) = &mut obj[pos].1 {
                             if let Some(s) = std::sync::Arc::get_mut(arc_str) {
-                                s.push_str(&suffix);
+                                s.data.extend_from_slice(suffix.as_bytes());
                             } else {
                                 let mut combined = (**arc_str).clone();
-                                combined.push_str(&suffix);
+                                combined.data.extend_from_slice(suffix.as_bytes());
                                 obj[pos].1 = crate::vm::object::JsonVal::String(std::sync::Arc::new(combined));
                             }
                         }

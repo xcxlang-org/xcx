@@ -132,7 +132,7 @@ pub fn serve_impl(
                 let req_obj = if let Some(req) = req_guard.as_mut() {
                     let mut headers_obj = Vec::new();
                     for header in req.headers() {
-                        headers_obj.push((std::sync::Arc::new(header.field.to_string().to_lowercase()), crate::vm::object::JsonVal::String(Arc::new(header.value.to_string()))));
+                        headers_obj.push((std::sync::Arc::new(header.field.to_string().to_lowercase()), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(header.value.to_string().into_bytes())))));
                     }
                     let mut body_bytes = Vec::new();
                     let _ = req.as_reader().read_to_end(&mut body_bytes);
@@ -140,7 +140,7 @@ pub fn serve_impl(
                     let body_val = if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(&body_str) {
                         crate::vm::object::JsonVal::from_serde(json_body)
                     } else {
-                        crate::vm::object::JsonVal::String(Arc::new(body_str))
+                        crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(body_str.into_bytes())))
                     };
 
                     let url_str = req.url().to_string();
@@ -154,10 +154,10 @@ pub fn serve_impl(
                             if kv.len() == 2 {
                                 let k = percent_decode(kv[0]);
                                 let v = percent_decode(kv[1]);
-                                query_obj.push((std::sync::Arc::new(k), crate::vm::object::JsonVal::String(Arc::new(v))));
+                                query_obj.push((std::sync::Arc::new(k), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(v.into_bytes())))));
                             } else if kv.len() == 1 {
                                 let k = percent_decode(kv[0]);
-                                query_obj.push((std::sync::Arc::new(k), crate::vm::object::JsonVal::String(Arc::new(String::new()))));
+                                query_obj.push((std::sync::Arc::new(k), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(Vec::new())))));
                             }
                         }
                     }
@@ -167,12 +167,12 @@ pub fn serve_impl(
                         .unwrap_or_else(|| "127.0.0.1".to_string());
 
                     let mut obj = Vec::new();
-                    obj.push((std::sync::Arc::new("method".to_string()), crate::vm::object::JsonVal::String(Arc::new(req.method().to_string()))));
-                    obj.push((std::sync::Arc::new("path".to_string()), crate::vm::object::JsonVal::String(Arc::new(path_only))));
+                    obj.push((std::sync::Arc::new("method".to_string()), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(req.method().to_string().into_bytes())))));
+                    obj.push((std::sync::Arc::new("path".to_string()), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(path_only.into_bytes())))));
                     obj.push((std::sync::Arc::new("query".to_string()), crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(query_obj)))));
                     obj.push((std::sync::Arc::new("headers".to_string()), crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(headers_obj)))));
                     obj.push((std::sync::Arc::new("body".to_string()), body_val));
-                    obj.push((std::sync::Arc::new("ip".to_string()), crate::vm::object::JsonVal::String(Arc::new(client_ip))));
+                    obj.push((std::sync::Arc::new("ip".to_string()), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(client_ip.into_bytes())))));
                     
                     Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(obj))))))
                 } else { Value::from_bool(false) };

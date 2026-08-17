@@ -157,7 +157,7 @@ impl JIT {
             let may_contain_ptr = analyze_maybe_ptr_regs(&chunk.bytecode, &global_ints, constants);
             ctx.set_may_contain_ptr(may_contain_ptr);
             
-            ctx.set_reg_types_per_ip(inferred_types);
+            ctx.set_reg_types_per_ip(inferred_types.clone());
             ctx.uses_heap = uses_heap;
 
             // XCX_JIT_DEBUG removed
@@ -286,7 +286,8 @@ impl JIT {
                         emit_dec_local(&mut ctx, reg);
                     }
                      OpCode::GetVar { dst, idx } => {
-                        emit_get_var(&mut ctx, &symbols, dst, idx);
+                        let elide = getvar_inc_elidable(&chunk.bytecode, &inferred_types, ip);
+                        emit_get_var(&mut ctx, &symbols, dst, idx, elide);
                     }
                     OpCode::SetVar { idx, src } => {
                         emit_set_var(&mut ctx, &symbols, idx, src);
@@ -1129,7 +1130,6 @@ impl JIT {
             }
         }
         b.finalize();
-        // XCX_JIT_DEBUG removed
 
         if let Err(errors) = self.module.define_function(func_id, &mut self.ctx) {
             let _ = errors;

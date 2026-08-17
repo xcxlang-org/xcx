@@ -1,7 +1,6 @@
 use cranelift::prelude::*;
 use super::codegen_ctx::CodegenCtx;
 use super::symbols::ImportedSymbols;
-use super::nan_ops::emit_conditional_dec_ref;
 
 pub fn emit_halt_alert(
     ctx: &mut CodegenCtx,
@@ -71,34 +70,4 @@ pub fn emit_halt_fatal(
         ctx.b.ins().return_(&[rv]);
     }
     *terminated = true;
-}
-
-pub fn emit_env_get(
-    ctx: &mut CodegenCtx,
-    symbols: &ImportedSymbols,
-    dst: u8,
-    src: u8,
-) {
-    let (sv_bits, sv_tag) = ctx.use_local(src);
-    let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_get, &[sv_bits, sv_tag]);
-    
-    if !ctx.should_skip_dec_ref(dst) {
-        let (old_bits, old_tag) = ctx.use_local(dst);
-        emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
-    }
-    ctx.def_local(dst, res_bits, res_tag);
-}
-
-pub fn emit_env_args(
-    ctx: &mut CodegenCtx,
-    symbols: &ImportedSymbols,
-    dst: u8,
-) {
-    let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_args, &[]);
-    
-    if !ctx.should_skip_dec_ref(dst) {
-        let (old_bits, old_tag) = ctx.use_local(dst);
-        emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
-    }
-    ctx.def_local(dst, res_bits, res_tag);
 }

@@ -52,61 +52,18 @@ impl Executor {
                 self.in_fiber = true;
 
                 let chunk = self.ctx.functions[func_id].clone();
-                
-                // JIT: check if there is a compiled segment for this IP
-                let mut ores = None;
-                {
-                    let segments = chunk.jit_segments.read();
-                    if let Some(&jit_val) = segments.get(&fib_ip) {
-                        if jit_val != 0 {
-                            let jit_fn: extern "C" fn(*mut Value, *mut Value, *mut Value, *const Value, *const crate::vm::VM, *mut Executor, *const bool) = 
-                                unsafe { std::mem::transmute(jit_val as *const ()) };
-                            
-                            let globals_read = _vm_arc.globals.read();
-                            let globals_ptr = globals_read.as_ptr() as *mut Value;
-                            let consts_ptr = self.ctx.constants.as_ptr() as *const Value;
-                            let vm_ptr = Arc::as_ptr(_vm_arc);
-                            let shutdown_ptr = std::ptr::null::<bool>();
 
-                            self.fiber_yielded = false;
-                            let mut yielded_val = Value::from_bool(false);
-                            jit_fn(&mut yielded_val as *mut Value, fib_locals.as_mut_ptr(), globals_ptr, consts_ptr, vm_ptr, self, shutdown_ptr);
-                            
-                            fib_ip = self.fiber_next_ip;
-                            if self.fiber_yielded {
-                                ores = Some(OpResult::Yield(Some(yielded_val)));
-                            } else {
-                                ores = Some(OpResult::Return(Some(yielded_val)));
-                            }
-                        }
-                    }
-                }
+                // Fibers execute through the interpreter; the fiber-segment JIT was
+                // removed as unreachable (its hotspot counter was never populated,
+                // so no segment could ever be compiled or cached).
+                let mut ores = None;
 
                 if ores.is_none() {
-                    // Hotspot tick for this segment
-                    if self.hotspot.tick(fib_ip) {
-                        let mut jit = _vm_arc.jit.lock();
-                        match jit.compile_fiber_segment(func_id, fib_ip, &chunk, &self.ctx.constants) {
-                            Ok(ptr) => {
-                                chunk.jit_segments.write().insert(fib_ip, ptr as usize);
-                            }
-                            Err(_e) => {
-                            }
-                        }
-                    }
-                    
-                    // Fallback to interpreter.
-                    // Trace JIT is disabled for fiber execution — fibers use compile_fiber_segment,
-                    // not the trace recorder. Mixing both caused traces to loop without yielding.
                     let fiber_bptr = chunk.bytecode.as_ptr() as usize;
                     let old_bptr   = std::mem::replace(&mut self.current_bytecode_ptr, fiber_bptr);
-                    let old_hot    = std::mem::replace(&mut self.hotspot.counts, Vec::new());
-                    let old_cache  = std::mem::replace(&mut self.trace_cache,    Vec::new());
 
                     ores = Some(self.execute_bytecode_inner(&chunk.bytecode, &mut fib_ip, &mut fib_locals, _vm_arc));
 
-                    self.hotspot.counts      = old_hot;
-                    self.trace_cache         = old_cache;
                     self.current_bytecode_ptr = old_bptr;
                 }
 

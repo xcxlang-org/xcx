@@ -1,5 +1,99 @@
-use crate::vm::opcode::OpCode;
+use crate::vm::opcode::{OpCode, TypeTag};
 use std::collections::HashSet;
+
+/// True when a `GetVar` at `ip` loads a pointer global into the receiver
+/// register of a following specialized `MethodCall` that overwrites that
+/// register with its result without releasing the old value (the
+/// Update/Set/Push fast paths in `emit_method_call`).
+///
+/// The compiler emits method calls as
+/// `GetVar recv -> r; <argument ops>; MethodCall { dst: r, base: r }`, so the
+/// inc_ref performed by `emit_get_var` is never matched by a dec_ref for
+/// exactly this receiver — it leaks one reference per call today. Eliding it
+/// is therefore both a correctness improvement (no leak for this shape) and
+/// removes an atomic RMW plus branch from every loop iteration over a global
+/// collection.
+///
+/// Between the GetVar and the MethodCall only argument-setup ops are allowed:
+/// ops that never spill registers, never run user code, and never reassign
+/// the receiver global. Anything else (calls, collection inits, I/O, jumps)
+/// aborts the elision. The register loaded at `ip` must also not be touched
+/// by the window ops.
+///
+/// `types` is the per-instruction register type analysis (`types_at_ip`);
+/// the receiver type at the MethodCall must select one of the specialized
+/// no-release branches, mirroring the match guard in `emit_method_call`.
+pub fn getvar_inc_elidable(bytecode: &[OpCode], types: &[[TypeTag; 256]], ip: usize) -> bool {
+    use crate::vm::opcode::MethodKind;
+    let recv = match &bytecode[ip] {
+        OpCode::GetVar { dst, .. } => *dst,
+        _ => return false,
+    };
+
+    for pos in (ip + 1)..bytecode.len() {
+        let op = &bytecode[pos];
+        // The op must not redefine the receiver register.
+        let writes_recv = match op {
+            OpCode::LoadConst { dst, .. } | OpCode::GetVar { dst, .. } | OpCode::Move { dst, .. }
+            | OpCode::Add { dst, .. } | OpCode::Sub { dst, .. } | OpCode::Mul { dst, .. }
+            | OpCode::Div { dst, .. } | OpCode::Mod { dst, .. } | OpCode::Pow { dst, .. }
+            | OpCode::Neg { dst, .. } | OpCode::Not { dst, .. }
+            | OpCode::Equal { dst, .. } | OpCode::NotEqual { dst, .. }
+            | OpCode::Greater { dst, .. } | OpCode::Less { dst, .. }
+            | OpCode::GreaterEqual { dst, .. } | OpCode::LessEqual { dst, .. }
+            | OpCode::And { dst, .. } | OpCode::Or { dst, .. }
+            | OpCode::IntConcat { dst, .. } | OpCode::Has { dst, .. }
+            | OpCode::CastInt { dst, .. } | OpCode::CastFloat { dst, .. }
+            | OpCode::CastString { dst, .. } | OpCode::CastBool { dst, .. } => *dst == recv,
+            _ => false,
+        };
+        if writes_recv {
+            return false;
+        }
+
+        match op {
+            OpCode::MethodCall { dst, kind, base, arg_count } => {
+                if *dst != recv || *base != recv {
+                    return false; // unrelated (nested) method call in an argument
+                }
+                let row = match types.get(pos) {
+                    Some(r) => r,
+                    None => return false,
+                };
+                let ty = row[*base as usize];
+                return match kind {
+                    MethodKind::Update | MethodKind::Set if *arg_count == 2 => {
+                        matches!(ty, TypeTag::Array | TypeTag::BoolArray | TypeTag::Json | TypeTag::Map)
+                    }
+                    MethodKind::Push if *arg_count == 1 => {
+                        matches!(ty, TypeTag::Array | TypeTag::BoolArray | TypeTag::Json)
+                    }
+                    MethodKind::Get if *arg_count == 1 => {
+                        matches!(ty, TypeTag::Array | TypeTag::BoolArray | TypeTag::Json | TypeTag::Map)
+                    }
+                    _ => false,
+                };
+            }
+            // Argument setup: safe, non-spilling, no user code.
+            OpCode::LoadConst { .. } | OpCode::GetVar { .. } | OpCode::Move { .. }
+            | OpCode::Add { .. } | OpCode::Sub { .. } | OpCode::Mul { .. }
+            | OpCode::Div { .. } | OpCode::Mod { .. } | OpCode::Pow { .. }
+            | OpCode::Neg { .. } | OpCode::Not { .. }
+            | OpCode::Equal { .. } | OpCode::NotEqual { .. }
+            | OpCode::Greater { .. } | OpCode::Less { .. }
+            | OpCode::GreaterEqual { .. } | OpCode::LessEqual { .. }
+            | OpCode::And { .. } | OpCode::Or { .. }
+            | OpCode::IntConcat { .. } | OpCode::Has { .. }
+            | OpCode::CastInt { .. } | OpCode::CastFloat { .. }
+            | OpCode::CastString { .. } | OpCode::CastBool { .. } => {}
+            // Anything else (calls, inits with spills, I/O, jumps, halts...)
+            // makes the elision unsound or unpredictable.
+            _ => return false,
+        }
+    }
+    false
+}
+
 
 
 pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::value::Value]) -> HashSet<u8> {
@@ -222,16 +316,8 @@ pub fn analyze_chunk_locals_init(bytecode: &[OpCode], arity: u8) -> Vec<u8> {
     needs_init.into_iter().collect()
 }
 
-pub fn analyze_trace_locals(trace: &[crate::vm::trace::TraceOp]) -> Vec<u8> {
-    analyze_locals_iter(trace.iter().map(|top| top.to_opcode()))
-}
-
 pub fn analyze_chunk_globals(bytecode: &[OpCode]) -> Vec<u32> {
     analyze_globals_iter(bytecode.iter().cloned())
-}
-
-pub fn analyze_trace_globals(trace: &[crate::vm::trace::TraceOp]) -> Vec<u32> {
-    analyze_globals_iter(trace.iter().map(|top| top.to_opcode()))
 }
 
 fn analyze_globals_iter<I>(bytecode: I) -> Vec<u32>
@@ -467,12 +553,6 @@ where
                 used.insert(reg);
                 used.insert(limit_reg);
             }
-            OpCode::MakeClosure { dst, capture_count, capture_start, .. } => {
-                used.insert(dst);
-                for i in 0..capture_count {
-                    used.insert((capture_start as usize + i as usize) as u8);
-                }
-            }
             OpCode::TerminalCursor { dst, .. } => {
                 used.insert(dst);
             }
@@ -681,7 +761,6 @@ pub fn analyze_non_ptr_regs(
                 | OpCode::StoreUnzip { dst, .. }
                 | OpCode::DatabaseInit { dst, .. }
                 | OpCode::MethodCallNamed { dst, .. }
-                | OpCode::MakeClosure { dst, .. }
                 | OpCode::Typeof { dst, .. }
                 | OpCode::TableCloneSkeleton { dst, .. } => {
                     if non_ptr_regs.remove(dst) {
@@ -725,95 +804,6 @@ pub fn analyze_non_ptr_regs(
         }
     }
     non_ptr_regs
-}
-
-/// Identifies global variable indices that are exclusively used as integers throughout a trace.
-/// Used by the trace compiler to elide ref-counting on integer globals (e.g. LCG state, counters).
-pub fn analyze_trace_global_ints(ops: &[crate::vm::trace::TraceOp]) -> HashSet<u32> {
-    use crate::vm::trace::TraceOp;
-    let mut global_ints: HashSet<u32> = HashSet::new();
-    let mut global_non_ints: HashSet<u32> = HashSet::new();
-    let mut reg_is_int = [false; 256];
-
-    for op in ops {
-        match op {
-            TraceOp::LoadConst { dst, val } => {
-                reg_is_int[*dst as usize] = val.is_int();
-            }
-            TraceOp::Move { dst, src } => {
-                reg_is_int[*dst as usize] = reg_is_int[*src as usize];
-            }
-            TraceOp::AddInt { dst, .. } | TraceOp::SubInt { dst, .. }
-            | TraceOp::MulInt { dst, .. } | TraceOp::ModInt { dst, .. }
-            | TraceOp::DivInt { dst, .. } | TraceOp::PowInt { dst, .. }
-            | TraceOp::IntConcat { dst, .. } | TraceOp::NegInt { dst, .. } => {
-                reg_is_int[*dst as usize] = true;
-            }
-            TraceOp::IncLocal { reg } => {
-                reg_is_int[*reg as usize] = true;
-            }
-            TraceOp::SetVar { idx, src } => {
-                if reg_is_int[*src as usize] {
-                    if !global_non_ints.contains(idx) {
-                        global_ints.insert(*idx);
-                    }
-                } else {
-                    global_ints.remove(idx);
-                    global_non_ints.insert(*idx);
-                }
-            }
-            TraceOp::GetVar { dst, idx } => {
-                reg_is_int[*dst as usize] = global_ints.contains(idx);
-            }
-            TraceOp::IncVar { g_idx } => {
-                if !global_non_ints.contains(g_idx) {
-                    global_ints.insert(*g_idx);
-                }
-            }
-            _ => {}
-        }
-    }
-    global_ints
-}
-
-/// Identifies local registers in a trace that never hold heap pointers.
-/// Used to elide dec_ref in the trace compiler's hot path.
-pub fn analyze_trace_non_ptr_regs(ops: &[crate::vm::trace::TraceOp], global_ints: &HashSet<u32>) -> HashSet<u8> {
-    use crate::vm::trace::TraceOp;
-    let mut non_ptr: HashSet<u8> = (0u8..=255).collect();
-
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for op in ops {
-            match op {
-                TraceOp::GetVar { dst, idx } => {
-                    if !global_ints.contains(idx) {
-                        if non_ptr.remove(dst) { changed = true; }
-                    }
-                }
-                TraceOp::LoadConst { dst, val } => {
-                    if val.is_ptr() {
-                        if non_ptr.remove(dst) { changed = true; }
-                    }
-                }
-                TraceOp::Move { dst, src } => {
-                    if !non_ptr.contains(src) {
-                        if non_ptr.remove(dst) { changed = true; }
-                    }
-                }
-                TraceOp::ArrayGet { dst, .. } | TraceOp::ArrayGetIndex { dst, .. }
-                | TraceOp::GetMember { dst, .. } | TraceOp::JsonBindLocal { dst, .. }
-                | TraceOp::JsonBindLocalConst { dst, .. } | TraceOp::JsonParse { dst, .. }
-                | TraceOp::FiberNext { dst, .. } | TraceOp::Call { dst, .. }
-                | TraceOp::TableCloneSkeleton { dst, .. } | TraceOp::RowGet { dst, .. } => {
-                    if non_ptr.remove(dst) { changed = true; }
-                }
-                _ => {}
-            }
-        }
-    }
-    non_ptr
 }
 
 /// Propagates potential pointer-containing states for all registers across all control-flow paths.
@@ -932,7 +922,6 @@ pub fn analyze_maybe_ptr_regs(
             OpCode::HttpRespond { dst, .. } |
             OpCode::DatabaseInit { dst, .. } |
             OpCode::MethodCallNamed { dst, .. } |
-            OpCode::MakeClosure { dst, .. } |
             OpCode::Typeof { dst, .. } |
             OpCode::GetIndex { dst, .. } |
             OpCode::GetMember { dst, .. } |

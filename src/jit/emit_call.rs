@@ -426,62 +426,6 @@ pub fn emit_call(
     }
 }
 
-pub fn emit_random_int(
-    ctx: &mut CodegenCtx,
-    symbols: &ImportedSymbols,
-    dst: u8,
-    min: u8,
-    max: u8,
-    step: u8,
-    has_step: u8,
-) {
-    let (min_bits, min_tag) = ctx.use_local(min);
-    let (max_bits, max_tag) = ctx.use_local(max);
-    let (step_bits, step_tag) = ctx.use_local(step);
-    
-    let (h_bits, _h_tag) = ctx.use_local(has_step);
-    let h_bool = ctx.b.ins().band_imm(h_bits, 1);
-    let h_i8 = ctx.b.ins().ireduce(types::I8, h_bool);
-    
-    let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_random_int, &[
-        min_bits, min_tag, max_bits, max_tag, step_bits, step_tag, h_i8
-    ]);
-    
-    if !ctx.should_skip_dec_ref(dst) {
-        let (old_bits, old_tag) = ctx.use_local(dst);
-        emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
-    }
-    ctx.def_local(dst, res_bits, res_tag);
-}
-
-pub fn emit_random_float_call(
-    ctx: &mut CodegenCtx,
-    symbols: &ImportedSymbols,
-    dst: u8,
-    min: u8,
-    max: u8,
-    step: u8,
-    has_step: u8,
-) {
-    let (min_bits, min_tag) = ctx.use_local(min);
-    let (max_bits, max_tag) = ctx.use_local(max);
-    let (step_bits, step_tag) = ctx.use_local(step);
-    
-    let (h_bits, _h_tag) = ctx.use_local(has_step);
-    let h_bool = ctx.b.ins().band_imm(h_bits, 1);
-    let h_i8 = ctx.b.ins().ireduce(types::I8, h_bool);
-    
-    let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_random_float, &[
-        min_bits, min_tag, max_bits, max_tag, step_bits, step_tag, h_i8
-    ]);
-    
-    if !ctx.should_skip_dec_ref(dst) {
-        let (old_bits, old_tag) = ctx.use_local(dst);
-        emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
-    }
-    ctx.def_local(dst, res_bits, res_tag);
-}
-
 pub fn emit_method_call(
     ctx: &mut CodegenCtx,
     symbols: &ImportedSymbols,
@@ -496,7 +440,11 @@ pub fn emit_method_call(
         MethodKind::Get if arg_count == 1 && (ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Array || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::BoolArray || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Json || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Map) => {
             let (idx_bits, idx_tag) = ctx.use_local(base + 1);
             let kind_ty = ctx.get_reg_type(base as usize);
-            
+            // When dst == base and the receiver holds an inc-elided (un-owned)
+            // copy of its global, the old-value dec_ref below would release a
+            // reference that was never acquired — skip it.
+            let recv_is_unowned = dst == base && ctx.unowned_recv_regs[base as usize];
+
             if kind_ty == crate::vm::opcode::TypeTag::Array {
                 if ctx.get_reg_type(dst as usize) == crate::vm::opcode::TypeTag::Int {
                     let elements_ptr = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), recv_bits, 16);
@@ -530,7 +478,7 @@ pub fn emit_method_call(
                     ctx.def_local(dst, final_bits, r_tag);
                 } else {
                     let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_array_get, &[recv_bits, recv_tag, idx_bits]);
-                    if !ctx.should_skip_dec_ref(dst) {
+                    if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                         let (old_bits, old_tag) = ctx.use_local(dst);
                         emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
                     }
@@ -565,7 +513,7 @@ pub fn emit_method_call(
                 ctx.b.switch_to_block(join_blk);
                 ctx.clear_block_state(false);
                 let final_bits = ctx.b.use_var(res_val);
-                if !ctx.should_skip_dec_ref(dst) {
+                if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
                     emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
                 }
@@ -573,14 +521,14 @@ pub fn emit_method_call(
                 ctx.def_local(dst, final_bits, bool_tag);
             } else if kind_ty == crate::vm::opcode::TypeTag::Json {
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_json_get, &[recv_bits, recv_tag, idx_bits, idx_tag]);
-                if !ctx.should_skip_dec_ref(dst) {
+                if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
                     emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
                 }
                 ctx.def_local(dst, r_bits, r_tag);
             } else if kind_ty == crate::vm::opcode::TypeTag::Map {
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_map_get, &[recv_bits, recv_tag, idx_bits, idx_tag]);
-                if !ctx.should_skip_dec_ref(dst) {
+                if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
                     emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
                 }
@@ -730,7 +678,7 @@ pub fn emit_method_call(
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
                     recv_bits, recv_tag, k_i8, args_ptr, a_cnt_i8, ctx.executor_ptr
                 ]);
-                if !ctx.should_skip_dec_ref(dst) {
+                if !ctx.unowned_recv_regs[base as usize] && !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
                     emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
                 }

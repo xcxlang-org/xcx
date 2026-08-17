@@ -37,7 +37,6 @@ pub fn compile_hir_to_chunk(
         compiler.emit(OpCode::ReturnVoid, &Span::default());
     }
 
-    let has_loops = crate::vm::opcode::calculate_has_loops(&compiler.bytecode);
     let max_locals = compiler.max_locals_used.max(compiler.next_local);
 
     Chunk::new(
@@ -45,7 +44,6 @@ pub fn compile_hir_to_chunk(
         compiler.spans,
         is_fiber,
         max_locals.into(),
-        has_loops,
         name,
         param_count,
     )

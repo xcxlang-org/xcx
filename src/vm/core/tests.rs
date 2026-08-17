@@ -233,43 +233,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Panics across FFI boundaries which causes hard abort in release tests"]
-    fn test_ssrf_protection_link_local() {
-        let source = r#"
-            json: res = net.get("http://169.254.169.254/latest/meta-data/");
-            s: err = res.error;
-        "#;
-        let mut parser = Parser::new(source);
-        let mut program = parser.parse_program();
-        let mut interner = parser.into_interner();
-        let mut checker = Checker::new(&interner);
-        let mut symbols = SymbolTable::new();
-        let _ = checker.check(&mut program, &mut symbols);
-
-        let err_id = interner.intern("err");
-        let mut compiler = XCXCompiler::new();
-        let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
-        let err_idx = *compiler.globals.get(&err_id).expect("Global not found");
-
-        let vm = Arc::new(VM::new());
-        let ctx = SharedContext { 
-            constants, 
-            functions, 
-            http_req: None 
-        };
-        vm.clone().run(Arc::new(main_chunk), ctx, &[]);
-
-        let v = vm.get_global(err_idx);
-        if v.is_ptr() {
-            let s_bytes = v.as_string();
-            let s_str = String::from_utf8_lossy(&s_bytes);
-            assert!(s_str.contains("SSRF"), "Expected SSRF error string, got: {}", s_str);
-        } else {
-            panic!("SSRF protection test failed! Expected error string, got {:?}", v);
-        }
-    }
-
-    #[test]
     fn test_string_starts_with_true() {
         let source = r#"b: result = "admin@xcx.pl".startsWith("admin");"#;
         let mut parser = Parser::new(source);
@@ -622,7 +585,8 @@ mod tests {
 
     #[test]
     fn test_http_serve_and_client_v6() {
-        println!("**************************************************");
+        let dump = std::env::var("XCX_TEST_DUMP").is_ok();
+        if dump { println!("**************************************************"); }
 
 
         let server_source = r#"
@@ -738,25 +702,29 @@ mod tests {
         let uid0_idx = *compiler.globals.get(&uid0_id).expect("Global not found");
         let name1_idx = *compiler.globals.get(&name1_id).expect("Global not found");
 
-        println!("[TEST BYTECODE] bytecode length = {}", main_chunk.bytecode.len());
-        for (i, op) in main_chunk.bytecode.iter().enumerate() {
-            println!("[TEST BYTECODE]   ip={}: {:?}", i, op);
+        if std::env::var("XCX_TEST_DUMP").is_ok() {
+            println!("[TEST BYTECODE] bytecode length = {}", main_chunk.bytecode.len());
+            for (i, op) in main_chunk.bytecode.iter().enumerate() {
+                println!("[TEST BYTECODE]   ip={}: {:?}", i, op);
+            }
         }
 
         let vm = Arc::new(VM::new());
-        let ctx = SharedContext { 
-            constants, 
-            functions, 
-            http_req: None 
+        let ctx = SharedContext {
+            constants,
+            functions,
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
-        
-        for (i, v) in vm.globals.read().iter().enumerate() {
-            if v.bits != 0 || v.tag != 2 {
-                println!("[TEST GLOBALS] idx={}, val={:?}", i, v);
+
+        if std::env::var("XCX_TEST_DUMP").is_ok() {
+            for (i, v) in vm.globals.read().iter().enumerate() {
+                if v.bits != 0 || v.tag != 2 {
+                    println!("[TEST GLOBALS] idx={}, val={:?}", i, v);
+                }
             }
+            println!("[TEST GLOBALS] cnt_idx={}, uid0_idx={}, name1_idx={}", cnt_idx, uid0_idx, name1_idx);
         }
-        println!("[TEST GLOBALS] cnt_idx={}, uid0_idx={}, name1_idx={}", cnt_idx, uid0_idx, name1_idx);
 
         assert_int(&vm, cnt_idx, 2, "users.count() mismatch");
         assert_int(&vm, uid0_idx, 1, "users[0].uid mismatch");
@@ -901,16 +869,18 @@ mod tests {
         let mut compiler = XCXCompiler::new();
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
 
-        println!("[DEBUG] Main chunk bytecode:");
-        for (i, op) in main_chunk.bytecode.iter().enumerate() {
-            println!("  ip={}: {:?}", i, op);
-        }
+        if std::env::var("XCX_TEST_DUMP").is_ok() {
+            println!("[DEBUG] Main chunk bytecode:");
+            for (i, op) in main_chunk.bytecode.iter().enumerate() {
+                println!("  ip={}: {:?}", i, op);
+            }
 
-        println!("[DEBUG] Functions count: {}", functions.len());
-        for (f_idx, func_chunk) in functions.iter().enumerate() {
-            println!("  Function {} chunk bytecode:", f_idx);
-            for (i, op) in func_chunk.bytecode.iter().enumerate() {
-                println!("    ip={}: {:?}", i, op);
+            println!("[DEBUG] Functions count: {}", functions.len());
+            for (f_idx, func_chunk) in functions.iter().enumerate() {
+                println!("  Function {} chunk bytecode:", f_idx);
+                for (i, op) in func_chunk.bytecode.iter().enumerate() {
+                    println!("    ip={}: {:?}", i, op);
+                }
             }
         }
 

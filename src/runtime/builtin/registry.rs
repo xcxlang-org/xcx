@@ -13,7 +13,6 @@ pub mod math {
 }
 pub mod string { pub use crate::runtime::builtin::string::*; }
 pub mod io {
-    pub use crate::runtime::builtin::io::print::*;
     pub use crate::runtime::builtin::io::input::*;
     pub use crate::runtime::builtin::io::terminal::*;
 }

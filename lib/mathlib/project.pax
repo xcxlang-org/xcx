@@ -3,7 +3,7 @@ PAX Project Configuration
 *---
 /
     name        :: "mathlib",
-    version     :: "4.2.0",
+    version     :: "4.3.0",
     author      :: "xcx-official",
     description :: "Standard math library for XCX — constants, arithmetic, trigonometry, statistics, geometry, combinatorics, unit conversion, and bit operations",
     main        :: "src/math.xcx",

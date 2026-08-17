@@ -23,7 +23,7 @@ impl Executor {
 
         if idx >= 0 {
             let mut t_mut = t_rc.write();
-            if (idx as usize) < t_mut.rows.len() {
+            if (idx as usize) < t_mut.len() {
                 let key = Arc::as_ptr(&t_rc) as usize;
                 if let Some(cache_vec) = self.row_cache.remove(&key) {
                     for v in cache_vec {
@@ -32,8 +32,10 @@ impl Executor {
                         }
                     }
                 }
-                let row = t_mut.rows.remove(idx as usize);
-                for v in row { unsafe { (v as Value).dec_ref(); } }
+                let cols_len = t_mut.columns.len();
+                let start_idx = idx as usize * cols_len;
+                let drained: Vec<Value> = t_mut.rows.drain(start_idx..start_idx + cols_len).collect();
+                for v in drained { unsafe { v.dec_ref(); } }
                 let res = make_update_result(1);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
@@ -64,7 +66,7 @@ impl Executor {
                 }
             }
         }
-        for row in t_mut.rows.drain(..) { for v in row { unsafe { (v as Value).dec_ref(); } } }
+        for v in t_mut.rows.drain(..) { unsafe { v.dec_ref(); } }
         let res = Value::from_bool(true);
         unsafe { locals[dst as usize].dec_ref(); }
         locals[dst as usize] = res;

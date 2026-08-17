@@ -1,0 +1,54 @@
+--- demo.xcx - Developer UI Demo for PAX Package Manager
+
+func run_pax_demo() {
+    >! T_CLEAR;
+    >! C_BOLD + C_BCYAN + "  ════════════════════════════════════════════════════════════" + C_RESET;
+    >! C_BOLD + C_BCYAN + "    PAX PACKAGE MANAGER v4.3 - DEVELOPER UI DEMO MODE" + C_RESET;
+    >! C_BOLD + C_BCYAN + "  ════════════════════════════════════════════════════════════" + C_RESET;
+    >! "";
+    >! tagInfo() + " Demonstrating PAX UI components without network or file modifications.";
+    >! "";
+
+    --- Demo 1: Package Download Animation
+    >! C_BOLD + C_BYELLOW + "► [1/3] Simulating Package Download (net_utils@1.4.0):" + C_RESET;
+    showDownloadProgress("net_utils@1.4.0", 450);
+    >! "";
+    @wait(300);
+
+    --- Demo 2: Upgrade Animation (XCX Binary + Tools)
+    >! C_BOLD + C_BYELLOW + "► [2/3] Simulating XCX System Upgrade (v4.3.0 -> v4.3.1):" + C_RESET;
+    >! tagPax() + " Checking latest release on GitHub...";
+    @wait(200);
+    >! tagOk() + " Found new version: " + C_BOLD + C_GREEN + "v4.3.1-release" + C_RESET;
+
+    i: totalSize = 1200;
+    for i in 1 to 20 do;
+        i: cur = (i * totalSize) / 20;
+        s: pb = renderProgressBar(cur, totalSize, "Upgrading Core");
+        >! "\r" + pb;
+        @wait(25);
+    end;
+    >! "";
+    >! tagOk() + " XCX binary updated to " + C_BOLD + C_CYAN + "v4.3.1" + C_RESET;
+    >! "";
+    @wait(300);
+
+    --- Demo 3: Interactive TUI Dashboard Render Preview
+    >! C_BOLD + C_BYELLOW + "► [3/3] Previewing Interactive TUI Dashboard Layout:" + C_RESET;
+    >! "";
+    >! C_BOLD + C_BWHITE + "  ┌──────────────────────────────────────────────────────────────┐" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │  " + C_BOLD + C_BCYAN + "PAX MANAGER v4.3" + C_RESET + "  │  Project: " + C_BOLD + C_GREEN + "my_app" + C_RESET + " (v1.0.0)           │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  ├──────────────────────────────────────────────────────────────┤" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │  Author: " + C_CYAN + "xcx-dev" + C_RESET + "  │  Dependencies: " + C_GREEN + "3 installed" + C_RESET + "            │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  ├──────────────────────────────────────────────────────────────┤" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │  " + C_BG_BLUE + C_BOLD + C_WHITE + " > [1] 📦 Install Dependencies                           " + C_RESET + C_BOLD + C_BWHITE + " │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [2] ➕ Add New Package (Search & Add)                 │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [3] 🔍 Search Registry Packages                       │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [4] 🚀 Run Project Entry Point                        │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [5] ⬆️  Upgrade XCX Compiler & Tools                  │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [6] 📤 Publish Package to Registry                    │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  │     [7] 🚪 Exit TUI                                       │" + C_RESET;
+    >! C_BOLD + C_BWHITE + "  └──────────────────────────────────────────────────────────────┘" + C_RESET;
+    >! "";
+    >! tagOk() + " Developer UI Demo complete!";
+};

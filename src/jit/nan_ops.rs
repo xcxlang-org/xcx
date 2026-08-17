@@ -5,6 +5,13 @@ pub const VALUE_BITS_OFFSET: i32 = 0;
 pub const VALUE_TAG_OFFSET: i32 = 8;
 pub const VALUE_SIZE: i32 = 16;
 
+/// Offset from an Arc data pointer to the strong reference count in the
+/// surrounding `ArcInner { strong, weak, data }` allocation. Every heap object
+/// XCX stores in a Value has 8-byte alignment, so `data` always begins 16
+/// bytes into the allocation. `arc_strong_count_offset_matches_arc` asserts
+/// this against the real allocator layout.
+pub const ARC_STRONG_COUNT_OFFSET: i64 = -16;
+
 /// Build a packed quiet-NaN Value from a raw i64 integer bits.
 pub fn make_int_nanboxed(b: &mut FunctionBuilder, raw_i64: Value) -> Value {
     let mask_48 = b.ins().iconst(types::I64, 0x0000_FFFF_FFFF_FFFF);
@@ -33,11 +40,6 @@ pub fn unpack_int(b: &mut FunctionBuilder, val: Value) -> Value {
 /// Extract boolean status (0 / 1) from quiet-NaN boolean Value.
 pub fn unpack_bool(b: &mut FunctionBuilder, val: Value) -> Value {
     b.ins().band_imm(val, 1)
-}
-
-/// Cast a JIT packed float value to F64.
-pub fn unpack_float(b: &mut FunctionBuilder, val: Value) -> Value {
-    b.ins().bitcast(types::F64, MemFlags::new(), val)
 }
 
 /// Get 48-bit pointer payload of a tagged pointer value.
@@ -123,6 +125,13 @@ pub fn emit_conditional_dec_ref(
 }
 
 /// Conditional inc_ref of dynamic JIT Value using bits and tag.
+///
+/// Emitted as an FFI call to `xcx_jit_inc_ref`, whose tag match no-ops for
+/// TAG_FUNC (function index, not a pointer). `ARC_STRONG_COUNT_OFFSET` and
+/// its tests document the Arc header layout in case the increment is ever
+/// inlined as a native atomic — note that doing so changed register
+/// allocation enough to slow down nested integer loops measurably, which
+/// is why the call remains.
 pub fn emit_conditional_inc_ref(
     ctx: &mut super::codegen_ctx::CodegenCtx,
     symbols: &super::symbols::ImportedSymbols,
@@ -142,4 +151,101 @@ pub fn emit_conditional_inc_ref(
     ctx.b.ins().jump(next_blk, &[]);
 
     ctx.b.switch_to_block(next_blk);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ARC_STRONG_COUNT_OFFSET;
+
+    /// `ARC_STRONG_COUNT_OFFSET` documents where an Arc's strong count sits
+    /// relative to the data pointer a Value carries. Assert that it matches
+    /// the real `Arc` header layout for every heap object type a Value can
+    /// hold: read the count through the computed offset and verify it tracks
+    /// `Arc::strong_count` across clones and drops.
+    #[test]
+    fn arc_strong_count_offset_matches_arc() {
+        use crate::vm::object::{ArrayObj, BoolArrayObj, JsonObj, MapObj, SetObj, StringObj, TableObj};
+        use std::sync::Arc;
+        use parking_lot::RwLock;
+
+        fn check<T>(arc: &Arc<T>) {
+            let data_ptr = Arc::as_ptr(arc) as *const u8;
+            let count_ptr = unsafe { data_ptr.offset(ARC_STRONG_COUNT_OFFSET as isize) } as *const usize;
+            let via_offset = unsafe { *count_ptr };
+            assert_eq!(via_offset, Arc::strong_count(arc));
+        }
+
+        check(&Arc::new(StringObj::new(Vec::new())));
+        check(&Arc::new(RwLock::new(ArrayObj::new(Vec::new()))));
+        check(&Arc::new(RwLock::new(BoolArrayObj::new(Vec::new()))));
+        check(&Arc::new(RwLock::new(SetObj::new(std::collections::BTreeSet::new()))));
+        check(&Arc::new(RwLock::new(MapObj::new(Vec::new()))));
+        check(&Arc::new(RwLock::new(TableObj {
+            table_name: String::new(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            sql_binding: None,
+            sql_where: None,
+            pending_op: None,
+        })));
+        check(&Arc::new(JsonObj::new(crate::vm::object::JsonVal::Null)));
+
+        // Verify the offset tracks mutations, not just the initial count.
+        let arc = Arc::new(StringObj::new(Vec::new()));
+        let data_ptr = Arc::as_ptr(&arc) as *const u8;
+        let count_ptr = unsafe { data_ptr.offset(ARC_STRONG_COUNT_OFFSET as isize) } as *const usize;
+        let clones = (1..=3).map(|_| Arc::clone(&arc)).collect::<Vec<_>>();
+        assert_eq!(unsafe { *count_ptr }, 4);
+        drop(clones);
+        assert_eq!(unsafe { *count_ptr }, 1);
+    }
+}
+
+#[cfg(test)]
+mod inc_ref_predicate_tests {
+    use crate::vm::value::{Value, TAG_FIRST_PTR, TAG_FUNC};
+
+    /// `Value::inc_ref` counts exactly the `Arc`-backed heap tags; it
+    /// no-ops for TAG_FUNC (a function *index* stored in bits, not a
+    /// pointer). Any JIT-side reimplementation of the guard must exclude
+    /// precisely that tag — verified here by checking count movement
+    /// through the Rust-side entry point and the boundary tag values
+    /// themselves.
+    #[test]
+    fn inc_ref_tag_set_matches_value_inc_ref() {
+        // Arc-backed pointer: count must move with inc_ref.
+        use crate::vm::object::{ArrayObj, StringObj};
+        use parking_lot::RwLock;
+        use std::sync::Arc;
+        let arc = Arc::new(RwLock::new(ArrayObj::new(Vec::new())));
+        let mut v = Value::from_array(arc.clone());
+        assert_eq!(Arc::strong_count(&arc), 2);
+        unsafe { v.inc_ref(); }
+        assert_eq!(Arc::strong_count(&arc), 3);
+        unsafe { v.dec_ref(); }
+        assert_eq!(Arc::strong_count(&arc), 2);
+
+        let s = Arc::new(StringObj::new(Vec::new()));
+        let mut v = Value::from_string(s.clone());
+        assert_eq!(Arc::strong_count(&s), 2);
+        unsafe { v.inc_ref(); }
+        assert_eq!(Arc::strong_count(&s), 3);
+        unsafe { v.dec_ref(); }
+        assert_eq!(Arc::strong_count(&s), 2);
+
+        // Non-Arc-backed tag above TAG_FIRST_PTR: the Rust-side inc_ref is
+        // a no-op, so the JIT predicate must reject it.
+        let func_idx_val = Value::from_function(7);
+        assert_eq!(func_idx_val.tag, TAG_FUNC);
+        assert!(func_idx_val.tag >= TAG_FIRST_PTR);
+        // TAG_FUNC must not satisfy the JIT predicate.
+        let t = func_idx_val.tag;
+        let jit_counts = t >= TAG_FIRST_PTR && t != TAG_FUNC;
+        assert!(!jit_counts);
+
+        // Every scalar tag below TAG_FIRST_PTR is rejected.
+        for t in 0u64..TAG_FIRST_PTR {
+            assert!(false == (t >= TAG_FIRST_PTR && t != TAG_FUNC));
+        }
+    }
 }

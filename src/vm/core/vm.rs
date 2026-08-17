@@ -5,7 +5,6 @@ use std::sync::atomic::Ordering;
 
 use crate::vm::value::Value;
 pub use crate::vm::opcode::{OpCode, Chunk};
-use crate::vm::trace::Trace;
 
 pub enum OpResult {
     Continue,
@@ -26,7 +25,6 @@ pub struct VM {
     pub globals: parking_lot::RwLock<Vec<Value>>,
     pub global_names: Arc<RwLock<HashMap<String, usize>>>,
     pub error_count: std::sync::atomic::AtomicUsize,
-    pub traces: Arc<RwLock<HashMap<(usize, usize), Arc<RwLock<Trace>>>>>,
     pub jit: Mutex<crate::jit::JIT>,
     pub disable_jit: std::sync::atomic::AtomicBool,
     pub jit_threshold: u32,
@@ -40,7 +38,6 @@ impl VM {
             globals: parking_lot::RwLock::new(globals),
             global_names: Arc::new(RwLock::new(HashMap::new())),
             error_count: std::sync::atomic::AtomicUsize::new(0),
-            traces: Arc::new(RwLock::new(HashMap::new())),
             jit: Mutex::new(crate::jit::JIT::new()),
             disable_jit: std::sync::atomic::AtomicBool::new(false),
             jit_threshold: 50,

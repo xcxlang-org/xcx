@@ -449,7 +449,8 @@ pub unsafe extern "C" fn xcx_jit_row_get(out: *mut Value, row_bits: u64, row_tag
     let row = v.as_row();
     let table = row.table.read();
     if (col_idx as usize) < table.columns.len() {
-        let val = table.rows[row.row_idx as usize][col_idx as usize];
+        let idx = row.row_idx as usize * table.columns.len() + col_idx as usize;
+        let val = table.rows[idx];
         unsafe { val.inc_ref(); }
         unsafe { *out = val; }
     } else {
@@ -461,7 +462,7 @@ pub unsafe extern "C" fn xcx_jit_row_get(out: *mut Value, row_bits: u64, row_tag
 pub unsafe extern "C" fn xcx_jit_table_size(table_bits: u64, table_tag: u64) -> i64 {
     let v = Value { bits: table_bits, tag: table_tag };
     if !v.is_table() { return 0; }
-    v.as_table().read().rows.len() as i64
+    v.as_table().read().len() as i64
 }
 
 #[unsafe(no_mangle)]
@@ -486,14 +487,16 @@ pub unsafe extern "C" fn xcx_jit_table_push_row(table_bits: u64, table_tag: u64,
     
     let mut table = t_rc.write();
     let r_table = r_obj.table.read();
-    let row_data = &r_table.rows[r_obj.row_idx as usize];
+    let cols_len = r_table.columns.len();
+    let start_idx = r_obj.row_idx as usize * cols_len;
+    let row_data = &r_table.rows[start_idx..start_idx + cols_len];
     
     let mut row_copy = Vec::with_capacity(row_data.len());
     for v in row_data {
         unsafe { v.inc_ref(); }
         row_copy.push(*v);
     }
-    table.rows.push(row_copy);
+    table.rows.extend(row_copy);
 }
 
 #[unsafe(no_mangle)]
@@ -608,12 +611,8 @@ fn is_flat(val: &crate::vm::object::JsonVal) -> bool {
 pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64) {
     let v = Value { bits, tag };
     if !v.is_string() { unsafe { *out = Value::from_i64(0); return; } }
-    
-    let string_ptr = if v.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-        crate::vm::value::heap_object::arena_ptr::<crate::vm::object::StringObj>(&v)
-    } else {
-        v.unpack_ptr::<crate::vm::object::StringObj>()
-    };
+
+    let string_ptr = v.unpack_ptr::<crate::vm::object::StringObj>();
     
     let key = string_ptr as usize;
     let bytes = unsafe { &(*string_ptr).data };
@@ -630,13 +629,8 @@ pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64
         None
     });
 
-    if let Some((json_val, cached_flat)) = cached {
-        let cloned_val = if cached_flat {
-            json_val.shallow_clone()
-        } else {
-            json_val.deep_clone()
-        };
-        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(cloned_val));
+    if let Some((json_val, _)) = cached {
+        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(json_val.clone()));
         unsafe { *out = Value::from_json(new_obj); }
         return;
     }
@@ -647,23 +641,20 @@ pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64
         let json_val = json_obj.root.clone();
         let s_string = s_str.to_string();
         let flat = is_flat(&json_val);
-        JSON_PARSE_CACHE.with(|cache| {
-            let mut c = cache.borrow_mut();
-            let exists = c.iter().any(|(k, _, _, _)| *k == key) || c.iter().any(|(_, _, s, _)| s == s_str);
-            if !exists {
-                if c.len() >= 32 {
-                    c.remove(0);
+        if s_str.len() <= 16384 {
+            JSON_PARSE_CACHE.with(|cache| {
+                let mut c = cache.borrow_mut();
+                let exists = c.iter().any(|(k, _, _, _)| *k == key) || c.iter().any(|(_, _, s, _)| s == s_str);
+                if !exists {
+                    if c.len() >= 32 {
+                        c.remove(0);
+                    }
+                    c.push((key, json_val.clone(), s_string, flat));
                 }
-                c.push((key, json_val, s_string, flat));
-            }
-        });
+            });
+        }
         
-        let cloned_val = if flat {
-            json_obj.root.shallow_clone()
-        } else {
-            json_obj.root.deep_clone()
-        };
-        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(cloned_val));
+        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(json_val));
         unsafe { *out = Value::from_json(new_obj); }
     } else {
         unsafe { *out = parsed_val; }
@@ -787,7 +778,12 @@ pub unsafe extern "C" fn xcx_jit_store_delete(out: *mut Value, bits: u64, tag: u
     let key = Value { bits, tag: tag };
     let path = key.to_string();
     crate::runtime::builtin::store::fs_ops::validate_path_safety(&path);
-    let res = std::fs::remove_file(path).is_ok();
+    let path_obj = std::path::Path::new(&path);
+    let res = if path_obj.is_dir() {
+        std::fs::remove_dir_all(path_obj).is_ok()
+    } else {
+        std::fs::remove_file(path_obj).is_ok()
+    };
     unsafe { *out = Value::from_bool(res); }
 }
 

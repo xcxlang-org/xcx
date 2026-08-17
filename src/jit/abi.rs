@@ -34,19 +34,6 @@ pub fn trusted() -> MemFlags {
 }
 
 #[inline]
-pub fn decode_intcc(cc: u8) -> IntCC {
-    match cc {
-        0 => IntCC::Equal,
-        1 => IntCC::NotEqual,
-        2 => IntCC::SignedGreaterThan,
-        3 => IntCC::SignedLessThan,
-        4 => IntCC::SignedGreaterThanOrEqual,
-        5 => IntCC::SignedLessThanOrEqual,
-        _ => IntCC::Equal,
-    }
-}
-
-#[inline]
 pub fn decode_floatcc(cc: u8) -> FloatCC {
     match cc {
         0 => FloatCC::Equal,

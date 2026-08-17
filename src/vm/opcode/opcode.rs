@@ -197,7 +197,6 @@ pub enum OpCode {
     ArrayLoopNext { idx_reg: u8, size_reg: u8, target: u32 },
     DatabaseInit { dst: u8, engine_src: u8, path_src: u8, tables_base_reg: u8, table_count: u32 },
     MethodCallNamed { dst: u8, kind: MethodKind, base: u8, arg_count: u8, names_idx: u32 },
-    MakeClosure { dst: u8, func_idx: u16, capture_count: u16, capture_start: u8 },
     Typeof { dst: u8, src: u8 },
 
     GetIndex { dst: u8, container: u8, index: u8 },
@@ -341,7 +340,6 @@ impl OpCode {
             OpCode::GetIndex { dst, .. } |
             OpCode::GetMember { dst, .. } |
             OpCode::RowGet { dst, .. } |
-            OpCode::MakeClosure { dst, .. } |
             OpCode::IncLocal { reg: dst } |
             OpCode::LoopNext { reg: dst, .. } |
             OpCode::IncLocalLoopNext { reg: dst, .. } |
@@ -515,37 +513,9 @@ impl OpCode {
             OpCode::RowGet { row_reg, .. } => { regs.push(*row_reg); }
             OpCode::TableIter { tbl_reg, idx_reg, row_reg, limit_reg, .. } => { regs.push(*tbl_reg); regs.push(*idx_reg); regs.push(*row_reg); regs.push(*limit_reg); }
             OpCode::TablePushRow { tbl_reg, row_reg } => { regs.push(*tbl_reg); regs.push(*row_reg); }
-            OpCode::MakeClosure { capture_start, capture_count, .. } => {
-                let start = *capture_start as usize;
-                let end = start + *capture_count as usize;
-                for r in start..end {
-                    regs.push(r as u8);
-                }
-            }
             _ => {}
         }
     }
 }
 
-pub fn collect_backedges(bytecode: &[OpCode]) -> Vec<(usize, usize)> {
-    let mut loops = Vec::new();
-    for (i, op) in bytecode.iter().enumerate() {
-        if let Some(target) = op.jump_target() {
-            if (target as usize) < i {
-                loops.push((target as usize, i));
-            }
-        }
-    }
-    loops
-}
-
-pub fn calculate_has_loops(bytecode: &[OpCode]) -> bool {
-    bytecode.iter().enumerate().any(|(i, op)| {
-        if let Some(target) = op.jump_target() {
-            (target as usize) < i
-        } else {
-            false
-        }
-    })
-}
 

@@ -196,10 +196,8 @@ impl Compiler {
             }
         }
         
-        let has_loops = crate::vm::opcode::calculate_has_loops(&main_compiler.bytecode);
-        
         main_compiler.max_locals_used = main_compiler.max_locals_used.max(main_compiler.next_local);
-        let main_chunk = Chunk::new(main_compiler.bytecode, main_compiler.spans, false, main_compiler.max_locals_used, has_loops, "main".to_string(), 0);
+        let main_chunk = Chunk::new(main_compiler.bytecode, main_compiler.spans, false, main_compiler.max_locals_used, "main".to_string(), 0);
         
         self.string_constants.clear();
         self.numeric_constants.clear();
@@ -229,9 +227,7 @@ pub fn compile_function_helper(
     }) {
         compiler.emit(OpCode::ReturnVoid, &crate::error::Span::default());
     }
-    let has_loops = crate::vm::opcode::calculate_has_loops(&compiler.bytecode);
-
     let max_locals = compiler.max_locals_used.max(compiler.next_local);
 
-    Chunk::new(compiler.bytecode, compiler.spans, is_fiber, max_locals.into(), has_loops, name, params.len())
+    Chunk::new(compiler.bytecode, compiler.spans, is_fiber, max_locals.into(), name, params.len())
 }

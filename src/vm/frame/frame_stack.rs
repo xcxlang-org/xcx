@@ -27,16 +27,6 @@ impl FrameStack {
     }
 
     #[inline]
-    pub fn current_frame(&self) -> Option<&CallFrame> {
-        self.frames.last()
-    }
-
-    #[inline]
-    pub fn current_frame_mut(&mut self) -> Option<&mut CallFrame> {
-        self.frames.last_mut()
-    }
-
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.frames.is_empty()
     }

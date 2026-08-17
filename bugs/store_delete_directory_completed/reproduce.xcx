@@ -1,0 +1,14 @@
+--- reproduce.xcx - Minimal reproducer for store.delete failing on directories
+
+s: dir_path = "programs/temp_delete_dir_bug";
+
+--- 1. Create test directory
+store.mkdir(dir_path);
+>! "Directory created. Exists: " + s(store.exists(dir_path));
+
+--- 2. Attempt to delete directory using store.delete()
+b: delete_result = store.delete(dir_path);
+b: exists_after  = store.exists(dir_path);
+
+>! "store.delete(dir_path) returned: " + s(delete_result);
+>! "Directory exists after delete: "  + s(exists_after);

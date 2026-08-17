@@ -1,4 +1,4 @@
-XCX 4.2 — Runtime & Compiler (macOS)
+XCX 4.3 — Runtime & Compiler (macOS)
 
 XCX is a backend programming language with a built-in runtime.
 This package contains the compiler and basic tooling for macOS.
@@ -6,6 +6,12 @@ This package contains the compiler and basic tooling for macOS.
 --------------------------------------------------
 
 INSTALLATION
+
+Note: The installer wizard requires 'dialog' or 'whiptail' to run.
+macOS does not ship with these by default. You can easily install 'dialog' 
+using Homebrew:
+
+   brew install dialog
 
 1. Open Terminal.
 2. Navigate to the extracted folder.
@@ -54,7 +60,7 @@ WHAT IS INCLUDED
 
 PROJECT STATUS
 
-XCX 4.2 is under active development.
+XCX 4.3 is under active development.
 
 - Suitable for: small tools, experiments, learning
 - Not suitable for: production systems

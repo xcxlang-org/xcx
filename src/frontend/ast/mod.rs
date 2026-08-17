@@ -7,7 +7,6 @@ pub mod ty;
 pub mod table;
 pub mod fn_sig;
 pub mod argument;
-pub mod visitor;
 
 pub use node::Program;
 pub use stmt::{Stmt, StmtKind, HaltLevel, ForIterType};
@@ -15,4 +14,3 @@ pub use expr::{Expr, ExprKind, SetRange};
 pub use crate::sema::types::{Type, SetType, DatabaseOpKind};
 pub use argument::Argument;
 pub use table::{ColumnDef, ColumnAttribute};
-pub use visitor::AstVisitor;

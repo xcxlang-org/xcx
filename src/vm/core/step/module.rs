@@ -11,6 +11,7 @@ pub fn handle<'a>(
     op: OpCode,
     locals: &mut [Value],
     vm_arc: &'a Arc<VM>,
+    ip: usize,
 ) -> Option<OpResult> {
     match op {
         // Store Operations
@@ -35,7 +36,7 @@ pub fn handle<'a>(
             for i in 0..table_count {
                 tables.push(locals[(tables_base_reg + i as u8) as usize].to_string());
             }
-            Some(exec.handle_database_init(dst, engine, path, &tables, 0, locals)) // FIXME: ip = 0? Need to pass ip if needed for error report
+            Some(exec.handle_database_init(dst, engine, path, &tables, ip, locals))
         }
 
         // Env
@@ -132,35 +133,29 @@ pub fn handle<'a>(
                 None => { path_temp = locals[path_src as usize].to_string(); &path_temp }
             };
             
-            let json_ptr = {
-                if json.tag == crate::vm::value::nan_boxing::TAG_ARENA {
-                     crate::vm::value::heap_object::arena_ptr::<crate::vm::object::JsonObj>(&json) as *mut crate::vm::object::JsonObj
-                } else {
-                     json.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj
-                }
-            };
+            let json_ptr = json.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj;
             
             let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
             unsafe {
                 (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
                 if is_simple {
-                    if let crate::vm::object::JsonVal::Object(o) = &(*json_ptr).root {
-                        let o_read = o.read();
-                        if let Some((_, v)) = o_read.iter().find(|(k, _)| k.as_str() == path_str) {
-                            if let crate::vm::object::JsonVal::Array(arr) = v {
-                                arr.write().push(crate::vm::utils::json::value_to_json(&val));
+                    (*json_ptr).root.make_mutable();
+                    if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
+                        let o_write = &mut *(*o).data_ptr();
+                        if let Some(pos) = o_write.iter().position(|(k, _)| k.as_str() == path_str) {
+                            o_write[pos].1.make_mutable();
+                            if let crate::vm::object::JsonVal::Array(a) = &mut o_write[pos].1 {
+                                let arr = &mut *(*a).data_ptr();
+                                arr.push(crate::vm::utils::json::value_to_json(&val));
                                 return Some(OpResult::Continue);
                             }
                         }
                     }
                 } else {
-                    let pointer = crate::runtime::builtin::json::access::normalize_json_path(path_str);
-                    if let Some(v) = (*json_ptr).root.pointer(&pointer) {
-                        if let crate::vm::object::JsonVal::Array(arr) = v {
-                            arr.write().push(crate::vm::utils::json::value_to_json(&val));
-                            return Some(OpResult::Continue);
-                        }
-                    }
+                    let mut root_copy = (*json_ptr).root.clone();
+                    crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, crate::vm::utils::json::value_to_json(&val));
+                    (*json_ptr).root = root_copy;
+                    return Some(OpResult::Continue);
                 }
             }
             eprintln!("halt.error: push target is not an array");
@@ -310,8 +305,8 @@ pub fn handle<'a>(
         }
 
         OpCode::HaltAlert { src } => {
-            let _msg = locals[src as usize].to_string();
-            // eprintln!("XCX Alert: {}", _msg);
+            let msg = locals[src as usize].to_string();
+            eprintln!("XCX Alert: {}", msg);
             Some(OpResult::Continue)
         }
         OpCode::HaltError { src } => {

@@ -14,13 +14,13 @@ src/vm/object/
 ├── set_obj.rs      — SetObj
 ├── map_obj.rs      — MapObj
 ├── function_obj.rs — FunctionObj
-├── closure_obj.rs  — ClosureObj
 ├── fiber_obj.rs    — FiberObj
 ├── json_val.rs     — JsonVal (recursive JSON value tree)
 ├── json_obj.rs     — JsonObj (root container)
 ├── table_obj.rs    — TableObj, VMColumn, SqlBinding, JoinPred
 ├── database_obj.rs — DatabaseObj
-└── row_obj.rs      — RowObj
+├── row_obj.rs      — RowObj
+└── bool_array_obj.rs — BoolArrayObj
 ```
 
 ---
@@ -69,6 +69,22 @@ impl Drop for ArrayObj {
 
 ---
 
+## BoolArrayObj
+
+```rust
+pub struct BoolArrayObj {
+    pub data: Vec<u8>,
+}
+```
+
+A specialized array representation for boolean sequences, storing elements as bytes inside a `Vec<u8>`. Wrapped in `Arc<RwLock<BoolArrayObj>>`.
+
+Its memory layout is leveraged by the JIT compiler's Fast Path:
+- Data pointer offset: 16
+- Length offset: 24
+
+---
+
 ## SetObj
 
 ```rust
@@ -107,17 +123,9 @@ Wrapped in `Arc<RwLock<MapObj>>`. `Deref<Target = Vec<(Value, Value)>>`.
 
 ## FunctionObj
 
-Stores compiled functions. Normally functions are referenced by index into the `SharedContext::functions` vector. `FunctionObj` is used when a function must be carried as a first-class heap value (e.g. closures or passed as arguments).
+Stores compiled functions. Normally functions are referenced by index into the `SharedContext::functions` vector. `FunctionObj` is used when a function must be carried as a first-class heap value (e.g. passed as an argument).
 
 Wrapped in `Arc<FunctionObj>`.
-
----
-
-## ClosureObj
-
-A function together with its captured upvalues. Used when a `Lambda` expression captures variables from an outer scope.
-
-Wrapped in `Arc<ClosureObj>`.
 
 ---
 
@@ -163,7 +171,7 @@ An in-memory JSON tree. All nodes are `Clone`. Arrays and objects are wrapped in
 
 `pointer(path: &str) -> Option<JsonVal>` — RFC 6901 JSON pointer traversal. Splits path on `/`, traverses arrays by index and objects by key.
 
-`shallow_clone() / deep_clone()` — shallow clone re-uses existing `Arc` references for nested objects; deep clone recursively copies every node. The JIT JSON parse cache uses `is_flat()` to decide which to use.
+`deep_clone()` — recursively copies every node. The JIT JSON parse cache uses `is_flat()` to decide when to clone. (Note: `shallow_clone` was removed in Phase 3C).
 
 ---
 
@@ -286,18 +294,7 @@ A pre-allocated value stack. `MAX_STACK = 256 * 1024` values (2MB at 8 bytes/val
 
 `Drop` decrements refcounts for all values still on the stack when the stack is freed.
 
-Note: in the current `Executor` design the executor uses its own inline `Vec<Value>` stack (`stack: Vec<Value>`) initialized to 64K entries; `ValueStack` is available as an alternative but the main execution path uses the executor's own field.
-
-### `StackGuard`
-
-```rust
-pub struct StackGuard {
-    pub max_depth:     usize,
-    pub current_depth: usize,
-}
-```
-
-Tracks call depth to prevent stack overflow. `enter()` returns `Err` when `current_depth >= max_depth`. `exit()` decrements. Used in the executor's call handling.
+Note: in the current `Executor` design the executor uses its own inline `Vec<Value>` stack (`stack: Vec<Value>`) initialized to 64K entries; `ValueStack` is available as an alternative but the main execution path uses the executor's own field. (Note: `StackGuard` was removed in Phase 3A as recursion limits are enforced elsewhere).
 
 ---
 
@@ -328,15 +325,3 @@ Conversion functions between `Value` and `JsonVal`:
 ## Network Utilities (`vm/utils/network.rs`)
 
 `is_safe_url(url_str: &str) -> Result<(), String>` — SSRF protection. Blocks `file://` URLs, `169.254.*` link-local addresses, and all RFC 1918 private IP ranges. Localhost and loopback (`127.0.0.1`, `::1`) are explicitly allowed (for development use).
-
----
-
-## Set Utilities (`vm/utils/set.rs`)
-
-`set_op(a, b, op: u8) -> BTreeSet<Value>` — performs one of four set operations:
-- 0: union
-- 1: intersection
-- 2: difference (`a \ b`)
-- 3+: symmetric difference
-
-Increments refcounts for all values placed into the result set.

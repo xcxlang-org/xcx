@@ -1,0 +1,5 @@
+json: parent <<< {"val": 0, "child": null} >>>;
+s: serialized = parent.toStr();
+>! "Serialized: " + serialized;
+json: parsed = json.parse(serialized);
+>! "Parsed successfully";

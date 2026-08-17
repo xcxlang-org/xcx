@@ -36,9 +36,15 @@ impl Executor {
         let mut pos_idx = 0;
         for (ci, col) in cols.iter().enumerate() {
             if col.is_auto {
-                let max = t_mut.rows.iter()
-                    .filter_map(|r| if r[ci].is_int() { Some(r[ci].as_i64()) } else { None })
-                    .max().unwrap_or(0);
+                let num_cols = cols.len();
+                let num_rows = t_mut.len();
+                let mut max = 0;
+                for r_idx in 0..num_rows {
+                    let cell = t_mut.rows[r_idx * num_cols + ci];
+                    if cell.is_int() {
+                        max = max.max(cell.as_i64());
+                    }
+                }
                 row.push(Value::from_i64(max + 1));
             } else {
                 let val = if let Some(v) = mapped_row[ci] { v }
@@ -54,8 +60,24 @@ impl Executor {
         if kind == MethodKind::Save && pk_idx.is_some() {
             let pki = pk_idx.unwrap();
             let pkv = pk_val.unwrap();
-            if let Some(existing_idx) = t_mut.rows.iter().position(|r| r[pki] == pkv) {
-                let old_row = std::mem::replace(&mut t_mut.rows[existing_idx], row.clone());
+            let num_cols = cols.len();
+            let num_rows = t_mut.len();
+            let mut existing_idx = None;
+            for r_idx in 0..num_rows {
+                if t_mut.rows[r_idx * num_cols + pki] == pkv {
+                    existing_idx = Some(r_idx);
+                    break;
+                }
+            }
+            if let Some(row_idx) = existing_idx {
+                let start_idx = row_idx * num_cols;
+                let mut old_row = Vec::with_capacity(num_cols);
+                for c_idx in 0..num_cols {
+                    let cell_idx = start_idx + c_idx;
+                    let old_val = t_mut.rows[cell_idx];
+                    old_row.push(old_val);
+                    t_mut.rows[cell_idx] = row[c_idx];
+                }
                 for v in old_row { unsafe { v.dec_ref(); } }
                 replaced = true;
                 
@@ -90,7 +112,7 @@ impl Executor {
         }
 
         if !replaced {
-            t_mut.rows.push(row.clone());
+            t_mut.rows.extend(row.clone());
             if let Some(binding) = &t_mut.sql_binding {
                 let mut sql = format!("INSERT INTO [{}] (", binding.table_name);
                 let mut vals_sql = String::from("VALUES (");
