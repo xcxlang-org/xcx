@@ -610,6 +610,13 @@ fn is_flat(val: &crate::vm::object::JsonVal) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64) {
     let v = Value { bits, tag };
+    if v.is_json() {
+        // json.parse on an already-parsed value is an identity operation; the
+        // interpreter path reaches the same result via to_string + re-parse.
+        unsafe { v.inc_ref(); }
+        unsafe { *out = v; }
+        return;
+    }
     if !v.is_string() { unsafe { *out = Value::from_i64(0); return; } }
 
     let string_ptr = v.unpack_ptr::<crate::vm::object::StringObj>();

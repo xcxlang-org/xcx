@@ -68,9 +68,12 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
         }
         ExprKind::RawBlock(id) => {
             let s = ctx.interner.lookup(*id).to_string();
-            let i = ctx.add_constant(Value::from_string(Arc::new(StringObj::new(s.into_bytes()))));
+            let i = ctx.add_constant(Value::from_string(Arc::new(StringObj::new(s.clone().into_bytes()))));
             let dst = fc.push_reg();
             fc.emit(OpCode::LoadConst { dst, idx: i }, &expr.span);
+            if crate::runtime::builtin::json::parse::is_parseable_json(&s) {
+                fc.emit(OpCode::JsonParse { dst, src: dst }, &expr.span);
+            }
             dst
         }
         _ => 0,
