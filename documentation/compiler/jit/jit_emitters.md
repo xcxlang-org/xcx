@@ -55,10 +55,10 @@ Calculates call offsets and invokes local JIT frames or VM wrappers.
 ## 3. Control Flow Emitters (`emit_control.rs`)
 
 Manages execution bounds, conditional checks, loop construction, and fiber state machine yielding.
-- **Type Guards:** Inserts assertions checking that dynamic registers store expected type tags. On tag mismatch, they trigger deoptimization/fallback pathways by calling `xcx_jit_report_guard_failure` via standard checks. A guard is skipped entirely when `ctx.known_types` already records the expected tag for that register. (Note: `emit_guard_int/float/bool` were removed in Phase 3B).
+- **Type Guards:** No type-guard IR is generated. The `xcx_jit_report_guard_failure` symbol is registered but never called, and `emit_guard_int/float/bool` were removed in Phase 3B. Type-directed selection happens purely at compile time via `ctx.known_types` (fast path chosen when the tag is statically known, polymorphic FFI otherwise).
 - **Conditional Branches (`emit_jump_if`):** Backs `JumpIfFalse`/`JumpIfTrue`. When the source register is statically known to be `TypeTag::Bool`, the branch condition reduces to a single bit comparison (`icmp_imm`) instead of comparing both the type tag and the bit pattern against the boxed `false` value. After branching, `clear_block_state` resets any tracked register constants (`ctx.register_const`) for the continuation block, since a value known constant on one incoming path cannot be assumed constant after merging with a path where it wasn't.
 - **Loop Structs:** Standard loop operations (`LoopNext`, `LoopPrev`, `IncLocalLoopNext`, `ArrayLoopNext`, `TableIter`) translate into Cranelift block branches. Loops evaluate constraints against limits, jumping backwards to block headers or forward to exit targets.
-- **Return (`emit_return`):** Returns control to the interpreter parent frame, passing execution status states. (Note: `emit_yield`, `emit_method_yield`, and `emit_return_fiber` were removed in Phase 3B since fibers are strictly interpreted).
+- **Return (`emit_return`):** Returns control to the interpreter parent frame, passing execution status states. (Note: `emit_yield`, `emit_method_yield`, and `emit_return_fiber` were removed in Phase 3B; `YieldVoid` is still JIT-compiled via `emit_method_yield_void` calling `xcx_jit_yield`, while `Yield` compiles to a bare register read and `YieldWithTarget` to a `Move`).
 
 ---
 
@@ -68,7 +68,7 @@ Stores and transfers registers while orchestrating garbage collection routines:
 - **GC Refcounting:** Coordinates reference counters. Emitter injections call `emit_conditional_inc_ref` and `emit_conditional_dec_ref` to clean up old pointer resources during overrides.
 - **Variable Mapping:** Implements const loading (`emit_load_const`) and variable assignments (`emit_get_var`, `emit_set_var`). Loading an integer constant additionally records its value in `ctx.register_const`, so later arithmetic on that register can take the constant-divisor fast paths described under Arithmetic Emitters above.
 - **JSON Binding:** Connects variables to JSON pathways (`emit_json_bind_local`, `emit_json_bind_global`).
-- **Inlined Array Access:** `GetIndex`/`SetIndex` on registers statically typed `Array` (`Int` element) or `BoolArray` compile to a native bounds check followed by a direct buffer read/write, falling back to the corresponding FFI helper only when the index is out of bounds — see `compiler/jit/jit_codegen.md` for the exact memory layout used for `BoolArray`.
+- **Inlined Array Access:** only the `BoolArray` case of `GetIndex`/`SetIndex` (and the `.get`/`.set` method fast paths described in `compiler/jit/jit_codegen.md`) compiles to a native bounds check followed by a direct buffer read/write; non-BoolArray `GetIndex`/`SetIndex` fall back unconditionally to FFI helpers.
 
 ---
 
@@ -77,7 +77,7 @@ Stores and transfers registers while orchestrating garbage collection routines:
 Links variables to tables, disk arrays, and structured I/O endpoints:
 - **Disk Storage (`emit_store_read`, `emit_store_write`, `emit_store_exists`):** Connects to file-backed database storage helpers.
 - **Database Initializer:** Spills register states and hooks database drivers (`emit_database_init`).
-- **Table Member Accessors:** Emits instructions to retrieve and update row attributes (`emit_row_get`, `emit_table_push_row`, `emit_get_member`, `emit_set_member`).
+- **Table Member Accessors:** `emit_row_get`, `emit_table_push_row`, and `emit_table_clone_skeleton` live in `emit_load_store.rs`; `emit_get_member`/`emit_set_member` are implemented here.
 
 ---
 
@@ -85,7 +85,7 @@ Links variables to tables, disk arrays, and structured I/O endpoints:
 
 Handles environment lookups and fatal errors.
 - **Halt Handling (`emit_halt_alert`, `emit_halt_error`, `emit_halt_fatal`):** Halts compiler execution, registers error context fields, and executes clean return patterns.
-- **OS Environment:** Note: environment getters `emit_env_get` and `emit_env_args` were removed in Phase 3B since environment extraction is resolved statically or via interpreter fallback.
+- **OS Environment:** the standalone `emit_env_get`/`emit_env_args` helpers were removed in Phase 3B; `EnvGet`/`EnvArgs` are now JIT-compiled inline as direct FFI calls to `xcx_jit_env_get` / `xcx_jit_env_args`.
 
 ---
 

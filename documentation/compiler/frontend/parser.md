@@ -10,8 +10,8 @@ The XCX Parser is written structurally as a recursive descent parser combined ti
 src/frontend/parser/
 ├── mod.rs          — re-exports
 ├── parser.rs       — Parser struct, parse_program, base helper logic
-├── pratt.rs        — parse_expression, current_precedence, peek_precedence
-├── precedence.rs   — Precedence enum, Precedence::for_token
+├── pratt.rs        — parse_expression, current_precedence
+├── precedence.rs   — Precedence enum (TokenKind→Precedence mapping lives in Parser::current_precedence)
 ├── parse_expr.rs   — parse_prefix, parse_infix, and expression parser forms
 ├── parse_stmt.rs   — parse_statement_internal, and statement formatting
 ├── parse_type.rs   — parse_type, is_type_intro
@@ -19,7 +19,7 @@ src/frontend/parser/
 ├── parse_decl.rs   — parse_var_decl, parse_database_decl
 ├── parse_fiber.rs  — parse_fiber_statement
 ├── parse_fn.rs     — parse_func_def
-├── parse_table.rs  — parse_table_literal, parse_column_def
+├── parse_table.rs  — reserved empty impl block (table literals and column attributes are parsed in parse_expr.rs)
 ├── recovery.rs     — error, synchronize, expect, expect_semicolon
 ├── token_stream.rs — advance
 └── expander.rs     — Expander (operational processing for include resolution and alias prefixing)
@@ -158,9 +158,9 @@ Dispatches on `self.current.kind`:
 | `Table` | Parse `TableLiteral`. |
 | `Random` | Dispatch to `random.int`, `random.float`, or `random.choice` sub-parsers. |
 | `Date` | Parse `DateLiteral`. |
-| `Net`, `Json`, `Store`, `Crypto`, `Env` | Parse `ModuleCall`. |
-| `Dot` | Parse `TerminalCommand`. |
-| `Fiber` | Parse lambda-style fiber expression or fiber call. |
+| `Net`, `Json`, `Store`, `Crypto`, `Env`, `Halt`, `Perf` | Parse `ModuleCall`. |
+| `Dot` | Parse `TerminalCommand` — only when followed by the `terminal` keyword (`.terminal ...`). |
+| `Fiber` | Treated as a plain identifier in expression position (there is no lambda-style fiber expression form). |
 | `Tag(id)` | `ExprKind::Tag(id)` |
 
 ### `parse_infix(left: Expr) -> Option<Expr>`
@@ -169,8 +169,8 @@ Dispatches on `self.current.kind` to handle operators that appear after a left-h
 
 | Token | Result |
 |---|---|
-| Arithmetic / logical operators | `ExprKind::Binary { left, op, right }`. Right side parsed with the operator's own precedence (or `+1` for right-associative operators like `^`). |
-| `Dot` | Peek at next: if followed by identifier and then `(`, parse `MethodCall`. Otherwise `MemberAccess`. |
+| Arithmetic / logical operators | `ExprKind::Binary { left, op, right }`. Right side parsed with the operator's own precedence (left-associative); `^` is right-associative via a fixed downgrade `Power → Sum`, not a successor bump. |
+| `Dot` | Consumes the member name, then decides: `(` → `MethodCall` (an optional trailing `@wait` is recorded as `wait_after`); `[` → `Index` (`a.[i]`); the `choice from` sugar → `RandomChoice`; otherwise `MemberAccess`. |
 | `LeftBracket` | `ExprKind::Index { receiver: left, index }`. |
 | `As` | `ExprKind::As { expr: left, name }`. |
 | `Equal` | `ExprKind::Binary` with assignment semantics (handled by the semantic layer; syntactically identical to binary). |
@@ -183,10 +183,10 @@ fn parse_arguments(&mut self) -> Vec<Argument>
 ```
 
 Reads comma-separated arguments until `)` or `EOF`. Each argument is either:
-- `name: expr` → `Argument::Named(name, expr)`
+- `name = expr` → `Argument::Named(name, expr)`
 - `expr` → `Argument::Positional(expr)`
 
-Named arguments must use a bare identifier followed by `:`.
+Named arguments must use a bare identifier followed by `=` (the `name: expr` form is not accepted).
 
 ### Set Literal Content
 
@@ -247,7 +247,7 @@ Notable disambiguation rules:
 Type is parsed with `parse_type`. The initializer is optional. When the initializer opens with `{` and a set type was declared, the parser attempts to parse a set literal; otherwise it parses an array literal or a plain expression.
 
 **Multiple Variable Declarations (Desugaring):**
-If a type annotation is followed by a comma-separated list of names (e.g. `i: a, b, c = 10;`), the parser desugars this into a `StmtKind::MultiVarDecl` holding individual `VarDecl` statements in sequence. Initializers are applied to each declared variable.
+If a type annotation is followed by a comma-separated list of names (e.g. `i: a, b, c;`), the parser desugars this into a `StmtKind::MultiVarDecl` holding individual `VarDecl` statements in sequence. Each name may carry its own optional initializer (`i: a = 1, b = 2;`); there is no shared trailing initializer.
 
 ### Assignment (`parse_assignment`)
 
@@ -260,34 +260,36 @@ The left-hand side may be a dotted identifier. The right-hand side is any expres
 ### If Statement (`parse_if_statement`)
 
 ```
-if condition then
+if (condition) [then]
     body
-[elseif condition then
+[elseif (condition) [then]
     body]*
 [else
     body]
 end;
 ```
 
-`elseif`/`elif`/`elf` all parse the same way. The `then` keyword and `end;` are required.
+`elseif`/`elif`/`elf` all parse the same way. The condition must be parenthesized. `then` (with its optional `;`) is consumed when present but not enforced; `end` is likewise consumed only when present.
 
 ### While Statement (`parse_while_statement`)
 
 ```
-while condition do
+while (condition) [do];
     body
 end;
 ```
+
+The condition must be parenthesized; `do` is optional but a `;` is required right after it. A missing `end` is tolerated (consumed only when present).
 
 ### For Statement (`parse_for_statement`)
 
 ```
-for var = start to end [@step step] do
+for var in start [to end | :: end] [@step step] [do];
     body
 end;
 ```
 
-Also handles `for var in collection do ... end;` for array, set, and fiber iteration. `ForIterType` is set based on the collection type detected at parse time (or left as `Range` when iterating over a numeric range).
+`in` is required (the `for var = ...` form is not accepted); `::` also separates range bounds. `ForIterType::Range` is assigned when `to`/`::` is present, otherwise `ForIterType::Array` with `end = IntLiteral(0)` — collection-kind refinement (set/fiber) is not performed at parse time.
 
 ### Function Definition (`parse_func_def`)
 
@@ -297,26 +299,28 @@ func name([Type param, ... -> ReturnType]) {
 };
 ```
 
-Parameters are `(Type name)` pairs. Return type is optional and placed after an `->` arrow within the parameter list. The block is bounded by `{}` and requires a trailing `;`.
+Parameters are `(Type name)` or `(Type : name)` pairs (names may be dotted). The optional return type is placed after an `->` arrow **inside** the parameter list; an `->` after `)` is rejected with a dedicated error. The block is bounded by `{}` and requires a trailing `;`.
 
 ### Fiber Statements (`parse_fiber_statement`)
 
 Two forms:
-1. **Definition**: `fiber name(Type param, ...) [: ReturnType] ... end;` — stores as `FiberDef`.
+1. **Definition**: `fiber name(Type param, ... -> ReturnType) { ... };` — the return type sits inside the parens after `->` (or comes from the `fiber : Type name(...)` spelling); the body is brace-delimited. Stores as `FiberDef`.
 2. **Instantiation**: `fiber [: InnerType] varName = FiberName(args);` — stores as `FiberDecl`.
 
 ### Halt Statement (`parse_halt_stmt`)
 
 ```
-halt alert "message";
-halt error "message";
-halt fatal "message";
+halt.alert >! "message";
+halt.error >! "message";
+halt.fatal >! "message";
 ```
+
+The `.` after `halt` and the `>!` before the message expression are both required.
 
 ### Print / Input
 
 - `>! expr;` → `StmtKind::Print`
-- `>? name : Type;` → `StmtKind::Input`
+- `>? name;` → `StmtKind::Input` (no colon is parsed; the type is read from the following token when it introduces a type, otherwise defaults to `Type::String`)
 
 ### Return / Yield
 
@@ -374,10 +378,10 @@ Both forms are valid.
 ### Terminal Command
 
 ```
-.command arg1 arg2;
+.terminal [!] command args...;
 ```
 
-Parsed as `ExprKind::TerminalCommand` and wrapped in `StmtKind::ExprStmt`.
+The `terminal` keyword is mandatory; the optional `!` follows it. Parsed as `ExprKind::TerminalCommand` and wrapped in `StmtKind::ExprStmt`.
 
 ---
 
@@ -463,10 +467,10 @@ pub struct Expander<'a> {
 
 Walks the top-level statement list. For each `StmtKind::Include`:
 
-1. Resolve the path relative to `current_dir`, then relative to each registered `include_path`.
+1. Resolve the path relative to `current_dir`; then try hardcoded redirects (`math.xcx` → `mathlib/src/math.xcx`, `pax.xcx` → `pax/src/pax.xcx`, `doc.xcx` → `doc/doc.xcx`); then relative to each registered `include_path`.
 2. Detect circular includes via `visiting_files`.
 3. Skip if already included (no alias) via `included_files`.
-4. Lex and parse the included file using the shared interner.
+4. Lex and parse the included file with a clone of the interner, copying it back into the parent afterwards.
 5. Recursively expand the sub-program.
 6. If an alias is present, call `prefix_program` on the sub-AST, then merge.
 

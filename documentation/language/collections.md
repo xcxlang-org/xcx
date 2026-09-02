@@ -17,7 +17,7 @@ nums.show();           --- prints contents to terminal
 
 | Method            | Signature    | Returns | Description                                                         |
 |-------------------|--------------|---------|---------------------------------------------------------------------|
-| `.size()`         | `() → i`     | `i`     | Number of elements (alias: `.count()`)                              |
+| `.size()`         | `() → i`     | `i`     | Number of elements (aliases: `.count()`, `.len()`)                  |
 | `.count()`        | `() → i`     | `i`     | Number of elements (alias of `.size()`)                             |
 | `.get(i)`         | `(i) → T`    | `T`     | Element at position `i` (0-indexed); `halt.error` if out of bounds  |
 | `.push(val)`      | `(T) → b`    | `b`     | Appends element to the end                                          |
@@ -100,7 +100,7 @@ setA ⊕ setB
 
 | Method          | Signature | Returns | Description                                |
 |-----------------|-----------|---------|--------------------------------------------|
-| `.size()`       | `() → i`  | `i`     | Number of elements (alias: `.count()`)      |
+| `.size()`       | `() → i`  | `i`     | Number of elements (aliases: `.count()`, `.len()`) |
 | `.count()`      | `() → i`  | `i`     | Number of elements (alias of `.size()`)     |
 | `.isEmpty()`    | `() → b`  | `b`     | `true` if empty                            |
 | `.contains(v)`  | `(T) → b` | `b`     | Checks membership                          |
@@ -151,7 +151,7 @@ map: scores {
 
 | Method           | Signature       | Returns   | Description                               |
 |------------------|-----------------|-----------|-------------------------------------------|
-| `.size()`        | `() → i`        | `i`       | Number of key-value pairs (alias: `.count()`) |
+| `.size()`        | `() → i`        | `i`       | Number of key-value pairs (aliases: `.count()`, `.len()`) |
 | `.count()`       | `() → i`        | `i`       | Number of key-value pairs (alias of `.size()`) |
 | `.get(key)`      | `(K) → V`       | `V`       | Returns value; `halt.error` if key missing|
 | `.contains(key)` | `(K) → b`       | `b`       | Checks if key exists                      |
@@ -248,7 +248,7 @@ products[1].price   --- 1499.50
 
 | Method               | Signature               | Returns | Description                                      |
 |----------------------|-------------------------|---------|--------------------------------------------------|
-| `.count()`           | `() → i`                | `i`     | Number of rows                                   |
+| `.count()`           | `() → i`                | `i`     | Number of rows (aliases: `.size()`, `.len()`)    |
 | `.get(i)`            | `(i) → row`             | `row`   | Row at index `i`                                 |
 | `.insert(vals...)`   | `(T...) → b`            | `b`     | Adds row (skips `@auto` columns)                 |
 | `.add(vals...)`      | `(T...) → b`            | `b`     | Alias for `.insert()` — identical behavior       |

@@ -13,6 +13,17 @@ json: user   <<< {"name": "", "age": 0} >>>;
 
 Values in the literal can be placeholders (`""`, `0`, `false`) to be filled later via `.set()`.
 
+A `<<< ... >>>` literal produces a `json` value in **every** expression position — declarations, reassignments, and call arguments alike:
+
+```xcx
+json: config <<< {"port": 8080} >>>;
+config = <<< {"port": 9090} >>>;      --- reassignment — produces a json value
+array:json: items;
+items.push(<<< {"id": 1} >>>);        --- call argument — produces a json value
+```
+
+The literal's content must be valid JSON (strict or relaxed, the same acceptance as `json.parse()`). Content that is not valid JSON — for example embedded expressions, which the language does not support — keeps plain-string behavior.
+
 ### Serialization from Collections
 You can also create JSON objects and arrays directly from XCX collections using the `.toJson()` method. This is available for:
 - **Maps**: Returns a JSON object.
@@ -28,6 +39,9 @@ json: parsed = json.parse(raw_string);
 
 > [!CAUTION]
 > **Panic on Invalid JSON (R305)**: If parsing fails, the VM terminates immediately. Verify string content before parsing.
+
+> [!NOTE]
+> **No nesting-depth limit**: since XCX 4.3, `json.parse()` accepts arbitrarily deep nesting (the former 128-level recursion limit is lifted); the practical ceiling is available memory. Only malformed content triggers R305.
 
 ### Mutability Pattern
 
@@ -51,7 +65,7 @@ yield net.respond(200, resp);
 | `.bind(path, var)`        | `(s, ref) → b`        | `b`     | Extracts value into a **pre-declared** XCX variable            |
 | `.set(path, val)`         | `(s, T) → b`          | `b`     | Sets value at path; creates key if missing                     |
 | `.push(val)`              | `(json) → b`          | `b`     | Appends element to a JSON array node                           |
-| `.size()` / `.count()`    | `() → i`              | `i`     | Number of keys (object) or elements (array)                    |
+| `.size()` / `.count()` / `.len()` | `() → i`       | `i`     | Interchangeable aliases; number of keys (object) or elements (array) |
 | `.keys()`                 | `() → array:s`        | `array:s`| Returns an array of keys for a JSON object                     |
 | `.toStr()`                | `() → s`              | `s`     | Serializes to JSON string                                      |
 | `.inject(path, map, tbl)` | `(s, map, table) → b` | `b`     | Bulk import of JSON array into XCX table                       |
@@ -314,9 +328,9 @@ json: r2 = f2.next();
 
 | Constraint                      | Behavior                                           |
 |---------------------------------|----------------------------------------------------|
-| `localhost` / `127.0.0.1`       | Allowed by default                                 |
+| `localhost` / `127.0.0.1` / `::1` | Allowed                                          |
 | `169.254.x.x` (link-local)      | `halt.fatal` — SSRF protection                     |
-| `10.x`, `172.16.x`, `192.168.x` | Blocked in production mode                         |
+| `10.x`, `172.16.x` – `172.31.x`, `192.168.x` | `halt.error` — private ranges blocked              |
 | `file://` URLs                  | `halt.fatal`                                       |
-| Max response body size          | 10 MB                                              |
-| Max incoming request body       | 10 MB — returns 413 without invoking the handler   |
+| Max response body size          | 50 MB — a larger response returns `status: 413`, `ok: false`, `error: "Body too large"` |
+| Incoming request body           | No size limit is enforced; validate input size in handlers |

@@ -35,7 +35,7 @@ The HIR compiler fully supports the compilation of complex literals:
 - **`TableLiteral { columns, rows }`** — columns are mapped to `VMColumn` (name, type, flags like `is_auto`/`is_pk`/`is_unique`), the table skeleton is created (`Value::from_table`), and instructions are emitted to insert the rows.
 - **`DatabaseLiteral(Vec<(StringId, HirExpr)>)`** — fields `engine` and `path` are recognized by name among the provided pairs and compiled to separate registers before emitting the instruction that creates the database handle.
 - **`DateLiteral { date_string, format }`** — if a `format` is provided, the date notation (`YYYY`, `MM`, `DD`, ...) is translated to `chrono` format before emitting the constant.
-- **`Tuple(Vec<HirExpr>)`** — tuple elements are compiled to adjacent registers starting from `compiler.next_local`, using an explicit `Move` when the result of a subexpression did not land in the target register immediately.
+- **`Tuple(Vec<HirExpr>)`** — tuple elements are compiled to adjacent registers starting from `compiler.next_local` (with an explicit `Move` when a subexpression did not land in the target register immediately) and are then wrapped by a final `ArrayInit`, so a tuple materializes as an array value.
 
 ---
 
@@ -48,7 +48,7 @@ pub struct LoopFrame {
     pub start_pc: usize,
     pub breaks: Vec<usize>,
     pub continues: Vec<usize>,
-    pub fiber_reg: Option<u8>,
+    pub fiber_reg: Option<usize>,
 }
 ```
 

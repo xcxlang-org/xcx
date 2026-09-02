@@ -133,11 +133,17 @@ Wrapped in `Arc<FunctionObj>`.
 
 ```rust
 pub struct FiberObj {
-    // chunk, locals, IP, done state
+    pub func_id: usize,
+    pub ip: usize,
+    pub locals: Vec<Value>,
+    pub status: FiberStatus,   // Suspended | Running | Done | Error
+    pub is_done: bool,
+    pub yielded_value: Option<Value>,
+    pub trace_revision: u64,
 }
 ```
 
-Represents a suspended coroutine. A fiber has its own instruction pointer, its own locals array (sized from `Chunk::max_locals`), and a `done` flag set when the fiber body returns without yielding.
+Represents a suspended coroutine. A fiber references its function by index, has its own instruction pointer and locals array, and tracks completion via `FiberStatus` plus the `is_done` flag and the last `yielded_value`.
 
 Wrapped in `Arc<RwLock<FiberObj>>`. The `RwLock` is necessary because the executor that drives the fiber mutates it while the parent executor may be reading the `done` flag concurrently.
 
@@ -151,7 +157,7 @@ pub enum JsonVal {
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(Arc<String>),
+    String(Arc<StringObj>),
     Array(Arc<RwLock<Vec<JsonVal>>>),
     Object(Arc<RwLock<Vec<(Arc<String>, JsonVal)>>>),
 }
@@ -163,7 +169,7 @@ An in-memory JSON tree. All nodes are `Clone`. Arrays and objects are wrapped in
 
 ### Key Methods
 
-`from_serde(serde_json::Value) -> JsonVal` — converts a serde value tree into a `JsonVal` tree. All strings become `Arc<String>`.
+`from_serde(serde_json::Value) -> JsonVal` — converts a serde value tree into a `JsonVal` tree. Strings become `Arc<StringObj>`; object keys go through the thread-local `intern_key` cache (`json_val.rs`) so repeated key names share one `Arc<String>` allocation.
 
 `to_serde() -> serde_json::Value` — reverse conversion.
 
@@ -200,7 +206,7 @@ pub struct TableObj {
 }
 ```
 
-An in-memory relational table. Rows are stored as `Vec<Vec<Value>>` — a vector of rows, each row a vector of column values.
+An in-memory relational table. Rows are stored as a flat `Vec<Value>` in row-major order — row `r`, column `c` lives at `rows[r * columns.len() + c]`; `TableObj::len()` derives the row count as `rows.len() / columns.len()`.
 
 Wrapped in `Arc<RwLock<TableObj>>`.
 
@@ -212,6 +218,7 @@ pub struct VMColumn {
     pub ty:       crate::frontend::ast::Type,
     pub is_auto:  bool,
     pub is_pk:    bool,
+    pub is_unique: bool,
 }
 ```
 
@@ -273,7 +280,7 @@ Wrapped in `Arc<RowObj>`.
 
 ## DatabaseObj
 
-Wraps a SQLite connection (`rusqlite::Connection`) behind a `Mutex`. Database method calls (query, insert, begin, commit, rollback, etc.) lock the mutex for the duration of the operation.
+Wraps a SQLite connection (`rusqlite::Connection`) behind a `Mutex`, alongside the `engine`/`path` strings it was opened with and a `tables: Arc<RwLock<HashMap<String, Value>>>` cache of introspected table handles. Database method calls (query, insert, begin, commit, rollback, etc.) lock the connection mutex for the duration of the operation.
 
 Wrapped in `Arc<DatabaseObj>`.
 
@@ -302,11 +309,11 @@ Note: in the current `Executor` design the executor uses its own inline `Vec<Val
 
 Conversion functions between `Value` and `JsonVal`:
 
-`value_to_json(v: &Value) -> JsonVal` — converts any runtime value to its JSON representation. Strings are decoded as UTF-8. Arrays and sets become JSON arrays. Maps become JSON objects. Tables become JSON arrays of objects. Rows become JSON objects. Dates become ISO-8601 strings.
+`value_to_json(v: &Value) -> JsonVal` — converts any runtime value to its JSON representation. Strings are decoded as UTF-8. Arrays and sets become JSON arrays. Maps become JSON objects. Tables become JSON arrays of objects. Rows become JSON objects. Dates become `"%Y-%m-%d %H:%M:%S"` strings.
 
 `json_val_to_value(v: &JsonVal) -> Value` — reverse conversion. `Null` becomes `false`. Primitive types map directly. Arrays and objects become `Value::from_json(JsonObj)`.
 
-`build_response_json(result: Result<ureq::Response, ureq::Error>) -> JsonVal` — constructs the standard HTTP response JSON object `{ status, ok, body, headers }`. Body responses larger than 10MB are replaced with a 413 error object.
+`build_response_json(result: Result<ureq::Response, ureq::Error>) -> JsonVal` — constructs the standard HTTP response JSON object `{ status, ok, body, headers }`. Body responses larger than 50MB are replaced with a 413 error object (`{ status, ok, error }`).
 
 ---
 

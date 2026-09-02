@@ -62,14 +62,15 @@ The JIT uses quiet-NaN boxing. Heap-allocated types (strings, sets, arrays, maps
 ## Inlined Collection Size Optimization
 
 To avoid the overhead of calling runtime FFI helpers, collection size queries (`.size()`, `.len()`, and `.count()`) on `Array`, `BoolArray`, and `Map` instances are compiled directly to native Cranelift instructions:
-- The compiler emits a 64-bit load directly from offset 24 of the collection's base memory address (skipping the 8-byte `RwLock` header and reading the 16-byte offset capacity/length field).
-- This bypasses runtime FFI helper calls (`xcx_jit_array_size` and `xcx_jit_map_size`).
+- Array/BoolArray: a 64-bit load from offset 24 of the collection's base memory address.
+- Map: a 64-bit load from offset 8 (`emit_call.rs`).
+- This bypasses the runtime FFI helpers (`xcx_jit_array_size` / `xcx_jit_map_size` are registered but never called).
 
 ---
 
 ## Inlined Bounds-Checked Array Access
 
-`GetIndex`/`SetIndex` opcodes, and the equivalent `Get`/`Set` method calls on an `Array` receiver whose element type is statically known to be `Int`, compile to a native bounds check plus a direct memory access rather than an unconditional FFI call:
+`Get`/`Set`/`Update` method calls on an `Array` receiver whose element type is statically known to be `Int` (and any access on a `BoolArray` receiver) compile to a native bounds check plus a direct memory access rather than an unconditional FFI call. The raw `GetIndex`/`SetIndex` opcodes, however, only inline for `BoolArray` — on a non-BoolArray container they compile to unconditional FFI calls (`xcx_jit_array_get` / `xcx_jit_array_update`):
 - The index is compared against the array's length (`index < len`) with a native Cranelift `icmp`.
 - On the in-bounds path, the element is read or written directly from the array's backing buffer.
 - On the out-of-bounds path, execution falls back to the corresponding runtime helper, which raises the standard bounds error.
@@ -125,7 +126,7 @@ Type inference also tracks whether a compiled function actually uses the heap (`
 
 When the divisor operand of `Div`/`Mod` has a statically known value in `ctx.register_const` (see "Constant Tracking in Registers" above) other than `0` or `-1`, the guard blocks that would otherwise check for division-by-zero and `i64::MIN / -1` overflow are skipped entirely, and the native `sdiv`/`srem` instruction is emitted directly.
 
-For `Mod` specifically, when the known constant divisor is a power of two, the operation is further reduced to a branchless bitwise sequence (sign-extend, mask, adjust) equivalent to `srem` but without the `srem` instruction itself — this covers divisors up to `2^32`.
+For `Mod` specifically, when the known constant divisor is a power of two below `2^16`, the operation is reduced to a branchless bitwise sequence (sign-extend, mask, adjust) without an `srem` instruction. Divisors from `2^16` to `2^31` emit a sign branch with `srem_imm` on the negative path; `2^32` exactly uses an `ireduce`/`uextend` sequence.
 
 ---
 

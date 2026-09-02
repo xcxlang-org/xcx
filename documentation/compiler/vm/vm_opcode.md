@@ -176,8 +176,6 @@ All arithmetic writes result to `dst` and reads operands from `src1`, `src2`. Ty
 | `Mod` | `src1 % src2` (halts on modulo by zero) |
 | `Pow` | `src1 ^ src2` |
 | `Neg` | `dst = -src` |
-| `PowInt` | Integer-specialized power |
-| `PowFloat` | Float-specialized power |
 | `IntConcat` | `src1 ++ src2` — integer concatenation (joins digits: 12 ++ 34 = 1234) |
 
 ### String Append
@@ -191,7 +189,7 @@ Compiled from the self-concatenation assignment pattern `x = x + expr` (see `com
 | `StrAppendMember` | `container, name_idx, src` | Append `locals[src]` to the string stored at JSON field `name_idx` of `container`. |
 | `StrAppendElement` | `container, index, src` | Append `locals[src]` to the string element at `index` of array `container`. |
 
-All four opcodes are backed by copy-on-write string concatenation logic handled inline inside `Value::add`. When the target string's `Arc` is uniquely owned (`Arc::strong_count <= 1`), it mutates the buffer in place; otherwise, it allocates a new copy.
+All four opcodes are backed by copy-on-write string concatenation logic handled inline inside `Value::add`. When the target string's `Arc` has exactly one strong count and no weak counts (`strong_count == 1 && weak_count == 0`), it mutates the buffer in place; otherwise, it allocates a new copy.
 
 ### Comparison
 
@@ -232,16 +230,19 @@ Specialized combined increment-and-jump instructions for loop optimization:
 
 | Opcode | Fields | Description |
 |---|---|---|
-| `LoopNext` | `target` | Jump back to loop header (forward-iteration). |
-| `LoopPrev` | `target` | Jump back to loop header (reverse-iteration). |
+| `LoopNext` | `reg, limit_reg, target` | Increment local `reg`, jump back to `target` while still in range (forward iteration). |
+| `LoopPrev` | `reg, limit_reg, target` | Decrement local `reg`, jump back to `target` while still in range (reverse iteration). |
 | `IncLocal` | `reg` | Increment local `reg` by 1. |
+| `DecLocal` | `reg` | Decrement local `reg` by 1. |
 | `IncVar` | `idx` | Increment global `idx` by 1. |
-| `IncLocalLoopNext` | `reg, target` | Increment local and jump if still in range. |
-| `DecLocalLoopPrev` | `reg, target` | Decrement local and jump if still in range. |
-| `IncVarLoopNext` | `g_idx, target, limit_reg, step_reg` | Global variable loop increment and jump. |
-| `DecVarLoopPrev` | `g_idx, target, limit_reg, step_reg` | Global variable loop decrement and jump. |
-| `ArrayLoopNext` | `arr_reg, idx_reg, val_reg, target, exit_ip` | Array iteration loop step. |
-| `SetLoopNext` | `set_reg, idx_reg, val_reg, target, exit_ip` | Set iteration loop step. |
+| `DecVar` | `idx` | Decrement global `idx` by 1. |
+| `IncLocalLoopNext` | `inc_reg, reg, limit_reg, target` | Increment local `inc_reg` and jump if still in range. |
+| `DecLocalLoopPrev` | `dec_reg, reg, limit_reg, target` | Decrement local `dec_reg` and jump if still in range. |
+| `IncVarLoopNext` | `g_idx, reg, limit_reg, target` | Global variable loop increment and jump. |
+| `DecVarLoopPrev` | `g_idx, reg, limit_reg, target` | Global variable loop decrement and jump. |
+| `ArrayLoopNext` | `idx_reg, size_reg, target` | Array/set iteration loop step: advance `idx_reg`, jump back to `target` while `idx_reg < size_reg`. |
+
+Set iteration is compiled through a `MethodCall { kind: Values }` conversion followed by the same `ArrayLoopNext`; there is no dedicated set-loop opcode.
 
 ### Function Calls
 
@@ -249,7 +250,8 @@ Specialized combined increment-and-jump instructions for loop optimization:
 |---|---|---|
 | `Call` | `dst, func_idx: u32, base: u8, arg_count: u8` | Call function `func_idx`. Arguments are locals `[base..base+arg_count]`. Result stored in `dst`. |
 | `MethodCall` | `dst, kind: MethodKind, base, arg_count` | Call a built-in method on the value at `locals[base]`. |
-| `MethodCallNamed` | `dst, kind: MethodKind, base, arg_count, names_idx: u32` | Dynamic method dispatch using a string name from the constant pool. Used for row field access and JSON path access. |
+| `MethodCallNamed` | `dst, kind: MethodKind, base, arg_count, names_idx: u32` | `MethodCall` with named arguments; `names_idx` indexes a constant-pool string array holding per-argument names (empty string for positional slots). |
+| `MethodCallCustom` | `dst, method_name_idx: u32, base, arg_count` | Method dispatch by string name from the constant pool. Used for dynamic JSON path access and row column resolution. |
 
 ### I/O
 
@@ -287,9 +289,13 @@ Specialized combined increment-and-jump instructions for loop optimization:
 | Opcode | Fields | Description |
 |---|---|---|
 | `ArrayInit` | `dst, base, count: u32` | Create an array from `count` values starting at `locals[base]`. |
+| `BoolArrayInit` | `dst` | Create an empty `array:b` (`BoolArrayObj`); elements are added via method calls. |
 | `SetInit` | `dst, base, count: u32` | Create a set from `count` values. |
 | `MapInit` | `dst, base, count: u32` | Create a map from alternating key/value pairs; `count` is the number of pairs. |
 | `TableInit` | `dst, skeleton_idx, base, row_count, col_count` | Initialize a table from a skeleton constant and row data in locals. |
+| `TableBegin` | `dst, skeleton_idx` | Begin streaming construction of a large table (>200 cells) from a skeleton constant; rows follow via `TableInitRow`. |
+| `TableInitRow` | `tbl_dst, base, col_count` | Append one row (`col_count` values starting at `locals[base]`) to a table begun with `TableBegin`. |
+| `DatabaseInit` | `dst, engine_src, path_src, tables_base_reg, table_count` | Create a `DatabaseObj` from engine/path registers and a contiguous span of `table_count` table-name registers. |
 
 ### Collections — Operations
 
@@ -307,14 +313,7 @@ Specialized combined increment-and-jump instructions for loop optimization:
 
 ### Array Specifics
 
-| Opcode | Fields | Description |
-|---|---|---|
-| `ArraySize` | `dst, src` | Write array length to `dst`. |
-| `ArrayGet` | `dst, arr_reg, idx_reg, fail_ip` | Bounds-checked array index; jumps to `fail_ip` on out-of-bounds. |
-| `ArrayGetIndex` | `dst, arr_reg, idx_reg, fail_ip` | Alternative bounds-checked get. |
-| `ArrayPush` | `arr_reg, val_reg` | Append `val_reg` to array `arr_reg`. |
-| `ArrayUpdate` | `arr_reg, idx_reg, val_reg, fail_ip` | Bounds-checked element assignment. |
-| `ArraySetIndex` | `arr_reg, idx_reg, val_reg, fail_ip` | Same as `ArrayUpdate`. |
+There are no dedicated array opcodes. Element access and mutation compile to `MethodCall` with `MethodKind::Get` / `Set` / `Update`, size queries to `MethodKind::Size` / `Len`, and appends to `MethodKind::Push` (see the `MethodKind` table above). The generic `GetIndex`/`SetIndex` opcodes (under "Collections — Operations") are used only for container indexing outside the typed method paths.
 
 ### Table Specifics
 
@@ -324,30 +323,30 @@ Specialized combined increment-and-jump instructions for loop optimization:
 | `TableIter` | `tbl_reg, idx_reg, row_reg, limit_reg, target: u32` | Loop step for table iteration. Advances `idx_reg`, loads the row, jumps back to `target`. |
 | `TablePushRow` | `tbl_reg, row_reg` | Deep-copy row `row_reg` into table `tbl_reg`. |
 | `TableCloneSkeleton` | `dst, src` | Clone the schema of table `src` into a new empty table at `dst`. |
-| `TableSize` | `dst, src` | Write row count to `dst`. |
+
+Row counts are obtained via `MethodCall` with `MethodKind::Count` / `Len` / `Size`, not a dedicated opcode.
 
 ### Fiber
 
 | Opcode | Fields | Description |
 |---|---|---|
-| `FiberIsDone` | `dst, src` | Write `true` if fiber `src` is exhausted. |
-| `FiberNext` | `dst, src` | Resume fiber `src` and store yielded value in `dst`. |
+| `FiberCreate` | `dst, func_idx: u32, base, arg_count` | Instantiate a fiber from function `func_idx` with arguments `locals[base..base+arg_count]`. |
 | `Yield` | `src` | Yield the value `src` from the current fiber. |
 | `YieldWithTarget` | `dst, src` | Yield the value `src` from the current fiber, storing caller's injected response in `dst`. |
+| `YieldVoid` | — | Bare `yield;` — signals the end of a fiber's current iteration. |
+
+Fiber state queries and resumption are method calls (`MethodKind::IsDone` / `Next` / `Close`), not dedicated opcodes.
 
 ### Set Specifics
 
-| Opcode | Fields | Description |
-|---|---|---|
-| `SetSize` | `dst, src` | Write set cardinality to `dst`. |
-| `SetContains` | `dst, set_reg, val_reg` | Write `true` if `val_reg ∈ set_reg`. |
+There are no dedicated set opcodes beyond the algebraic `SetUnion`/`SetIntersection`/`SetDifference`/`SetSymDifference`/`SetRange` above. Cardinality compiles to `MethodCall` (`MethodKind::Size` / `Len` / `Count`); membership compiles to the `Has` opcode.
 
 ### Random
 
 | Opcode | Fields | Description |
 |---|---|---|
 | `RandomInt` | `dst, min, max, step, has_step` | Generate a random integer in `[min, max]` with optional step. |
-| `RandomFloat` | `dst, min, max, step, has_step, step_is_float` | Same for floats. |
+| `RandomFloat` | `dst, min, max, step, has_step` | Same for floats. |
 | `RandomChoice` | `dst, src` | Pick a random element from the set `src`. |
 
 ### JSON / Date
@@ -355,12 +354,13 @@ Specialized combined increment-and-jump instructions for loop optimization:
 | Opcode | Fields | Description |
 |---|---|---|
 | `JsonParse` | `dst, src` | Parse `src` as a JSON string; store `JsonObj` in `dst`. |
-| `JsonBindLocal` | `dst, json_reg, path_reg` | Extract path from JSON; store in local `dst`. |
-| `JsonBindLocalConst` | `dst, json_reg, path: String` | Same with a compile-time-constant path. |
-| `JsonBindGlobal` | `idx: u32, json_reg, path_reg` | Extract and store in global `idx`. |
-| `JsonBindGlobalConst` | `idx: u32, json_reg, path: String` | Same with compile-time path. |
+| `JsonBindLocal` | `dst, json_src, path_src` | Extract path from JSON; store in local `dst`. |
+| `JsonBind` | `idx: u32, json_src, path_src` | Extract path from JSON; store in global `idx`. |
+| `JsonInject` | `table_idx: u32, json_src, mapping_src` | Inject JSON data into a global table using a mapping. |
+| `JsonInjectLocal` | `table_reg, json_src, mapping_src` | Same with a local table register. |
 | `JsonFastGetPush` | `json_src, path_src, val_src` | Fast JSON get and push; used in injection pipelines. |
 | `DateNow` | `dst` | Write current UTC timestamp (millis) as a date value into `dst`. |
+| `PerfMs` / `PerfUs` / `PerfNs` | `dst` | Write VM uptime in milliseconds / microseconds / nanoseconds to `dst`. |
 
 ### Store (File System)
 
@@ -403,6 +403,5 @@ All store opcodes follow the pattern `dst, base` where `base` is the register co
 | Opcode | Fields | Description |
 |---|---|---|
 | `Typeof` | `dst, src` | Write the type name string of `src` into `dst`. |
-| `StringLength` | `dst, src` | Write string byte length into `dst`. |
-| `CastFloatToInt` | `dst, src` | Truncating float-to-integer cast. |
-| `CastBool` | `dst, src` | Convert to boolean. |
+| `Wait` | `src` | Sleep for `locals[src]` milliseconds (the `@wait` statement and trailing `@wait` on method calls). |
+| `CastInt` / `CastFloat` / `CastString` / `CastBool` | `dst, src` | Type casts emitted for the `i()`/`f()`/`s()`/`b()` built-ins. |

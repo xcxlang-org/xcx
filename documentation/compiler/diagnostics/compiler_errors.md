@@ -47,8 +47,8 @@ The compiler maps diagnostics using three distinct series of error codes:
    - **R401**: Database connectivity / missing SQL table exceptions.
    - **R403**: SQL database query/prepare execution errors.
    - **R404**: Binding JSON path not found / DB row drop exception.
-   - **R405**–**R410**: Relational SQL table constraints / insertion mismatches.
-   - **R440**–**R443**: Terminal raw mode setup / cursor out of bounds / console inputs failure.
+   - **R405**–**R408**: Relational SQL table constraint failures (R405 sync expects a Table, R406 sync failure, R407 wrong argument type, R408 drop failure).
+   - **R440**, **R441**: Terminal raw mode setup failure / cursor position out of bounds.
    - **R501**: Unsupported VM instruction/method call index type.
 
 
@@ -103,8 +103,8 @@ Using ANSI colors (`\x1b[31;1m` for Red text, `\x1b[33;1m` for Yellow highlight,
       3 |  i: val = "hello" + 42;
    ```
 3. **Squiggle Highlights:** Creates underline indicators positioned directly offset from the start column:
-   - For single-character error contexts, prints a pointing arrow symbol (`^`).
-   - For multi-character spans, mirrors token lengths using wave squiggles (`~`).
+   - For zero-length error contexts, prints a pointing arrow symbol (`^`).
+   - For non-empty spans, mirrors token lengths using wave squiggles (`~`).
 
 ---
 

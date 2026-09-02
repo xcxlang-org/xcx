@@ -13,13 +13,13 @@ Cryptography utilities.
 | `crypto.hash(data, "base64_encode")`| `s`     | Encodes binary data/string to Base64 string    |
 | `crypto.hash(data, "base64_decode")`| `s`     | Decodes Base64 string back to binary/string    |
 | `crypto.verify(password, hash, algo)` | `b`   | Returns `true` if password matches hash        |
-| `crypto.token(length)`              | `s`     | Generates random hex token of given length     |
+| `crypto.token(length)`              | `s`     | Random hex token; `length` is the byte length, so the result is `2 * length` hexadecimal characters |
 
 ```xcx
 s: hash  = crypto.hash(password, "bcrypt");
 s: hash2 = crypto.hash(password, "argon2");
 b: valid = crypto.verify(password, hash2, "argon2");
-s: token = crypto.token(32);
+s: token = crypto.token(32);   --- 64 hexadecimal characters (32 bytes)
 ```
 
 ### store (File I/O)
