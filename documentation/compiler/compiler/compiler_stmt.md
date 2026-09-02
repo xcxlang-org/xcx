@@ -73,16 +73,16 @@ If a `while` loop condition matches the pattern `<counter> < <limit>`, `<counter
 
 Separates compilation into three specialized pipelines depending on `ForIterType`:
 - **Range (`a to b`)**: Compiles like an optimized `while` loop. Fuses the increment and bound check into `LoopNext` / `IncLocalLoopNext`.
-- **Array / Set (`in obj`)**: Loads the object length via a silent `MethodCall` to `kind: Size`. Uses a hidden index register, emitting an `ArrayLoopNext` fused instruction for high-speed bounds-checked iteration.
+- **Array / Set (`in obj`)**: Sets are first converted to an indexable value array via a silent `MethodCall` to `kind: Values`. The object length is loaded via a silent `MethodCall` to `kind: Size`, and a hidden index register drives an `ArrayLoopNext` fused instruction for high-speed bounds-checked iteration.
 - **Fiber (`in fiber_obj`)**: Executes the fiber until `IsDone` returns true, yielding values from `Next` directly to the `var_name` register. Emits a safe hidden `Close` method call if `break` is executed inside a fiber loop.
 
-Emission of `IncVarLoopNext`, `ArrayLoopNext`, and `TableIter` is centralized in `method_compiler.rs` behind dedicated `*_opcode` helper functions rather than building each instruction's arguments inline at every call site.
+Emission of `LoopNext`, `IncLocalLoopNext`, `IncVarLoopNext`, `ArrayLoopNext`, and `TableIter` in the JIT is centralized in `src/jit/emit_control.rs` behind dedicated `emit_*_opcode` helper functions rather than building each instruction's arguments inline at every call site.
 
 ---
 
 ## String Append Optimization: `StrAppendVar` / `StrAppendLocal` / `StrAppendMember` / `StrAppendElement`
 
-The self-concatenation pattern `var = var + expr` (global and local), `obj.field = obj.field + expr` (JSON field), and `arr.update(i, arr.get(i) + expr)` (string array element) is recognized directly by the statement compiler and lowered to one of four dedicated opcodes instead of a generic read/allocate/write sequence:
+The self-concatenation pattern `var = var + expr` (global and local; the variable's static type must be `Type::String`), `obj.set(k, obj.get(k) + expr)` (JSON-typed receiver), and `arr.update(i, arr.get(i) + expr)` (string-array element) is recognized directly by the statement compiler and lowered to one of four dedicated opcodes instead of a generic read/allocate/write sequence. The member/element forms are matched on the **method-call** syntax (`set`/`get`/`update`), not on assignment syntax:
 
 - `OpCode::StrAppendVar { var_idx, src }` — global variable target.
 - `OpCode::StrAppendLocal { local_idx, src }` — local variable target.

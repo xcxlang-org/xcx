@@ -1,6 +1,6 @@
 # HIR — Data Structures
 
-Definitions in `src/hir/hir.rs`. The shape of HIR is close to AST, but with two key differences: expressions carry already resolved types (`ty: Type`), and local variables are represented as flat indices instead of names in lexical scopes.
+Definitions in `src/hir/hir.rs`. The shape of HIR is close to AST, but with two key differences: expressions carry a `ty: Type` field, and local variables are represented as flat indices instead of names in lexical scopes. Note that `ty` is only populated for literals (`Int`/`Float`/`String`/`Bool`); every other expression is lowered with `Type::Unknown`, so codegen does not rely on it for type-driven emission.
 
 ---
 
@@ -59,7 +59,7 @@ pub struct HirStmt {
 }
 ```
 
-`HirStmtKind` covers the entire set of AST statements after lowering — declarations (`VarDecl`), local and global assignments (`Assign`, `AssignGlobal`), control flow (`If`, `While`, `For`, `Break`, `Continue`, `Return`), JSON operations (`JsonBind`, `JsonBindGlobal`, `JsonInject`, `JsonInjectLocal`), fibers (`FiberDecl`, `Yield`, `YieldFrom`, `YieldVoid`), network operations (`NetRequestStmt`, `NetRequestStmtGlobal`, `Serve`), and `InlineBlock` — the resulting block used when substituting a function body during inlining (see [hir_inline.md](hir_inline.md)), with an optional `result_local` storing the local variable that receives the value returned by the inlined function.
+`HirStmtKind` covers the entire set of AST statements after lowering — declarations (`VarDecl`), local and global assignments (`Assign`, `AssignGlobal`), simple statements (`Print`, `TerminalWrite`, `Input`, `ExprStmt`, `Halt`, `FunctionCallStmt`, `Wait`, `Include`, `DatabaseDecl`), control flow (`If`, `While`, `For`, `Break`, `Continue`, `Return`), JSON operations (`JsonBind`, `JsonBindGlobal`, `JsonInject`, `JsonInjectLocal`), fibers (`FiberDecl`, `Yield`, `YieldFrom`, `YieldVoid`), network operations (`NetRequestStmt`, `NetRequestStmtGlobal`, `Serve`), and `InlineBlock` — the resulting block used when substituting a function body during inlining (see [hir_inline.md](hir_inline.md)), with an optional `result_local` storing the local variable that receives the value returned by the inlined function.
 
 ---
 

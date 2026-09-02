@@ -19,10 +19,10 @@ Represented by `MapObj` wrapping `RwLock<Vec<(Value, Value)>>`.
 
 ### Sets (`set/`)
 Represented by `SetObj` wrapping `RwLock<BTreeSet<Value>>`.
-- **Set Arithmetic:** Supports algebraic operations via optimized C-linkage helpers:
-  - **Union:** `set_union` (combines two sets into a single distinct set).
-  - **Intersection:** `set_intersection` (returns a set with values present in both operands).
-  - **Difference:** `set_difference` / `set_sym_difference`.
+- **Set Arithmetic:** Supports algebraic operations via optimized C-linkage helpers in `ffi_helpers/set_ffi.rs`:
+  - **Union:** `xcx_jit_set_union` (combines two sets into a single distinct set).
+  - **Intersection:** `xcx_jit_set_intersection` (returns a set with values present in both operands).
+  - **Difference:** `xcx_jit_set_difference` / `xcx_jit_set_sym_difference`.
 
 ### JSON Translation and Relaxed Parsing (`json/`)
 The JSON parser (`parse.rs`) implements a two-stage parsing flow to reconcile XCX-specific literals:
@@ -30,7 +30,7 @@ The JSON parser (`parse.rs`) implements a two-stage parsing flow to reconcile XC
 2. **Relaxed Preprocessor (`relaxed_preprocess`):** If standard parsing fails, a lexical scanner identifies brace configurations representing arrays (e.g. `{1, 2}` instead of `[1, 2]`). It tracks bracket balances and colons: if a matching pair of curly braces `{}` lacks a mapping colon `: `, the preprocessor converts them to square brackets `[]` before submitting to the decoder.
 3. **Structured Translation:** Recreates values as strongly-typed XCX constructs (e.g., nesting Maps or Arrays of type-tagged values).
 
-Before either stage runs, `handle_json_parse` checks a `thread_local` cache (`JSON_CACHE`, keyed by the raw source string, holding up to 128 entries — cleared wholesale once the limit is exceeded) and returns a deep clone of the cached parsed value on a hit, skipping both the strict and relaxed decode paths entirely for repeated parses of an identical string.
+Before either stage runs, `handle_json_parse` checks a `thread_local` cache (keyed by the raw source string; at most 16 entries or 512KB of keys, evicting the least-recently-inserted; only strings up to 16KB are cached) and returns the cached `JsonVal` on a hit — nested nodes are Arc-shared with the cache (copy-on-write via `make_mutable`), so the hit path skips both the strict and relaxed decodes entirely for repeated parses of an identical string.
 
 **Simple-key fast paths:** Accessing a JSON object or array by a simple key — one containing none of `.`, `[`, `]`, `/` — bypasses the generic `json_pointer` path-resolution machinery in `get()`, `has()`, member access (`obj.field`), `keys()`/`len()`, and `bind()`/`json:bind` (`JsonBindLocal`). Instead, the field is looked up by scanning the object's backing storage directly (`data_ptr()`). The same direct-scan shortcut applies mid-path in general JSON path traversal (`get_path_value_xcx`): for object segments it avoids building a `/segment` pointer string and calling `pointer()`, and for array segments it parses the segment as a plain `usize` index. A structurally identical fast path exists for `get()` when the argument is an integer index into a JSON array — the index is used to reach the element directly rather than being converted to a string and re-parsed as a pointer segment.
 

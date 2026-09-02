@@ -10,7 +10,7 @@ The compiler maintains a strict abstraction tree of data shapes:
 - **Primitives**: `Type::Int`, `Type::Float`, `Type::String`, `Type::Bool`, `Type::Date`
 - **Linear Collections**: `Type::Array(Box<Type>)` and `Type::Set(SetType)`
 - **Composite Types**: `Type::Map(Box<Type>, Box<Type>)`
-- **Engine Components**: `Type::Fiber(Option<Box<Type>>)`, `Type::Table(TableType)`, `Type::Database`
+- **Engine Components**: `Type::Fiber(Option<Box<Type>>)`, `Type::Table(TableType)`, `Type::Database`, `Type::DatabaseOperation(DatabaseOpKind, TableType)` (pending DB operations such as an unfiltered `.remove()`)
 - **Dynamic Bindings**: `Type::Json`, `Type::Unknown`, `Type::Builtin(StringId)`
 
 ---
@@ -30,7 +30,7 @@ Arrays and Sets can implicitly down-cast against each other. If an `Array:int` i
 Maps enforce standard key-to-key and value-to-value compatibility.
 
 ### Table Schema Adherence (`table_type.rs`)
-`TableType` represents a very hard layout containing column `name`, `type`, `is_optional`, and `has_default`. For two tables to be compatible, their structures must mathematically perfectly align in chronological layout size and type signatures. Length disparity triggers immediate type conflicts.
+`TableType` columns carry `name`, `type`, `is_optional`, and `has_default`, plus `is_auto`, `is_pk`, and `is_unique` (`is_auto` is load-bearing for row-count checks). For two tables to be compatible, their column layouts must align in length with pairwise `is_compatible` columns (so `Unknown` still bypasses); an empty `TableType` is compatible with any table. Length disparity triggers a type conflict. Set↔Set compatibility is evaluated by base class (`N≡Z`, `S≡C`, `Q`, `B`); `Fiber↔Fiber` checks payload compatibility.
 
 ### Numeric Forgiveness (`primitive.rs`)
 `is_numeric_compatible` enables specific seamless bridging. `Int` and `Float` perfectly overlap. More surprisingly, `Int` and `Date` intrinsically interoperate, enabling raw timestamp integer mathematics to implicitly compile directly along raw primitives without explicit casting.

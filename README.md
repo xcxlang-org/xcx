@@ -11,7 +11,7 @@
 ![Last Commit](https://img.shields.io/github/last-commit/xcxlang-org/xcx)
 ![Repo Size](https://img.shields.io/github/repo-size/xcxlang-org/xcx)
 
-> XCX 4.3 is an active project under development. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
+> **XCX 4.3 is the current release.** XCX 4.4 is under development, focused on `--no-jit` interpreter-mode performance, recursion time, and continued technical-debt cleanup. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 ---
 
@@ -107,7 +107,7 @@ The honest picture: what you gain and what you give up:
 | Type safety | strong | optional (TS) | optional (mypy) | static, compile-time |
 | Concurrency model | goroutines | event loop | async/await | cooperative fibers |
 | Ecosystem | large | very large | very large | minimal (early stage) |
-| Platform support | Windows (primary) / Linux / macOS |
+| Platform support | all | all | all | Windows (primary) / Linux / macOS |
 
 XCX is not trying to replace Go or Node. It occupies a different space: small backend services and tools where you want zero dependency setup and a language that knows what you're building. The trade-off is an early-stage ecosystem and a single contributor.
 
@@ -127,36 +127,38 @@ than previous releases.
 
 ### Performance Benchmarks Results Table (JSON penalty method: PROPORTIONAL)
 
-| # | LANGUAGE_PLATFORM | FIB (30) | LCG (100M) | SIEVE | JSON |
+| # | Language / runtime | FIB (30) | LCG (100M) | SIEVE | JSON |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Zig [AOT] | 1.66ms | 5.28ms | 11.97ms | 0.04*ms |
-| 2 | Rust [AOT] | 1.81ms | 21.36ms | 12.70ms | 0.06*ms |
-| 3 | C [AOT] | 1.19ms | 85.34ms | 8.72ms | 0.07*ms |
-| 4 | C++ [AOT] | 1.26ms | 86.33ms | 18.27ms | 0.09*ms |
-| 5 | V [AOT] | 1.00ms | 189.00ms | 11.50ms | 0.10*ms |
-| 6 | Crystal [AOT] | 2.69ms | 107.37ms | 22.59ms | 0.14*ms |
-| 7 | Go [AOT] | 3.10ms | 242.37ms | 16.16ms | 0.17*ms |
-| 8 | Java [JIT] | 2.64ms | 217.88ms | 24.38ms | 0.18*ms |
-| 9 | Nim [AOT] | 17.50ms | 193.00ms | 19.50ms | 0.31*ms |
-| 10 | Bun [JIT] | 5.35ms | 400.84ms | 32.52ms | 0.40ms |
-| 11 | **XCX 4.3** [JIT] | 12.303ms | 106.480ms | 97.814ms | 0.238ms |
-| 12 | PyPy [JIT] | 19.47ms | 119.28ms | 101.21ms | 0.32ms |
-| 13 | LuaJIT [JIT] | 6.71ms | 378.47ms | 88.69ms | 0.46*ms |
-| 14 | C# [JIT] | 5.66ms | 208.82ms | 15.94ms | 5.58ms |
-| 15 | Node.js [JIT] | 6.70ms | 1363.96ms | 29.42ms | 0.63ms |
-| 16 | PHP [INT] | 67.54ms | 1739.70ms | 387.66ms | 1.06ms |
-| 17 | Lua [INT] | 69.00ms | 2346.00ms | 531.00ms | 3.33*ms |
-| 18 | Python [INT] | 96.67ms | 16573.77ms | 1045.21ms | 0.49ms |
-| 19 | Ruby [INT] | 59.27ms | 20938.24ms | 557.13ms | 1.39ms |
-| 20 | Erlang [JIT] | 6.00ms | 4891.00ms | 12353.50ms | 5.39*ms |
-| 21 | Perl [INT] | 351.03ms | 4506.39ms | 2379.04ms | 11.75*ms |
-| 22 | R [INT] | 560.00ms | 11220.00ms | 860.00ms | 13.26*ms |
+| 01 | Zig [AOT] | 1.66ms | 5.28ms | 11.97ms | 0.04*ms |
+| 02 | Rust [AOT] | 1.81ms | 21.36ms | 12.70ms | 0.06*ms |
+| 03 | C [AOT] | 1.19ms | 85.34ms | 8.72ms | 0.07*ms |
+| 04 | C++ [AOT] | 1.26ms | 86.33ms | 18.27ms | 0.09*ms |
+| 05 | V [AOT] | 1.00ms | 189.00ms | 11.50ms | 0.10*ms |
+| 06 | Crystal [AOT] | 2.69ms | 107.37ms | 22.59ms | 0.14*ms |
+| 07 | Go [AOT] | 3.10ms | 242.37ms | 16.16ms | 0.17*ms |
+| 08 | Java [JIT] | 2.64ms | 217.88ms | 24.38ms | 0.18*ms |
+| 09 | Julia [JIT] | 3.48ms | 195.45ms | 22.91ms | 0.27*ms |
+| 10 | XCX 4.3 [JIT] | 10.560ms | 104.852ms | 36.542ms | 0.134ms |
+| 11 | Dart [AOT] | 4.92ms | 108.02ms | 19.78ms | 0.77ms |
+| 12 | Nim [AOT] | 17.50ms | 193.00ms | 19.50ms | 0.31*ms |
+| 13 | Bun [JIT] | 5.35ms | 400.84ms | 32.52ms | 0.40ms |
+| 14 | PyPy [JIT] | 19.47ms | 119.28ms | 101.21ms | 0.32ms |
+| 15 | LuaJIT [JIT] | 6.71ms | 378.47ms | 88.69ms | 0.46*ms |
+| 16 | C# [JIT] | 5.66ms | 208.82ms | 15.94ms | 5.58ms |
+| 17 | Node.js [JIT] | 6.70ms | 1363.96ms | 29.42ms | 0.63ms |
+| 18 | Deno [JIT] | 7.20ms | 1456.83ms | 29.03ms | 0.57ms |
+| 19 | PHP [INT] | 67.54ms | 1739.70ms | 387.66ms | 1.06ms |
+| 20 | Lua [INT] | 69.00ms | 2346.00ms | 531.00ms | 3.33*ms |
+| 21 | Python [INT] | 96.67ms | 16573.77ms | 1045.21ms | 0.49ms |
+| 22 | Ruby [INT] | 59.27ms | 20938.24ms | 557.13ms | 1.39ms |
+| 23 | Erlang [JIT] | 6.00ms | 4891.00ms | 12353.50ms | 5.39*ms |
+| 24 | Gleam [JIT] | 7.01ms | 6086.81ms | 10581.50ms | 8.28*ms |
+| 25 | Perl [INT] | 351.03ms | 4506.39ms | 2379.04ms | 11.75*ms |
+| 26 | R [INT] | 560.00ms | 11220.00ms | 860.00ms | 13.26*ms |
 
 `*` = JSON value is a computed stdlib penalty, not a direct measurement (see methodology).
 
-XCX 4.3 ranks 11th by geometric mean, ahead of PyPy, C#, LuaJIT, Node.js, and
-every interpreted language tested. `lcg` and `fib` are competitive with JIT
-peers; `sieve` remains the main target for optimization in upcoming releases.
+XCX 4.3 ranks 10th by geometric mean, ahead of Dart, Nim, Bun, PyPy, LuaJIT, C#, Node.js, Deno, and every interpreted language tested. This run adds Julia, Dart, Deno, and Gleam to the field, and XCX's own numbers improved on all four tests versus the previous measurement (fib 12.303→10.560 ms, lcg 106.480→104.852 ms, sieve 97.814→36.542 ms, json 0.238→0.134 ms). `lcg` and `fib` are competitive with JIT peers; `sieve` remains the main target for optimization in upcoming releases.
 
 **Methodology, short version:** every language runs the same algorithmic work
 (no skipped operations, no dead-code elimination); AOT languages are compiled
@@ -203,9 +205,10 @@ XCX 4.3 is best treated as an experimental platform. It is not production-ready,
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
-**Known rough edges:** 
+**Known rough edges:**
 
-**Linux and macOS**: XCX 4.3 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+- **Linux and macOS**: XCX 4.3 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+- **HTTP server request body**: there is currently no size limit on incoming request bodies. A fix (rejecting oversized requests with `413` before the handler runs) is planned for XCX 4.4.
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -228,16 +231,13 @@ Final decisions, review, and everything that ships are mine.
 
 The 4.x line focuses on fixing known architectural issues and improving runtime correctness and performance:
 
-- **4.3**: additional fixes as discovered
-- Fibonacci, Sieve, and JSON performance improvements across 4.x
-- Better error messages and diagnostics
-- PAX package manager stabilization
-- Documentation improvements and more example projects
-- VS Code extension improvements
+- **4.3** (released): JIT stability and fallback, correctness fixes, verified dead-code remediation, and the sieve refcount-elision optimization.
+- **4.4** (in development): performance of the `--no-jit` interpreter mode — it has regressed in every release since 4.0 and is the main focus of this cycle; further recursion-time improvements (`fib`); continued technical-debt elimination.
+- **4.5**: ships only if substantive findings surface during 4.4; if 4.4 closes cleanly, work moves straight to 5.0a.
 
-### XCX 5.0: language evolution (early planning)
+### XCX 5.0a: language evolution (early planning)
 
-No timeline. Early-stage planning includes `match` statement and pattern matching. No breaking changes to existing 4.x syntax are planned.
+No timeline. Work begins when 4.4 closes (via 4.5a only if needed). Early-stage planning includes `match` statement and pattern matching. No breaking changes to existing 4.x syntax are planned.
 
 ---
 
@@ -305,13 +305,13 @@ xcx server.xcx
 
 **PAX package manager:** `xcx pax install pkg`, `xcx pax upgrade xcx`. Own registry, beta stage; functional and usable, but API may still change.
 
-**Configurable JIT threshold:** `xcx script.xcx --threshold=100` controls how many executions before a fiber segment is JIT-compiled. Default is 50.
+**Configurable JIT threshold:** `xcx script.xcx --threshold=100` controls how many calls before a function is JIT-compiled. Default is 50.
 
 ---
 
 ## Building from source
 
-Requires **Rust 1.75+**.
+Requires **Rust 1.85+** (the crate uses edition 2024).
 
 ```bash
 git clone https://github.com/xcxlang-org/xcx

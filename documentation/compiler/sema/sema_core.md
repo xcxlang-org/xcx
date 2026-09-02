@@ -17,10 +17,12 @@ The central component is the `Checker` struct. It maintains the current traversa
    - It validates specialized structural rules: Rule S401 enforces that if a `serve:` keyword is present, it *absolutely must* be the final statement evaluated sequentially. Any statement trailing a server declaration immediately triggers a `TypeErrorKind::Other` error to prevent dead code blocks behind the blocking network listener.
 
 ### `Checker` State Bounding
-The `Checker` dynamically tracks environment topology as it enters and leaves AST branch nodes:
-- `loop_depth`: Increments on entering `while` and `for` blocks. `break` and `continue` keywords check if `loop_depth > 0`.
+The `Checker` does not own the symbol table — `SymbolTable` is passed as a parameter to `check(&mut self, program, symbols)`. Its actual fields track traversal state: `interner`, `functions` (the pre-scan registry), `loop_depth`, `fiber_context`, `is_fiber_context`, `is_table_lambda`, `fiber_has_yield`, `in_yield_expr`, and `last_expr_was_db_io`.
+- `loop_depth`: Increments on entering `while` and `for` blocks (and resets to 0 inside fiber bodies). `break` and `continue` check `loop_depth > 0` and raise `BreakOutsideLoop` / `ContinueOutsideLoop` (S106/S107).
 - `fiber_context`: An `Option<Option<Type>>` designating if execution is currently inside a fiber body, and whether that body yields values (typed) or yields void.
-- `in_yield_expr` / `fiber_has_yield`: Safe-guards to ensure `yield` and Database I/O calls (`fetch`, `push`) are securely routed.
+- `in_yield_expr` / `fiber_has_yield` / `last_expr_was_db_io`: Safe-guards to ensure `yield` and Database I/O calls (`fetch`, `push`) are securely routed.
+
+A second `serve:` statement is rejected separately ("Only one serve: statement is allowed in a program").
 
 ---
 
@@ -30,5 +32,5 @@ The `SymbolTable` (`symbol_table.rs`) represents the lexical environment. It han
 
 - **Stack Allocation**: Implemented as a nested `Vec<Scope>`. Entering an `if` block, `for` loop, or `function` pushes a `Scope`. Exiting pops it. Lookups iterate from the deepest scope backward mapping variable names to their in-memory semantic type (`Type`).
 - **Constant Enforcements**: A mapped variable wrapper (`Symbol`) tracks `SymbolKind::Constant` or `SymbolKind::Variable`. The checker validates `check_assign` and strictly errors on `ConstReassignment`.
-- **Global Injections**: The standard global type constructors (`i`, `f`, `s`, `b`), and the contextual `input` pipeline string, are injected directly into the root scope upon initialized semantic analysis.
+- **Global Injections**: Only `input` is defined in the root scope (typed `Type::Unknown`). The type constructors `i`, `f`, `s`, `b` are registered in the `functions` map as `FunctionSignature`s, not in any scope.
 - **Table Scope Shadowing**: A unique sub-branch `symbols.define("__row_tmp", ...)` is securely attached when analyzing SQL `.where()` lambda predicates. It dynamically shadows variables to allow direct injection of row columns as variables without requiring explicit property accesses.

@@ -65,6 +65,7 @@ Regular characters are returned directly: `"a"`, `"Z"`, `"5"`, `" "`.
 
 ### Example
 
+```xcx
 s: k = input.key();
 if (k == "UP") then;
     y = y - 1;
@@ -85,7 +86,7 @@ Directly interact with the system environment or current process.
 |------------------------|--------------------------------------------------|
 | `.terminal !clear`     | Clears the screen                                |
 | `.terminal !exit`      | Terminates the VM process                        |
-| `.terminal !run s`     | Opens file `s` via the OS's default file association (returns `b`)              |
+| `.terminal !run s`     | Runs `s` as a child process and returns its captured stdout — see the note below |
 | `.terminal !raw`       | Raw mode — no echo, no buffering                 |
 | `.terminal !normal`    | Restores normal terminal mode                    |
 | `.terminal !cursor on` | Shows the cursor                                 |
@@ -117,7 +118,7 @@ end;
 
 - **`input.key()` in normal mode**: Returns `""` and prints a warning alert.
 - **`@wait` on `input.ready()`**: Compilation error.
-- **`.terminal` directives**: Are not expressions and cannot be assigned to variables.
+- **`.terminal` directives**: Are expressions and return a value. Every directive returns `true` (`b`) on success; `.terminal !run` returns the child's captured stdout as `s`, `true` when the process succeeded with no output, and `false` when it failed.
 - **`.terminal !move`**: Arguments must be integers (`i`).
 - **Terminal Availability**: The VM will halt with a fatal error if console handles are redirected or unavailable.
-- **`.terminal !run`**: IS usable as a boolean expression (returns `b`), despite being listed among directives. Its "run" semantics are OS file-association based, not a guaranteed interpreter invocation. On systems without a registered file association (e.g. Windows), this triggers an OS-level "Open With" prompt instead of executing the file. To reliably re-invoke the interpreter on another script, spawn it explicitly via the interpreter's own executable path.
+- **`.terminal !run`**: Runs the argument as a child process and is usable in expressions. When the first argument is a `.xcx` file, it is executed directly by the currently running `xcx` executable (extra arguments are forwarded to the script) — no OS file association is involved. Any other command goes through the OS shell (`cmd /C` on Windows, `sh -c` elsewhere). The child's stdout is printed to the terminal and returned as an `s` value; `true` when the process succeeded with no output; `false` when the process failed or could not be started.

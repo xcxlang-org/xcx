@@ -27,19 +27,19 @@ Binary and Unary traversal rules follow a precise subset:
 The core file for all dynamic method validations without modules.
 
 - Massive exhaustive `match` logic evaluates against native primitives natively to execute methods safely:
-  - Strings resolving `.split()`, `.trim()`, `.startsWith()`, pushing back `Type::Array(String)` natively.
+  - Strings resolving `.split()` push back `Type::Array(String)`; `.trim()` returns `Type::String`; `.startsWith()`/`.endsWith()` return `Type::Bool`.
   - Native numbers safely matching `.toStr()`, bypassing rigid string casts dynamically.
-  - Collections securely binding methods like `.push()`, validating argument payload counts and expected abstract mapping variants. (Array:1 positional; Sets:1 positional variant; Maps:2 positional bindings).
+  - Collections bind methods like `.push()`/`.add()`/`.insert()` without dedicated argument-count enforcement (Sets and Maps have no `push` at all — their insert methods are `add` and `insert`/`set`/`update`).
 
 ## Module Call Execution (`check_module_call.rs`)
 
 Handles direct module pathing evaluating namespaces such as `net.`, `crypto.`, `store.`, and `json.`. The semantic checker validates method signatures securely natively.
 
 - `json.parse()` dictates string payload evaluations.
-- `store.zip()` requires exact string arguments statically mapping paths natively before execution to avoid runtime file corruptions.
+- `store.zip()` (like write/append/delete/isDir/mkdir/unzip) only generically checks its argument expressions and returns `Type::Bool` — no static String-path enforcement exists.
 
 ## Database & Query Bindings (`check_query.rs` & `check_table.rs`)
 
-- Identifies native queries evaluating DB calls. I/O executions (`insert`, `save`, `queryRaw`, `sync`) explicitly check whether `last_expr_was_db_io = true`.
-- If the statement attempts a database execution securely bound inside a native `@fiber`, it restricts explicit asynchronous evaluation: *Database I/O methodology securely must explicitly be executed outside native non-yielded fiber architectures.* (Compilation block active).
+- Identifies native queries evaluating DB calls. Eleven I/O methods set `last_expr_was_db_io = true`: `fetch`, `insert`, `save`, `push`, `query`, `queryRaw`, `remove`, `truncate`, `exec`, `sync`, `drop`.
+- Inside a fiber body, a database I/O expression must be wrapped in a `yield` — otherwise the error "Database I/O method '{}' must be yielded inside a fiber" blocks compilation. Yielding a DB-I/O expression outside a fiber is conversely allowed.
 - Argument mapping cascades specifically track Named arguments cleanly. If positional assignments evaluate properly, trailing assignments securely cascade into dictionary mappings verifying `@columns` without overlap (`Duplicate named argument`).

@@ -9,7 +9,7 @@ The `src/sema/check/` module separates out complex execution checks based on sta
 ### Loop Safety
 - Maintains a strict `loop_depth` integer integer tracker. 
 - Entering a `while` or `for` loop dynamically pushes `loop_depth += 1`.
-- The parser itself maps `break` and `continue`, but the semantic checker validates whether they are utilized legally. If the semantic `loop_depth` reads `0`, `TypeErrorKind::Other` asserts an error: "Break/Continue outside a looping block."
+- The parser itself maps `break` and `continue`, but the semantic checker validates whether they are utilized legally (in `check_stmt.rs`). If the semantic `loop_depth` reads `0`, dedicated variants fire: `BreakOutsideLoop` ("[S106] Break statement outside of loop") and `ContinueOutsideLoop` ("[S107] Continue statement outside of loop").
 
 ### Specialized `for` Iteration Extrapolation
 XCX automatically extrapolates internal type abstractions when iterating:
@@ -25,7 +25,7 @@ XCX isolates and strictly bounds `yield` functionality exclusively inside declar
 
 - `check_fiber_def()` configures the internal tracking state `fiber_context` and overrides `is_fiber_context = true`. It validates function closures and verifies trailing `return` consistency.
 - **Yield Security**: `check_yield_stmt_with_target` actively audits if `is_fiber_context` is true before resolving. Yield returns throw errors if escaping the explicit `<Fiber>` bound state.
-- **D401 Safety Guard**: If a statement attempts to implicitly yield a raw database operation (`DatabaseOpKind::Remove`), the semantic tracker explicitly blocks compilation. `.remove()` cascades must securely anchor an explicit `.where()` prior to yielding upstream.
+- **D401 Safety Guard**: A raw database operation (`DatabaseOpKind::Remove`) must be filtered with an explicit `.where()` before it is yielded, assigned, passed as an argument, or returned from a typed fiber — the guard fires at all five sites (yield, assignment, expression statement, argument passing, typed-fiber `return`).
 
 ---
 
@@ -38,6 +38,6 @@ XCX isolates and strictly bounds `yield` functionality exclusively inside declar
 
 ## Network Initialization (`check_net_stmt.rs`)
 
-The `serve:` keyword is comprehensively audited:
-- Statically binds types (evaluates and guarantees integer ports and string hosts).
-- Verifies comprehensive route parameters traversing the `ExprKind::Tuple` payloads, cross-verifying missing or dead lambda variable states and globally tracked functions prior to booting the listener.
+The `serve:` keyword is audited in `check_net_stmt.rs` and `check_decl.rs`:
+- Port/host/workers expressions are generically type-checked; no dedicated Int-port / String-host assertion exists.
+- Route parameters are traversed via `ExprKind::Tuple` **and** `ExprKind::ArrayLiteral` (plus `Binary` right sides); identifiers are cross-checked against the `functions` map and the symbol table (with `"*"`/`"_"` exempt). There is no lambda-state validation.

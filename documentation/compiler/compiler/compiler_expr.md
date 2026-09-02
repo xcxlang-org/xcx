@@ -48,10 +48,10 @@ If a lambda expression captures variables from its enclosing environment, `colle
 
 When compiling `value.method(...)`, the compiler identifies the receiver type. XCX provides massive standard library features mapped to dynamic methods.
 ### Module Method Calls (Static)
-Identifiers like `net`, `json`, `env`, `crypto`, `date`, `store` are detected and compile strictly into specialized opcodes (e.g. `HttpCall`, `JsonParse`, `StoreWrite`, `DateNow`, `CryptoHash`).
+Identifiers like `net`, `json`, `env`, `crypto`, `date`, `store`, `perf`, `input`, and `terminal` are detected and compile strictly into specialized opcodes (e.g. `HttpCall`, `JsonParse`, `StoreWrite`, `DateNow`, `CryptoHash`, `PerfMs`).
 
 ### Inline Lambda & Query Compilation (`compile_query.rs`)
-**Massive Optimization**: If the compiler encounters `.where(fn(x) ...)` or `.where(x -> ...)` with exactly one lambda argument, it does **not** compile it as a standard function call. 
+**Massive Optimization**: If the compiler encounters `.where(expr)` with exactly one argument that is **not** a syntactic lambda (the row variable is implicit, e.g. `.where(age > 18)`), it does **not** compile it as a standard function call. (A `Lambda` argument falls back to the standard call path with its captures appended as leading arguments.)
 Instead:
 1. It analyzes the lambda AST to find captured variables.
 2. It pushes a completely independent sub-chunk (marked as `is_table_lambda = true`) directly into the `functions` array.
@@ -64,7 +64,7 @@ Instead:
 
 ### Terminal Commands
 
-`.command` expressions (`.clear`, `.exit`, `.runcmd()`, `.raw`, `.move(x,y)`) are statically compiled down into specific `Terminal*` variants, skipping all method lookup logic.
+`.terminal` command expressions (`.clear`, `.exit`, `.run(cmd)`, `.raw`, `.normal`/`.cooked`, `.cursor on/off`, `.move(x,y)`) are statically compiled down into specific `Terminal*` variants, skipping all method lookup logic.
 
 ---
 
@@ -78,13 +78,13 @@ Instead:
 
 ## Access & Member Iteration (`access.rs`)
 
-- **Dot Notation (`obj.field`)**: Compiles to `GetMember { name_idx }` using a pre-interned constant pool string.
-- **Bracket Notation (`obj[pos]`)**: Compiles to `GetIndex`.
-- **JSON Deep Property Access (`obj.nested[1].data`)**: Analyzes the AST tree. If it detects a chain of JSON accesses, it compresses it into a high-performance, pipelined `JsonFastGetPush` chain to avoid allocating intermediate strings natively.
-- **Table Row Queries (`row.column`)**: Analyzes table metadata (if known at compile time) and optimizes member accesses to integer `RowGet { col_idx }` offsets instead of hash map string lookups.
+- **Dot Notation (`obj.field`)**: Compiles to `GetMember { name_idx }` only for a fixed property list (`length`, `year`, `month`, `day`, `hour`, `minute`, `second`, `affected`, `insertId`, `status`, `ok`, `error`); known method names compile to a lightweight `MethodCall { kind }`, and anything else to `MethodCallCustom` with the name as a string constant.
+- **Bracket Notation (`obj[pos]`)**: Compiles to `MethodCall { kind: Get }`. (The `GetIndex` opcode is emitted only by set-iteration loops.)
+- **JSON Get+Push (`obj.get(path).push(val)`)**: The call compiler matches this exact pattern and folds it into a single `JsonFastGetPush` instruction (`call.rs`). There is no chain-compression of general deep-access paths.
+- **Table Row Access**: the AST path does not emit `RowGet`; row fields resolve through `MethodCallCustom` string dispatch at runtime.
 
 ---
 
 ## Operators (`binary.rs` & `unary.rs`)
 
-Standard translation of left and right expressions. Operator token kinds map directly to matching `OpCode` variants (`Add`, `Sub`, `Equal`, `Has`). Set operation tokens (`UNION`, `\`, `⊕`) compile natively to `SetUnion`, `SetDifference`, etc. Logical conditions like `&&` (`And`) and `||` (`Or`) compile natively into their boolean equivalents. For AST nodes representing concatenation (`++`, `::`), `binary.rs` selects the specifically optimized `IntConcat` or standard `MethodCall { kind: Join }` dispatch.
+Standard translation of left and right expressions. Operator token kinds map directly to matching `OpCode` variants (`Add`, `Sub`, `Equal`, `Has`). Set operation tokens (`UNION`, `\`, `⊕`) compile natively to `SetUnion`, `SetDifference`, etc. Logical conditions like `&&` (`And`) and `||` (`Or`) compile natively into their boolean equivalents. `++` compiles to `IntConcat`; `::` compiles to `MapInit { count: 1 }` (a single-pair map constructor), not a method call.

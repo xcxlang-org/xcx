@@ -32,24 +32,27 @@ src/vm/core/
 
 ```rust
 pub struct VM {
-    pub globals:      parking_lot::RwLock<Vec<Value>>,
-    pub error_count:  AtomicUsize,
-    pub disable_jit:  bool,
-    // ... internal fields
+    pub globals:        parking_lot::RwLock<Vec<Value>>,
+    pub global_names:   Arc<RwLock<HashMap<String, usize>>>,
+    pub error_count:    AtomicUsize,
+    pub jit:            Mutex<crate::jit::JIT>,
+    pub disable_jit:    AtomicBool,
+    pub jit_threshold:  u32,
+    pub start_instant:  std::time::Instant,
 }
 ```
 
 The `VM` is created once per program execution and wrapped in `Arc<VM>` so it can be shared between the main executor and any spawned fiber executors. It holds the global variable array and the global error counter.
 
-`VM::new()` initializes with an empty globals vector and `disable_jit = false`.
+`VM::new()` pre-allocates 65536 global slots, sets `disable_jit = false`, and `jit_threshold = 50`.
 
 ### `get_global(idx) -> Value`
 
-Used in tests and by the executor to read a global by index.
+Used in tests and by the executor to read a global by index (returns `false` past the 65536-slot boundary). `set_global` handles refcounting.
 
 ### `run(chunk, ctx, args)`
 
-Main entry point. Creates an `Executor`, calls `executor.run_chunk(chunk, ctx, args)`. Runs on the dedicated `xcx-executor` thread (64MB stack) as spawned from `main`.
+Main entry point. Eagerly attempts a JIT compilation of the main chunk (when JIT is enabled and not yet compiled), then creates an `Executor` and calls `executor.run_frame(chunk, params, self)`. Runs on the dedicated `xcx-executor` thread (64MB stack) as spawned from `main`.
 
 ### `error_count`
 
@@ -61,8 +64,8 @@ Main entry point. Creates an `Executor`, calls `executor.run_chunk(chunk, ctx, a
 
 ```rust
 pub struct SharedContext {
-    pub constants: Vec<Value>,
-    pub functions: Vec<Arc<Chunk>>,
+    pub constants: Arc<Vec<Value>>,
+    pub functions: Arc<Vec<Arc<Chunk>>>,
     pub http_req:  Option<Arc<std::sync::Mutex<Option<tiny_http::Request>>>>,
 }
 ```
@@ -80,13 +83,14 @@ Immutable data shared across all executors in the same program run. Wrapped in `
 ```rust
 pub enum OpResult {
     Continue,
+    Return(Option<Value>),
+    Yield(Option<Value>),
+    YieldWithTarget(u8, Option<Value>),
     Halt,
-    FiberYield,
-    FiberDone,
 }
 ```
 
-Returned by every step handler. `Continue` proceeds to the next instruction. `Halt` stops execution. `FiberYield` / `FiberDone` are used during fiber execution to signal the parent executor.
+Returned by every step handler. `Continue` proceeds to the next instruction. `Halt` stops execution. `Return`/`Yield`/`YieldWithTarget` carry (optionally) a value up to the parent frame during function returns and fiber yields.
 
 ---
 
@@ -130,7 +134,7 @@ One `Executor` instance per running call stack (including fibers). Fibers get th
 
 **`row_cache`:** A map from a table's heap address (`Arc::as_ptr(&t_rc) as usize`) to a vector of previously-constructed `RowObj` values, one per row index, used by `table.where(...)` (see `compiler/runtime/runtime_collections.md`) to avoid reallocating a `RowObj` for every row on every filter invocation. `insert`, `delete`, `update`, and `clear` on a table invalidate its entry in `row_cache` so that stale row handles are never read after a structural mutation.
 
-**JIT Warmup Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted.
+**JIT Warmup Threshold:** A chunk's call count must cross `vm.jit_threshold` (defaulting to 50, customizable via CLI option `--threshold`) before JIT compilation is attempted. The `xcx_jit_call_recursive` FFI fallback path uses its own fixed warmup of 5 calls, and `VM::run` additionally attempts an eager JIT compilation of the main chunk before any warmup counting.
 
 ### Main Dispatch Loop
 
@@ -144,7 +148,7 @@ Step handlers are split into modules and called as free functions taking `(op, l
 
 ### Function Call Frames (`handle_call` / `handle_call_no_jit`)
 
-Both entry points funnel into a single private `handle_call_inner`, which checks the recursion limit, prepares the new frame (`prepare_frame`), resolves or triggers JIT compilation of the callee via `check_jit_warmup` (only from `handle_call`, which is reached from JIT-compiled code — `handle_call_no_jit` reads the callee's `jit_ptr` directly since it originates from the interpreter loop and does not need to trigger warmup), executes the frame, and tears it down (`cleanup_frame`). Consolidating frame preparation/cleanup into one function removes what was previously duplicated setup and teardown code between the two call paths. When `check_jit_warmup` triggers a fresh JIT compilation and it fails, the error is logged to stderr under `#[cfg(debug_assertions)]` and `vm.error_count` is incremented regardless of build profile.
+Both entry points funnel into a single private `handle_call_inner`, which checks the recursion limit, prepares the new frame (`prepare_frame`), resolves or triggers JIT compilation of the callee via `check_jit_warmup` (only from `handle_call`, which is reached from JIT-compiled code — `handle_call_no_jit` reads the callee's `jit_ptr` directly since it originates from the interpreter loop and does not need to trigger warmup), executes the frame, and tears it down (`cleanup_frame`). Consolidating frame preparation/cleanup into one function removes what was previously duplicated setup and teardown code between the two call paths. When `check_jit_warmup` triggers a fresh JIT compilation and it fails, the JIT is silently disabled for the rest of the run (`vm.disable_jit = true`); nothing is logged and `error_count` is not touched.
 
 ### `dispatch_jit_call`
 
@@ -171,6 +175,7 @@ Routes `MethodCall` opcodes to the correct runtime handler based on the receiver
 TAG_DB   → handle_database_method
 TAG_TBL  → handle_table_method
 TAG_ARR  → handle_array_method
+TAG_BOOL_ARR → handle_bool_array_method
 TAG_MAP  → handle_map_method
 TAG_SET  → handle_set_method
 TAG_STR  → handle_string_method
@@ -191,6 +196,7 @@ Non-pointer values that receive any other method produce an error and return `Ha
 For methods identified by a string name rather than a `MethodKind` enum value. Currently used for:
 - `TAG_ROW` — field access by name (`handle_row_custom`).
 - `TAG_JSON` — dynamic key access (`handle_json_custom`).
+- `TAG_DB` — database table handle access via `RuntimeOps::get_member`.
 
 ---
 
@@ -238,7 +244,7 @@ These are `#[unsafe(no_mangle)] pub unsafe extern "C"` functions called directly
 |---|---|
 | `xcx_jit_json_bind(out, json_bits, json_tag, path_bits, path_tag)` | Extract path from JSON |
 | `xcx_jit_json_bind_const(out, json_bits, json_tag, path_ptr, path_len)` | Same with compile-time path bytes |
-| `xcx_jit_json_parse(out, bits, tag)` | Parse JSON string; uses a thread-local LRU cache of up to 32 entries keyed by string pointer. Flat JSON (no nested arrays/objects) uses shallow clone; nested uses deep clone. |
+| `xcx_jit_json_parse(out, bits, tag)` | Parse JSON string; uses a thread-local cache of up to 32 entries (strings ≤16KB) keyed by string pointer or content, evicting the oldest. Cache hits return a `JsonVal::clone()` (Arc-sharing for nested nodes). |
 
 ### I/O
 
@@ -252,7 +258,7 @@ These are `#[unsafe(no_mangle)] pub unsafe extern "C"` functions called directly
 | Symbol | Description |
 |---|---|
 | `xcx_jit_halt_alert(bits, tag)` | Emit ALERT message |
-| `xcx_jit_halt_error(exec_ptr, bits, tag)` | Emit ERROR; increment error count |
+| `xcx_jit_halt_error(exec_ptr, bits, tag)` | Emit ERROR (does not increment the error counter) |
 | `xcx_jit_halt_fatal(bits, tag)` | Print FATAL and call `process::exit(1)` |
 
 ### Fiber
@@ -293,6 +299,6 @@ The full compilation and execution pipeline:
 
 The `--no-jit` flag sets `vm.disable_jit = true`, skipping JIT compilation entirely. The REPL path creates a `Repl` instance instead of running a file.
 
-The `pax` subcommand looks for `lib/pax.xcx` relative to the executable directory (walks up parent directories) and runs it as a normal XCX file.
+The `pax` subcommand looks for `lib/pax/src/pax.xcx` relative to the working directory, then relative to the executable directory (walking up parent directories) and runs it as a normal XCX file. A sibling `doc` subcommand resolves `lib/doc/doc.xcx` the same way.
 
 `TerminalCleanup` is a zero-size RAII guard that calls `crossterm::terminal::disable_raw_mode()` on drop — ensuring terminal state is always restored even on panic.

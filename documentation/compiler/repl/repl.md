@@ -71,7 +71,7 @@ Interactive commands bypass semantic validation and are handled directly in the 
 
 ## Module Placeholders
 
-To optimize terminal features in future updates of the XCX environment, the REPL references structural components with standard constructors:
+The REPL references structural components with standard constructors; `Completer` and `History` remain placeholders for future updates, while `Highlighter` is fully functional:
 - **`Completer` (`src/repl/completer.rs`):** Placeholder setup for tab-autocomplete hooks.
-- **`Highlighter` (`src/repl/highlighter.rs`):** Hook module for syntax highlighting.
+- **`Highlighter` (`src/repl/highlighter.rs`):** Functional syntax highlighter used by the input editor's redraw loop (comments green, strings yellow, types cyan, keywords blue/bold, constants and numbers magenta, REPL `!` commands magenta).
 - **`History` (`src/repl/history.rs`):** Placeholder setup for persistent interactive command line logs.

@@ -24,6 +24,7 @@ src/compiler/
 ```rust
 pub struct Compiler {
     pub globals: HashMap<StringId, usize>,
+    pub global_types: HashMap<StringId, Type>,
     pub func_indices: HashMap<StringId, usize>,
     pub functions: Vec<Arc<Chunk>>,
     pub constants: Vec<Value>,
@@ -43,7 +44,7 @@ The top-level `Compiler` orchestrates the entire translation pipeline. It owns t
 
 ### Pre-Registration (`globals.rs`)
 
-Before any bytecodes are emitted, `Compiler::compile` calls `globals::register_globals_recursive`. This performs a pre-pass over the AST to assign indices to:
+Before any user bytecodes are emitted (the built-in module preload described below is emitted first), `Compiler::compile` calls `globals::register_globals_recursive`. This performs a pre-pass over the AST to assign indices to:
 1. Functions and fibers (`func_indices`, pushing skeleton `Chunk`s into `functions`).
 2. Global variables (`globals`).
 3. Database instances.
@@ -62,6 +63,7 @@ pub struct CompileContext<'a> {
     pub functions: &'a mut Vec<Arc<Chunk>>,
     pub func_indices: &'a HashMap<StringId, usize>,
     pub globals: &'a HashMap<StringId, usize>,
+    pub global_types: &'a HashMap<StringId, Type>,
     pub interner: &'a mut Interner,
 }
 ```
@@ -80,6 +82,7 @@ pub struct FunctionCompiler {
     pub next_local: usize,
     pub loop_stack: Vec<LoopFrame>,
     pub parent_locals: Option<HashMap<StringId, usize>>,
+    pub local_types: HashMap<StringId, Type>,
     pub captures: Vec<StringId>,
     pub is_main: bool,
     pub is_table_lambda: bool,

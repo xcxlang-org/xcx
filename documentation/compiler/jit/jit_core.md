@@ -19,9 +19,9 @@ pub struct JIT {
 ### Method Compilation Pipeline
 Compilation of one function is initiated by `JIT::compile_method` (implemented in `src/jit/compiler_method.rs`):
 1. **Clear Context:** Instantiates/clears JIT function generation state (`module.clear_context`).
-2. **Signature Verification:** Builds and validates the target function's calling convention.
-3. **Register Pre-Analysis:** Sweeps the chunk's bytecode to build pointer tracking maps, type tag inference grids, and liveness regions (`src/jit/analysis.rs`).
-4. **Symbol Importation:** Maps FFI symbols into the Cranelift internal function representation (`SymbolRegistry::import_in_func`).
+2. **Signature Build & Declaration:** Builds the target function's calling convention and declares the function.
+3. **Symbol Importation:** Maps FFI symbols into the Cranelift internal function representation (`SymbolRegistry::new` + `import_in_func`).
+4. **Register Pre-Analysis:** Sweeps the chunk's bytecode to build pointer tracking maps, type tag inference grids, and liveness regions (`src/jit/analysis.rs`).
 5. **Cranelift IR Builder Execution:** Loops over bytecode, generating Cranelift IR for each operation.
 6. **Code Generation:** Emits compiled machine code into executable memory using Cranelift's JIT infrastructure.
 
@@ -62,7 +62,7 @@ For internal self-recursive or local segment calls, the compiler generates two n
 - **Inner Function (`Linkage::Local`):** Receives parameters directly via register-based CPU ABIs (pairs of `(bits_reg, tag_reg)`) instead of reading them from the `locals_ptr` stack frame.
 - **Outer Wrapper (`Linkage::Export`):** Serves as the FFI bridge for the interpreter. It unpacks arguments from `locals_ptr`, executes the local inner function, records the resulting `Value` back into `out_ptr`, and returns the frame status.
 
-**Recursion depth guard:** before performing a local recursive call, the compiler emits a native comparison of the call-depth counter (stored on the `Executor`) against a fixed limit of `800`, using `IntCC::SignedGreaterThanOrEqual`. On overflow, execution branches to a dedicated block that spills registers, invokes the `xcx_jit_check_recursion` FFI helper to report the failure, and returns a halt status — the failure path itself is not inlined at each call site, keeping the guard's generated code compact. On the non-overflow path the depth counter is incremented before the recursive call and restored to its prior value afterwards.
+**Recursion depth guard:** before performing a local recursive call, the compiler emits a native comparison of the call-depth counter (stored on the `Executor`) against a fixed limit of `800`, using `IntCC::SignedGreaterThanOrEqual`. On overflow, execution branches to a dedicated block that invokes the `xcx_jit_check_recursion` FFI helper to report the failure and returns a halt status — the failure path itself is not inlined at each call site, keeping the guard's generated code compact (registers are spilled ahead of the guard on some paths, not inside the overflow block). On the non-overflow path the depth counter is incremented before the recursive call and restored to its prior value afterwards.
 
 #### 2. Cross-Function Direct Call Dispatch
 When calling another function (`func_idx != ctx.self_func_idx`), the compiler audits the callee's JIT status:
@@ -100,8 +100,4 @@ Through this registration, JIT-generated Cranelift IR calls external routines fo
 - Bounds-checked collection fallbacks (`xcx_jit_array_get_bool` and equivalents), invoked when a fast-path bounds check on `Array`/`BoolArray` element access fails — see `compiler/jit/jit_codegen.md`.
 
 ### Macro-driven Declarations (`src/jit/symbol_macros.rs`)
-To avoid manually repeating binding declarations, the compiler uses the `declare_jit_symbols!` macro. This macro:
-1. Generates the fields of the `SymbolRegistry` struct (declaring `FuncId` imports for Cranelift).
-2. Generates the fields of the `ImportedSymbols` struct (defining `FuncRef` function call reference mappings).
-3. Automates the linkage imports declaration block inside `SymbolRegistry::new`.
-4. Automates the declaration of target function imports in each compiled function inside `SymbolRegistry::import_in_func`.
+The `declare_jit_symbols!` macro exists and can generate (1) the fields of the `SymbolRegistry` struct, (2) the fields of the `ImportedSymbols` struct, (3) the linkage declarations inside `SymbolRegistry::new`, and (4) the per-function imports in `SymbolRegistry::import_in_func` — but it is currently **unused dead code**: `src/jit/symbols/mod.rs` hand-writes the registry and `symbol_macros.rs` is not declared in `src/jit/mod.rs`.
