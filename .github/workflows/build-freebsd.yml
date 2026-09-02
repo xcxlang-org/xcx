@@ -24,3 +24,14 @@ jobs:
             pkg install -y rust
           run: |
             cargo test --release --verbose
+            chmod +x ./FreeBSD/build_freebsd_pkg.sh
+            ./FreeBSD/build_freebsd_pkg.sh
+
+      - name: Resolve XCX version
+        run: echo "XCX_VERSION=$(tr -d '[:space:]' < lib/VERSION)" >> "$GITHUB_ENV"
+
+      - name: Upload FreeBSD package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcx-installer-freebsd
+          path: FreeBSD/dist/xcx-installer-freebsd-v${{ env.XCX_VERSION }}.tar.gz
