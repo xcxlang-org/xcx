@@ -6,16 +6,9 @@ PAX Project Configuration
     version     :: "4.3.0",
     author      :: "xcx-official",
     description :: "PAX project",
-    tags  :: ["package-manager", "cli", "tui"],
-    files :: [
-        "src/colors.xcx",
-        "src/progress.xcx",
-        "src/tui.xcx",
-        "src/demo.xcx",
-        "src/pax.xcx"
-    ],
+    tags  :: [],
+    files :: [],
     deps  :: [
 
     ]
 /
-
