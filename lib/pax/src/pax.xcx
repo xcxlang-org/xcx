@@ -1,9 +1,4 @@
 --- pax.xcx - PAX Package Manager for XCX v4.3
-include "colors.xcx";
-include "progress.xcx";
-include "tui.xcx";
-include "demo.xcx";
-
 const s: REGISTRY_HOST = "pax.xcxlang.com";
 const s: TOKEN_FILE    = ".pax_token";
 const s: CONFIG_FILE   = ".pax_config";
@@ -42,15 +37,30 @@ func main() {
     array:s: args = env.args();
     
     if (args.size() < 3) then;
-        run_pax_tui();
+        >! "PAX Package Manager v4.2";
+        >! "Usage: xcx pax <command> [args]";
+        >! "";
+        >! "Core Commands:";
+        >! "  new <n>      Create a new project structure";
+        >! "  install         Install dependencies (minimum library setup)";
+        >! "  clone <n>    Clone package structure (full repository)";
+        >! "  add <n>      Add a package (name, URL, or author/repo)";
+        >! "  remove <n>   Remove a package and update lockfile";
+        >! "  search <q>      Search for packages on the Registry";
+        >! "  run [path]      Execute the project entry point";
+        >! "";
+        >! "Registry Commands:";
+        >! "  login <token>   Store registry authentication token";
+        >! "  logout          Remove stored tokens";
+        >! "  whoami          Verify your registry account";
+        >! "  publish         Publish project and all files to Registry";
+        >! "  upgrade <t>     Upgrade target (xcx, tools, all) [--check]";
         return;
     end;
     
     s: command = args.get(2);
     
-    if (command == "demo") then;
-        run_pax_demo();
-    elif (command == "new") then;
+    if (command == "new") then;
         paxNew(args);
     elif (command == "install") then;
         paxInstall(args);
@@ -75,7 +85,7 @@ func main() {
     elif (command == "upgrade") then;
         paxUpgrade(args);
     else;
-        >! tagErr() + " Unknown command '" + command + "'";
+        >! "Error: Unknown command '" + command + "'";
     end;
 };
 
@@ -85,7 +95,7 @@ func main() {
 
 func saveToken(s: token) {
     store.write(TOKEN_FILE, token);
-    >! tagOk() + " Authentication success! Token saved.";
+    >! "Authentication success! Token saved.";
 };
 
 func getToken(-> s) {
@@ -97,7 +107,7 @@ func getToken(-> s) {
 
 func paxLogin(array:s: args) {
     if (args.size() < 4) then;
-        >! C_BOLD + C_BYELLOW + "Usage: xcx pax login <token>" + C_RESET;
+        >! "Usage: xcx pax login <token>";
         return;
     end;
     saveToken(args.get(3));
@@ -106,16 +116,16 @@ func paxLogin(array:s: args) {
 func paxLogout() {
     if (store.exists(TOKEN_FILE)) then;
         store.delete(TOKEN_FILE);
-        >! tagPax() + " Session terminated. Token removed.";
+        >! "Session terminated. Token removed.";
     else;
-        >! tagWarn() + " No active session found.";
+        >! "No active session found.";
     end;
 };
 
 func paxWhoAmI() {
     s: token = getToken();
     if (token == "") then;
-        >! tagErr() + " Not logged in. Use 'xcx pax login <token>'.";
+        >! "Error: Not logged in. Use 'xcx pax login <token>'.";
         return;
     end;
     
@@ -138,16 +148,16 @@ func paxWhoAmI() {
             if (data.exists("username")) then;
                 s: user; data.bind("username", user);
                 s: role; data.bind("role", role);
-                >! tagOk() + " Account: " + C_BOLD + user + C_RESET + " [" + C_CYAN + role + C_RESET + "]";
+                >! "Account: " + user + " [" + role + "]";
             else;
-                >! tagErr() + " Registry returned unexpected JSON format.";
+                >! "Error: Registry returned unexpected JSON format.";
             end;
         else;
-            >! tagErr() + " Registry returned non-JSON response: " + body;
+            >! "Error: Registry returned non-JSON response: " + body;
         end;
     else;
-        >! tagErr() + " Auth Error: Status " + s(resp.status);
-        if (resp.exists("error")) then; >! "  Details: " + s(resp.get("error")); end;
+        >! "Auth Error: Status " + s(resp.status);
+        if (resp.exists("error")) then; >! "Details: " + s(resp.get("error")); end;
     end;
 };
 
@@ -257,11 +267,11 @@ func toPax(json: cfg -> s) {
 
 func paxNew(array:s: args) {
     if (args.size() < 4) then;
-        >! C_BOLD + C_BYELLOW + "Usage: xcx pax new <project_name>" + C_RESET;
+        >! "Usage: xcx pax new <project_name>";
         return;
     end;
     s: name = args.get(3);
-    >! tagPax() + " Scaffolding project: " + C_BOLD + C_CYAN + name + C_RESET;
+    >! "Scaffolding project: " + name;
     
     store.mkdir(name + "/src");
     
@@ -272,7 +282,7 @@ func paxNew(array:s: args) {
     store.write(name + "/src/main.xcx", "func main() {\n    >! \"Hello from " + name + "!\";\n};\nmain();\n");
     store.write(name + "/README.md", "# " + name + "\nProfessional XCX project.");
     
-    >! tagOk() + " Project created in ./" + C_BOLD + C_CYAN + name + C_RESET;
+    >! "Success! Project created in ./" + name;
 };
 
 func paxRun(array:s: args) {
@@ -291,12 +301,12 @@ func paxRun(array:s: args) {
     end;
 
     if (store.exists(target)) then;
-        >! tagPax() + " Booting: " + C_BOLD + C_CYAN + target + C_RESET;
+        >! "Booting: " + target;
         if (NOT .terminal !run target) then;
-            >! tagErr() + " Execution aborted.";
+            >! "Runtime Error: Execution aborted.";
         end;
     else;
-        >! tagErr() + " Target " + target + " not found.";
+        >! "Error: Target " + target + " not found.";
     end;
 };
 
@@ -372,7 +382,7 @@ func fetchPackage(s: input, b: isFull) {
             end;
 
             if (fl.size() == 0) then;
-                >! tagErr() + " " + pkg + " has no file manifest.";
+                >! "  Failed: " + pkg + " has no file manifest.";
             else;
                 s: lp = "lib/" + pkg + "/";
                 store.mkdir(lp);
@@ -452,54 +462,54 @@ func fetchPackage(s: input, b: isFull) {
 
                 s: mode = "Installed";
                 if (isFull) then; mode = "Cloned"; end;
-                >! tagOk() + " " + mode + " " + C_BOLD + C_CYAN + pkg + C_RESET + " in " + lp;
+                >! "  OK: " + mode + " " + pkg + " in " + lp;
             end;
         else;
             s: fn = "pkg_" + pkg + "_" + crypto.token(4) + ".xcx";
             store.write("lib/" + fn, resp.body);
             updateLockfile(pkg, input, "lib/" + fn);
-            >! tagOk() + " Saved as lib/" + fn;
+            >! "  OK: Saved as lib/" + fn;
         end;
     else;
-        >! tagErr() + " Failed: Status " + s(resp.status);
+        >! "  Failed: Status " + s(resp.status);
     end;
 };
 
 func paxInstall(array:s: args) {
     if (NOT store.exists("project.pax")) then;
-        >! tagErr() + " project.pax not found.";
+        >! "Error: project.pax not found.";
         return;
     end;
     
     json: cfg = parsePax(store.read("project.pax"));
     array:s: deps = cfg.get("deps");
-    >! tagPax() + " Resolving " + C_BOLD + C_GREEN + s(deps.size()) + C_RESET + " dependencies...";
+    >! "Resolving " + s(deps.size()) + " dependencies...";
     
     array:s: fetched;
     for d in deps do;
         s: name = getPackageName(d);
         if (NOT fetched.contains(name)) then;
-            >! tagInfo() + " Fetching " + C_CYAN + name + C_RESET + "...";
+            >! "Fetching " + name + "...";
             fetchPackage(d, false);
             fetched.push(name);
         end;
     end;
-    >! tagOk() + " Installation complete.";
+    >! "Installation complete.";
 };
 
 func paxClone(array:s: args) {
     if (args.size() < 4) then;
-        >! C_BOLD + C_BYELLOW + "Usage: xcx pax clone <package>" + C_RESET;
+        >! "Usage: xcx pax clone <package>";
         return;
     end;
     s: target = args.get(3);
-    >! tagPax() + " Cloning package " + C_BOLD + C_CYAN + target + C_RESET + "...";
+    >! "Cloning package " + target + "...";
     fetchPackage(target, true);
 };
 
 func paxAdd(array:s: args) {
     if (args.size() < 4 OR NOT store.exists("project.pax")) then;
-        >! C_BOLD + C_BYELLOW + "Usage: xcx pax add <package>" + C_RESET;
+        >! "Usage: xcx pax add <package>";
         return;
     end;
     
@@ -507,13 +517,13 @@ func paxAdd(array:s: args) {
     json: cfg = parsePax(store.read("project.pax"));
     cfg.get("deps").push(name);
     store.write("project.pax", toPax(cfg));
-    >! tagPax() + " Added " + C_BOLD + C_CYAN + name + C_RESET + " to project.pax. Running install...";
+    >! "Added " + name + " to project.pax. Running install...";
     paxInstall(args);
 };
 
 func paxRemove(array:s: args) {
     if (args.size() < 4 OR NOT store.exists("project.pax")) then;
-        >! C_BOLD + C_BYELLOW + "Usage: xcx pax remove <package>" + C_RESET;
+        >! "Usage: xcx pax remove <n>";
         return;
     end;
     s: target = args.get(3);
@@ -527,7 +537,7 @@ func paxRemove(array:s: args) {
     if (idx >= 0) then;
         deps.delete(idx);
         store.write("project.pax", toPax(cfg));
-        >! tagOk() + " Removed " + C_BOLD + C_CYAN + target + C_RESET + ". Note: lib/ folders and pax.lock must be cleaned manually or via install.";
+        >! "Removed " + target + ". Note: lib/ folders and pax.lock must be cleaned manually or via install.";
     end;
 };
 
@@ -538,7 +548,7 @@ func paxRemove(array:s: args) {
 func paxSearch(array:s: args) {
     if (args.size() < 4) then; return; end;
     s: q = args.get(3);
-    >! tagPax() + " Searching Registry: " + C_BOLD + C_CYAN + q + C_RESET + "...";
+    >! "Searching Registry: " + q + "...";
     net.request {
         method = "GET", 
         url = getRegistryUrl() + "api?route=api/search&q=" + q,
@@ -548,18 +558,18 @@ func paxSearch(array:s: args) {
         s: body = s(resp.body);
         if (body.startsWith("[")) then;
             i: sz = resp.body.size();
-            if (sz == 0) then; >! tagWarn() + " No matches."; return; end;
+            if (sz == 0) then; >! "No matches."; return; end;
             i: ri = 0;
             while (ri < sz) do;
                 json: res = resp.body.get(ri);
                 s: n; res.bind("name", n);
                 s: v; res.bind("version", v);
                 s: a; res.bind("author_name", a);
-                >! "  " + C_BOLD + C_CYAN + "- " + n + C_RESET + " (v" + v + ") by " + C_GREEN + a + C_RESET;
+                >! "- " + n + " (v" + v + ") by " + a;
                 ri = ri + 1;
             end;
         else;
-            >! tagErr() + " Registry returned unexpected search response.";
+            >! "Error: Registry returned unexpected search response.";
         end;
     end;
 };
@@ -582,14 +592,14 @@ func scanRecursive(s: dir, array:json: list) {
 func paxPublish() {
     if (NOT store.exists("project.pax")) then; return; end;
     s: token = getToken();
-    if (token == "") then; >! tagErr() + " Login required."; return; end;
+    if (token == "") then; >! "Login required."; return; end;
     
     json: cfg = parsePax(store.read("project.pax"));
     s: name; cfg.bind("name", name);
     s: ver;  cfg.bind("version", ver);
     
     s: zipFile = name + "_" + ver + ".zip";
-    >! tagPax() + " Compressing project into " + zipFile + "...";
+    >! "Compressing project into " + zipFile + "...";
     
     if (NOT store.zip(".", zipFile)) then;
         halt.error >! "Failed to create project archive.";
@@ -630,7 +640,7 @@ func paxPublish() {
     payload.set("zip_content", crypto.hash(store.read(zipFile), "base64_encode"));
     payload.set("contents_json", flClean.toStr());
     
-    >! tagPax() + " Pushing package archive to Registry...";
+    >! "Pushing package archive to Registry...";
     map: pubHeaders {
         schema = [s <-> s]
         data = ["X-PAX-TOKEN" :: token, "Content-Type" :: "application/json"]
@@ -647,7 +657,7 @@ func paxPublish() {
     store.delete(zipFile);
     
     if (resp.ok) then; 
-        >! tagOk() + " Package published."; 
+        >! "Success! Package published."; 
     else; 
         s: errMsg = "";
         if (resp.exists("text")) then;
@@ -668,7 +678,7 @@ func paxPublish() {
             resp.bind("error", errMsg);
         end;
         
-        >! tagErr() + " Publish Failed (HTTP " + s(resp.get("status")) + "): " + errMsg;
+        >! "Publish Failed (HTTP " + s(resp.get("status")) + "): " + errMsg;
     end;
 };
 
@@ -746,7 +756,7 @@ func getLocalXcxVersion(-> s) {
 func upgradeXcxBinary(s: installDir, s: os) {
     s: tag = getLatestGitHubTag();
     if (tag == "") then;
-        >! tagErr() + " Could not fetch latest release info from GitHub.";
+        >! "Error: Could not fetch latest release info from GitHub.";
         return;
     end;
     s: base = "https://github.com/xcxlang-org/xcx/releases/download/" + tag + "/";
@@ -765,7 +775,7 @@ func upgradeXcxBinary(s: installDir, s: os) {
     end;
     
     s: url = base + downloadName;
-    >! tagPax() + " Downloading " + C_CYAN + downloadName + C_RESET + " version " + C_GREEN + tag + C_RESET + "...";
+    >! "Downloading " + downloadName + " version " + tag + "...";
     map: headers {
         schema = [s <-> s]
         data = ["User-Agent" :: "xcx-pax"]
@@ -784,20 +794,20 @@ func upgradeXcxBinary(s: installDir, s: os) {
         s: dest = destBinDir + "/" + localName;
         s: body = s(resp.body);
         if (store.write(dest, body)) then;
-            >! tagOk() + " xcx binary updated at " + dest;
+            >! "OK: xcx binary updated at " + dest;
             if (os != "windows") then;
                 .terminal !run "chmod +x " + dest;
             end;
         else;
-            >! tagErr() + " Permission denied. Could not write to " + dest;
+            >! "Error: Permission denied. Could not write to " + dest;
             if (os == "windows") then;
-                >! "  Please run PowerShell/CMD as Administrator and try again.";
+                >! "Please run PowerShell/CMD as Administrator and try again.";
             else;
-                >! "  Please check your write permissions or run with sudo and try again.";
+                >! "Please check your write permissions or run with sudo and try again.";
             end;
         end;
     else;
-        >! tagErr() + " Download failed (HTTP " + s(resp.status) + ").";
+        >! "Error: Download failed (HTTP " + s(resp.status) + ").";
     end;
 };
 
@@ -830,7 +840,7 @@ func fetchToolPackage(s: pkgName, s: destLibDir) {
                 end;
             end;
             if (fl.size() == 0) then;
-                >! tagErr() + " " + pkgName + " has no file manifest.";
+                >! "  Failed: " + pkgName + " has no file manifest.";
             else;
                 s: lp = destLibDir + "/";
                 i: k = 0;
@@ -850,35 +860,35 @@ func fetchToolPackage(s: pkgName, s: destLibDir) {
                         end;
                     end;
                     if (NOT store.write(lp + pSlash, c)) then;
-                        >! tagErr() + " Permission denied writing package file: " + lp + pSlash;
+                        >! "Error: Permission denied writing package file: " + lp + pSlash;
                         if (os == "windows") then;
-                            >! "  Please run PowerShell/CMD as Administrator and try again.";
+                            >! "Please run PowerShell/CMD as Administrator and try again.";
                         else;
-                            >! "  Please check your write permissions or run with sudo and try again.";
+                            >! "Please check your write permissions or run with sudo and try again.";
                         end;
                         return;
                     end;
                     if (pSlash.endsWith("/math.xcx") OR pSlash == "math.xcx") then;
                         if (NOT store.write(lp + "math.xcx", c)) then;
-                            >! tagErr() + " Permission denied writing math.xcx file.";
+                            >! "Error: Permission denied writing math.xcx file.";
                             return;
                         end;
                     end;
                     k = k + 1;
                 end;
-                >! tagOk() + " Updated " + C_BOLD + C_CYAN + pkgName + C_RESET;
+                >! "  OK: Updated " + pkgName;
             end;
         else;
-            >! tagErr() + " Registry returned non-JSON structure for " + pkgName;
+            >! "  Failed: Registry returned non-JSON structure for " + pkgName;
         end;
     else;
-        >! tagErr() + " Status " + s(resp.status) + " for " + pkgName;
+        >! "  Failed: Status " + s(resp.status) + " for " + pkgName;
     end;
 };
 
 func upgradeTools(s: installDir) {
     s: libDir = installDir + "/lib";
-    >! tagPax() + " Upgrading tools to latest from PAX registry...";
+    >! "Upgrading tools to latest from PAX registry...";
     fetchToolPackage("pax", libDir);
     fetchToolPackage("mathlib", libDir);
     fetchToolPackage("doc", libDir);
@@ -886,7 +896,7 @@ func upgradeTools(s: installDir) {
 
 func paxUpgrade(array:s: args) {
     if (args.size() < 4) then;
-        >! tagErr() + " Specify what to upgrade: xcx, tools, all";
+        >! "Error: specify what to upgrade: xcx, tools, all";
         return;
     end;
     s: target = args.get(3);
@@ -901,28 +911,28 @@ func paxUpgrade(array:s: args) {
         end;
     end;
     if (target != "xcx" AND target != "tools" AND target != "all") then;
-        >! tagErr() + " Unknown target '" + target + "'. Use: xcx, tools, all";
+        >! "Error: unknown target '" + target + "'. Use: xcx, tools, all";
         return;
     end;
     s: os = detectOS();
     s: installDir = getInstallDir();
     if (installDir == "") then;
-        >! tagErr() + " Could not determine install directory.";
+        >! "Error: Could not determine install directory.";
         return;
     end;
     if (checkOnly) then;
         s: local = getLocalXcxVersion();
         s: remote = getLatestGitHubTag();
         if (remote == "") then;
-            >! tagErr() + " Could not retrieve remote version from GitHub.";
+            >! "Error: Could not retrieve remote version from GitHub.";
             return;
         end;
-        >! tagPax() + " Local version:  " + C_BOLD + local + C_RESET;
-        >! tagPax() + " Latest release: " + C_BOLD + remote + C_RESET;
+        >! "Local version:  " + local;
+        >! "Latest release: " + remote;
         if (local == remote OR "v" + local == remote) then;
-            >! tagOk() + " Already up to date.";
+            >! "Already up to date.";
         else;
-            >! tagWarn() + " Update available: " + C_BOLD + C_CYAN + remote + C_RESET;
+            >! "Update available: " + remote;
         end;
         return;
     end;
@@ -932,7 +942,7 @@ func paxUpgrade(array:s: args) {
     if (target == "tools" OR target == "all") then;
         upgradeTools(installDir);
     end;
-    >! tagOk() + " Upgrade complete.";
+    >! "Upgrade complete.";
 };
 
 main();
