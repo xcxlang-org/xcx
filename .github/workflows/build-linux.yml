@@ -14,6 +14,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve XCX version
+        run: echo "XCX_VERSION=$(tr -d '[:space:]' < lib/VERSION)" >> "$GITHUB_ENV"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -27,3 +30,14 @@ jobs:
 
       - name: Run tests (release, builds + tests in one go)
         run: cargo test --release --verbose
+
+      - name: Build distribution package (tar.gz)
+        run: |
+          chmod +x ./Linux/build_linux_pkg.sh
+          ./Linux/build_linux_pkg.sh
+
+      - name: Upload Linux package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcx-installer-linux
+          path: Linux/dist/xcx-installer-linux-v${{ env.XCX_VERSION }}.tar.gz
