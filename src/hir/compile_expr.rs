@@ -767,10 +767,13 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
         }
         HirExprKind::RawBlock(id) => {
             let s = ctx.interner.lookup(*id).to_string();
-            let s_obj = crate::vm::object::StringObj::new(s.into_bytes());
+            let s_obj = crate::vm::object::StringObj::new(s.clone().into_bytes());
             let idx = ctx.add_constant(Value::from_string(Arc::new(s_obj)));
             let dst = compiler.push_reg();
             compiler.emit(OpCode::LoadConst { dst, idx }, &expr.span);
+            if crate::runtime::builtin::json::parse::is_parseable_json(&s) {
+                compiler.emit(OpCode::JsonParse { dst, src: dst }, &expr.span);
+            }
             dst
         }
         HirExprKind::TableLiteral { columns, rows } => {

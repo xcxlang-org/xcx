@@ -473,9 +473,49 @@ pub fn is_safe_url(url_str: &str) -> Result<(), String> {
     }
     let is_localhost = host == "localhost" || host == "127.0.0.1" || host == "::1";
     if !is_localhost {
-        if host.starts_with("10.") || host.starts_with("192.168.") || host.starts_with("172.") {
+        // Only 172.16.0.0/12 is private (RFC 1918); other 172.x addresses are public.
+        let is_private = host.starts_with("10.")
+            || host.starts_with("192.168.")
+            || (host.starts_with("172.")
+                && host
+                    .split('.')
+                    .nth(1)
+                    .and_then(|o| o.parse::<u8>().ok())
+                    .is_some_and(|o| (16..=31).contains(&o)));
+        if is_private {
              return Err("HALT.ERROR: SSRF - Private IP ranges are blocked in production".to_string());
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_url;
+
+    #[test]
+    fn private_ranges_blocked() {
+        assert!(is_safe_url("http://10.0.0.1/x").is_err());
+        assert!(is_safe_url("http://192.168.1.1/x").is_err());
+        assert!(is_safe_url("http://172.16.0.1/x").is_err());
+        assert!(is_safe_url("http://172.31.255.254/x").is_err());
+        assert!(is_safe_url("https://172.20.4.4/").is_err());
+    }
+
+    #[test]
+    fn public_172_ranges_and_localhost_allowed() {
+        assert!(is_safe_url("http://172.32.0.1/x").is_ok());
+        assert!(is_safe_url("http://172.15.0.1/x").is_ok());
+        assert!(is_safe_url("http://172.0.1.2/x").is_ok());
+        assert!(is_safe_url("http://172.255.1.1/x").is_ok());
+        assert!(is_safe_url("https://example.com/x").is_ok());
+        assert!(is_safe_url("http://localhost/x").is_ok());
+        assert!(is_safe_url("http://127.0.0.1/x").is_ok());
+    }
+
+    #[test]
+    fn fatal_ranges_still_blocked() {
+        assert!(is_safe_url("http://169.254.1.1/x").is_err());
+        assert!(is_safe_url("file:///etc/passwd").is_err());
+    }
 }

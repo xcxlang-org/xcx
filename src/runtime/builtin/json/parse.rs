@@ -47,6 +47,18 @@ impl JsonCache {
 
 // Implementation of JSON parsing for the XCX runtime.
 // Parses a JSON string into an XCX Value (Map, Array, or primitive).
+
+/// serde_json caps nesting at 128 levels by default; XCX accepts arbitrarily
+/// deep trees, so every user-JSON decode goes through this depth-unlimited
+/// deserializer. Runs on the 64MB executor stack, which sets the practical
+/// depth ceiling.
+fn from_str_unbounded(s: &str) -> Result<serde_json::Value, serde_json::Error> {
+    use serde::Deserialize as _;
+    let mut de = serde_json::Deserializer::from_str(s);
+    de.disable_recursion_limit();
+    serde_json::Value::deserialize(&mut de)
+}
+
 pub fn handle_json_parse(json_str: &str) -> Value {
     thread_local! {
         static JSON_CACHE: std::cell::RefCell<JsonCache> = std::cell::RefCell::new(JsonCache::new());
@@ -63,12 +75,12 @@ pub fn handle_json_parse(json_str: &str) -> Value {
     }
 
     // Try strict JSON first
-    let json_val = if let Ok(v) = serde_json::from_str(json_str) {
+    let json_val = if let Ok(v) = from_str_unbounded(json_str) {
         crate::vm::object::JsonVal::from_serde(v)
     } else {
         // Try relaxed parsing for XCX-style literals like {1, 2, 3}
         let relaxed = relaxed_preprocess(json_str);
-        match serde_json::from_str(&relaxed) {
+        match from_str_unbounded(&relaxed) {
             Ok(v) => crate::vm::object::JsonVal::from_serde(v),
             Err(_) => panic!("halt.fatal: Invalid JSON (R305)"),
         }
@@ -124,4 +136,17 @@ fn relaxed_preprocess(s: &str) -> String {
 pub fn json_parse_impl(src: Value) -> Value {
     let s = src.to_string();
     handle_json_parse(&s)
+}
+
+/// Reports whether `handle_json_parse` would accept the string (strict serde
+/// decode or the relaxed XCX preprocessor). The compilers use this to decide
+/// whether a `<<< >>>` literal emits a parsed json value; content that is not
+/// valid JSON (e.g. literals containing embedded expressions) keeps the
+/// legacy raw-string behavior.
+pub fn is_parseable_json(s: &str) -> bool {
+    if from_str_unbounded(s).is_ok() {
+        return true;
+    }
+    let relaxed = relaxed_preprocess(s);
+    from_str_unbounded(&relaxed).is_ok()
 }

@@ -218,7 +218,7 @@ mod inc_ref_predicate_tests {
         use parking_lot::RwLock;
         use std::sync::Arc;
         let arc = Arc::new(RwLock::new(ArrayObj::new(Vec::new())));
-        let mut v = Value::from_array(arc.clone());
+        let v = Value::from_array(arc.clone());
         assert_eq!(Arc::strong_count(&arc), 2);
         unsafe { v.inc_ref(); }
         assert_eq!(Arc::strong_count(&arc), 3);
@@ -226,7 +226,7 @@ mod inc_ref_predicate_tests {
         assert_eq!(Arc::strong_count(&arc), 2);
 
         let s = Arc::new(StringObj::new(Vec::new()));
-        let mut v = Value::from_string(s.clone());
+        let v = Value::from_string(s.clone());
         assert_eq!(Arc::strong_count(&s), 2);
         unsafe { v.inc_ref(); }
         assert_eq!(Arc::strong_count(&s), 3);
