@@ -874,6 +874,7 @@ mod feature_suite {
     #[test] fn feat_io() { run_feature_file("test_io.xcx"); }
     #[test] #[serial] fn feat_json_http() { run_feature_file("test_json_http.xcx"); }
     #[test] fn feat_fibers() { run_feature_file("test_fibers.xcx"); }
+    #[test] fn feat_fiber_global_mutation() { run_feature_file("fiber_test.xcx"); }
     #[test] #[serial] fn feat_all_elements() { run_feature_file("test_all_elements.xcx"); }
     #[test] fn feat_settest() { run_feature_file("settest.xcx"); }
     #[test] fn feat_map_to_json() { run_feature_file("test_map_to_json.xcx"); }
