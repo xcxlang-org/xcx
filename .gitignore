@@ -1,6 +1,5 @@
 # Rust
 /target/
-# Cargo.lock
 
 # IDEs and OS
 .vscode/
@@ -19,6 +18,7 @@ Thumbs.db
 
 
 # AI/Agent metadata
+AGENTS.md
 .agents/
 .gemini/
 
@@ -32,8 +32,14 @@ TODO.md
 /Windows/bin/
 /Windows/Output/
 
-# macOS and Linux installer build output
+# macOS, Linux and FreeBSD installer build output
 /MacOS/dist/
 /Linux/dist/
+/FreeBSD/dist/
 
 /xcx-benchmarks/
+
+# Stray built binaries
+xcx.exe
+xcx-linux
+xcx-macos
