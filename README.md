@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.webp" width="560">
+  <img src="https://github.com/xcxlang-org/xcx-branding/blob/main/banner/svg/banner.svg" width="560">
 </p>
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange)
