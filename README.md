@@ -218,9 +218,7 @@ Contributions are welcome; bug reports and pull requests are appreciated. There 
 
 ## Development notes
 
-XCX is currently a solo project, and that shapes how it gets built. Architecture,
-design decisions, and debugging are worked out through discussion with
-Claude, implementation is done with Google Antigravity.
+XCX is currently a solo project, and that shapes how it gets built. Architecture, design decisions, and debugging are worked out through discussion with AI to pick the best variant/approach. Implementation is handled by [Google Antigravity](https://antigravity.google/) for small things and [z.ai](https://z.ai/) for the rest.
 Final decisions, review, and everything that ships are mine.
 
 ---
