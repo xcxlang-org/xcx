@@ -1,7 +1,21 @@
 use std::sync::Arc;
-use std::io::Write;
+use std::io::{Read, Write};
 use crate::vm::value::Value;
 use crate::vm::core::vm::{VM, OpResult, SharedContext};
+
+/// Maximum accepted request body: 10 MB. Bodies are buffered in full before
+/// the handler runs, so this caps per-request memory. Oversize requests are
+/// rejected with 413 before any allocation when Content-Length is present,
+/// otherwise after reading at most limit+1 bytes (chunked / no length).
+const MAX_REQUEST_BODY_BYTES: usize = 10 * 1024 * 1024;
+const BODY_TOO_LARGE_JSON: &str = "{\"error\":\"payload too large\"}";
+
+/// The VM's execution state (globals array, heap value slots) is
+/// unsynchronized by design and assumes a single executor; request threads
+/// must therefore run handler code one at a time (bugs/2026-09-09_http_
+/// concurrent_request_state_race.md). Request I/O — body reads and response
+/// writes — stays outside this lock and remains parallel.
+static HANDLER_EXEC_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 /// Starts an HTTP server.
 pub fn serve_impl(
@@ -128,6 +142,26 @@ pub fn serve_impl(
             }
 
             if let Some(chunk) = handler_chunk {
+                // Reject oversized bodies before reading anything: honor
+                // Content-Length when the client declared it.
+                {
+                    let size_guard = req_arc.lock().unwrap();
+                    if let Some(req) = size_guard.as_ref() {
+                        if let Some(len) = req.body_length() {
+                            if len > MAX_REQUEST_BODY_BYTES {
+                                drop(size_guard);
+                                let mut guard = req_arc.lock().unwrap();
+                                if let Some(req) = guard.take() {
+                                    let response = tiny_http::Response::from_string(BODY_TOO_LARGE_JSON)
+                                        .with_status_code(tiny_http::StatusCode(413));
+                                    let _ = req.respond(response);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 let mut req_guard = req_arc.lock().unwrap();
                 let req_obj = if let Some(req) = req_guard.as_mut() {
                     let mut headers_obj = Vec::new();
@@ -135,7 +169,22 @@ pub fn serve_impl(
                         headers_obj.push((std::sync::Arc::new(header.field.to_string().to_lowercase()), crate::vm::object::JsonVal::String(Arc::new(crate::vm::object::StringObj::new(header.value.to_string().into_bytes())))));
                     }
                     let mut body_bytes = Vec::new();
-                    let _ = req.as_reader().read_to_end(&mut body_bytes);
+                    {
+                        // No declared length (chunked): read at most limit+1
+                        // bytes and reject on overflow, keeping memory bounded.
+                        let mut limited = (&mut *req.as_reader()).take((MAX_REQUEST_BODY_BYTES + 1) as u64);
+                        let _ = limited.read_to_end(&mut body_bytes);
+                    }
+                    if body_bytes.len() > MAX_REQUEST_BODY_BYTES {
+                        drop(req_guard);
+                        let mut guard = req_arc.lock().unwrap();
+                        if let Some(req) = guard.take() {
+                            let response = tiny_http::Response::from_string(BODY_TOO_LARGE_JSON)
+                                .with_status_code(tiny_http::StatusCode(413));
+                            let _ = req.respond(response);
+                        }
+                        return;
+                    }
                     let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
                     let body_val = if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(&body_str) {
                         crate::vm::object::JsonVal::from_serde(json_body)
@@ -181,7 +230,10 @@ pub fn serve_impl(
                 let mut thread_ctx = ctx_sub;
                 let req_arc_for_fallback = req_arc.clone();
                 thread_ctx.http_req = Some(req_arc);
-                vm.run(chunk, thread_ctx, &[req_obj]);
+                {
+                    let _exec_guard = HANDLER_EXEC_LOCK.lock();
+                    vm.run(chunk, thread_ctx, &[req_obj]);
+                }
                 unsafe { req_obj.dec_ref(); }
 
                 // Fallback: if server handler finished or panicked without sending response

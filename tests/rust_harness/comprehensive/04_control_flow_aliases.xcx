@@ -1,6 +1,6 @@
 ---=============================================================================
 --- 04. CONTROL FLOW ALIASES
---- VALIDATES: elf, elif, elseif, els, then; end;
+--- VALIDATES: elseif, elif, els removed in 4.4, then; end;
 ---=============================================================================
 
 >! "Testing Control Flow Aliases...";
@@ -19,10 +19,10 @@ end;
 
 if (score < 50) then;
     halt.error >! "Unexpected match";
-elf (score > 70) then;    --- alias 2
-    >! "Matched elf (OK)";
-els;                      --- alias 3
-    halt.error >! "Should not be els";
+elseif (score > 70) then;    --- short form after the removed elf
+    >! "Matched elseif (OK)";
+else;
+    halt.error >! "Should not be else";
 end;
 
 >! "04. CONTROL FLOW ALIASES: SUCCESS";

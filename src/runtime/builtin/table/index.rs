@@ -85,8 +85,9 @@ impl Executor {
                         if let Some(pki) = pk_idx {
                             let pk_val = t.rows[r.row_idx as usize * t.columns.len() + pki];
                             let sql = format!("UPDATE [{}] SET [{}] = ? WHERE [{}] = ?", binding.table_name, col_name, t.columns[pki].name);
-                            let conn = binding.db_conn.lock();
-                            if let Ok(mut stmt) = conn.prepare(&sql) {
+                            let conn_guard = binding.db_conn.lock();
+                            let mut prepared = conn_guard.as_ref().and_then(|c| c.prepare(&sql).ok());
+                            if let (_conn, Some(stmt)) = (conn_guard.as_ref(), prepared.as_mut()) {
                                 for (i, v) in [val, pk_val].iter().enumerate() {
                                     if v.is_int() { let _ = stmt.raw_bind_parameter(i + 1, v.as_i64()); }
                                     else if v.is_float() { let _ = stmt.raw_bind_parameter(i + 1, v.as_f64()); }

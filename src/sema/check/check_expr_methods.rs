@@ -16,6 +16,12 @@ impl<'a> Checker<'a> {
         span: &Span,
     ) -> Type {
         let rec_ty = self.check_expr(receiver, symbols, errors);
+        // The VM's method-call ABI passes arguments through a fixed 16-slot
+        // scratch window (extract_method_args); a larger call would abort the
+        // process at runtime, so it is rejected here, at compile time.
+        if args.len() > 16 {
+            errors.push(TypeError { kind: TypeErrorKind::InvalidArgumentCount { expected: 16, actual: args.len() }, span: span.clone() });
+        }
         match rec_ty {
             Type::Int | Type::Float => {
                 match method_str {
@@ -148,7 +154,7 @@ impl<'a> Checker<'a> {
                     SetType::B => Type::Bool,
                 };
                 match method_str {
-                    "size" | "count" | "length" => Type::Int,
+                    "size" | "count" | "len" | "length" => Type::Int,
                     "contains" | "add" | "remove" => {
                         if let Some(arg) = args.first() {
                             let arg_ty = self.check_expr(arg.expr(), symbols, errors);
@@ -170,7 +176,7 @@ impl<'a> Checker<'a> {
             }
             Type::Array(ref inner) => {
                 match method_str {
-                    "size" | "length" | "count" => Type::Int,
+                    "size" | "length" | "count" | "len" => Type::Int,
                     "isEmpty" => Type::Bool,
                     "get" | "delete" | "remove" | "contains" | "find" | "indexOf" | "pop" => {
                         if args.len() == 1 {
@@ -205,8 +211,8 @@ impl<'a> Checker<'a> {
             }
             Type::Map(ref k, ref v) => {
                 match method_str {
-                    "size" | "count" | "isEmpty" | "clear" | "show" => {
-                        if method_str == "size" || method_str == "count" { Type::Int } else { Type::Bool }
+                    "size" | "count" | "len" | "isEmpty" | "clear" | "show" => {
+                        if method_str == "size" || method_str == "count" || method_str == "len" { Type::Int } else { Type::Bool }
                     }
                     "get" | "contains" | "remove" | "delete" => {
                         if !args.is_empty() {
@@ -252,7 +258,7 @@ impl<'a> Checker<'a> {
                     errors.push(TypeError { kind: TypeErrorKind::Other("Rule DB-005b: String methods are not allowed inside .where() predicates".to_string()), span: span.clone() });
                 }
                 match method_str {
-                    "size" | "length" | "indexOf" | "lastIndexOf" => {
+                    "length" | "indexOf" | "lastIndexOf" => {
                         for arg in args { self.check_expr(arg.expr(), symbols, errors); }
                         Type::Int
                     }

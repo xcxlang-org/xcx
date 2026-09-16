@@ -5,7 +5,10 @@ use crate::vm::value::Value;
 
 // Database connection object representation.
 pub struct DatabaseObj {
-    pub conn: Arc<Mutex<rusqlite::Connection>>,
+    /// `None` once `close()` has been called: the connection is dropped
+    /// (releasing the database file) and every further operation halts
+    /// with R401.
+    pub conn: Arc<Mutex<Option<rusqlite::Connection>>>,
     pub engine: String,
     pub path: String,
     pub tables: Arc<RwLock<HashMap<String, Value>>>,

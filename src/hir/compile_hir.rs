@@ -39,14 +39,53 @@ pub fn compile_hir_to_chunk(
 
     let max_locals = compiler.max_locals_used.max(compiler.next_local);
 
-    Chunk::new(
+    let mut chunk = Chunk::new(
         compiler.bytecode,
         compiler.spans,
         is_fiber,
         max_locals.into(),
         name,
         param_count,
-    )
+    );
+    if !is_fiber {
+        chunk.ret_default = func.return_type.as_ref().and_then(crate::compiler::compile_fn::return_default_for_type);
+    }
+    let mut param_types = vec![TypeTag::Unknown; param_count];
+    for p in &func.params {
+        if (p.local as usize) < param_count {
+            param_types[p.local as usize] = declared_type_tag(&p.ty);
+        }
+    }
+    chunk.param_types = param_types;
+    chunk
+}
+
+/// Maps a declared parameter type to the JIT's register type tag. Concrete
+/// tags let the JIT's analysis see heap-typed parameters (drives uses_heap
+/// and the refcount gates); exotic or unknown types stay Unknown, which is
+/// the conservative fallback.
+pub(crate) fn declared_type_tag(ty: &Type) -> TypeTag {
+    match ty {
+        Type::Int => TypeTag::Int,
+        Type::Float => TypeTag::Float,
+        Type::String => TypeTag::String,
+        Type::Bool => TypeTag::Bool,
+        Type::Date => TypeTag::Date,
+        Type::Json => TypeTag::Json,
+        Type::Array(inner) => {
+            if **inner == Type::Bool {
+                TypeTag::BoolArray
+            } else {
+                TypeTag::Array
+            }
+        }
+        Type::Set(_) => TypeTag::Set,
+        Type::Map(_, _) => TypeTag::Map,
+        Type::Table(_) => TypeTag::Table,
+        Type::Database => TypeTag::Database,
+        Type::Fiber(_) => TypeTag::Fiber,
+        Type::DatabaseOperation(_, _) | Type::Builtin(_) | Type::Unknown => TypeTag::Unknown,
+    }
 }
 
 fn compile_stmt(
@@ -90,6 +129,12 @@ fn compile_stmt(
                             is_auto: c.is_auto,
                             is_pk: c.is_pk,
                             is_unique: c.is_unique,
+                            default_sql: c.default_const.as_ref().map(|d| d.to_sql_literal(|id| ctx.interner.lookup(id).to_string())),
+                            default_const: c.default_const.as_ref().filter(|d| !matches!(d, crate::frontend::ast::DefaultConst::Str(_))).cloned(),
+                            default_str: match &c.default_const {
+                                Some(crate::frontend::ast::DefaultConst::Str(id)) => Some(ctx.interner.lookup(*id).to_string()),
+                                _ => None,
+                            },
                         }).collect();
                         let skeleton_idx = ctx.add_constant(Value::from_table(std::sync::Arc::new(parking_lot::RwLock::new(
                             crate::vm::object::TableObj { 
@@ -677,7 +722,6 @@ fn compile_stmt(
                     if let Some(l) = compiler.loop_stack.last_mut() {
                         l.start_pc = start_label;
                     }
-                    let saved_next_local = compiler.next_local;
                     let test_reg = compiler.push_reg();
                     compiler.emit(OpCode::Less { dst: test_reg, src1: index_reg, src2: size_reg }, &stmt.span);
                     let exit_jmp = compiler.bytecode.len();
@@ -693,7 +737,13 @@ fn compile_stmt(
                     for s in body {
                         compile_stmt(compiler, s, ctx, func_locals);
                     }
-                    compiler.next_local = saved_next_local;
+                    // Deliberately NO next_local truncation here. Rolling
+                    // next_local back to saved_next_local lets later code
+                    // (and recursive frames of for..in walkers) reuse
+                    // registers that ArrayLoopNext still reads — the outer
+                    // index/size registers get clobbered and the loop
+                    // terminates after the first recursion. Loop registers
+                    // stay burned for the rest of the chunk.
                     let cont_label = compiler.bytecode.len();
                     compiler.emit(OpCode::ArrayLoopNext { idx_reg: index_reg, size_reg, target: body_start as u32 }, &stmt.span);
                     let end_label = compiler.bytecode.len() as u32;
@@ -713,7 +763,6 @@ fn compile_stmt(
                             *target = cont_label as u32;
                         }
                     }
-                    compiler.next_local = receiver_reg as usize;
                 }
                 crate::frontend::ast::stmt::ForIterType::Fiber => {
                     let fiber_reg = compile_expr(compiler, start, ctx);
@@ -753,7 +802,12 @@ fn compile_stmt(
                             *target = cont_label as u32;
                         }
                     }
-                    compiler.next_local = fiber_reg as usize;
+                    // NOTE: deliberately no next_local truncation here. Resetting
+                    // next_local to fiber_reg freed registers that could still
+                    // hold live values (the fiber itself, the loop variable,
+                    // anything declared between), so later declarations aliased
+                    // live slots — the yielded value overwrote the fiber and
+                    // .isDone() crashed on a non-object receiver.
                 }
             }
         }

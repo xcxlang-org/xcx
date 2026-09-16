@@ -243,13 +243,13 @@ if (if_score >= 90) then;
     if_grade = "A";
 elif (if_score >= 75) then;
     if_grade = "B";
-elf (if_score >= 60) then;
+elseif (if_score >= 60) then;
     if_grade = "C";
-els;
+else;
     if_grade = "F";
 end;
 
-run_assert_eq_s(if_grade, "B", "if/elif/elf/els grade B");
+run_assert_eq_s(if_grade, "B", "if/elif/else grade B");
 
 --- nested if
 i: nest_val = 5;

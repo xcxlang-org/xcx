@@ -11,6 +11,8 @@ use std::process::Command;
 fn ssrf_link_local_is_fatal_in_subprocess() {
     let probe = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
+        .join("e2e")
+        .join("fixtures")
         .join("ssrf_link_local_probe.xcx");
     let output = Command::new(env!("CARGO_BIN_EXE_xcx"))
         .arg(&probe)

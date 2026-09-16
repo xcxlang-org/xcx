@@ -1,0 +1,52 @@
+--- TEST: SUITE-44
+--- Area: Applications
+--- Priority: high
+--- Name: Crypto vault (cargo-test twin of programs/44_vault_crypto.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: vault_file = "prog44_vault.txt";
+store.delete(vault_file);
+
+s: master = "correct horse battery staple";
+s: h_argon = crypto.hash(master, "argon2");
+expect("argon2 hash nonempty", h_argon.length > 0);
+expect("argon2 verify ok", crypto.verify(master, h_argon, "argon2"));
+expect("argon2 reject wrong", !crypto.verify("wrong", h_argon, "argon2"));
+
+s: h_bcrypt = crypto.hash(master, "bcrypt");
+expect("bcrypt verify ok", crypto.verify(master, h_bcrypt, "bcrypt"));
+expect("bcrypt reject wrong", !crypto.verify("nope", h_bcrypt, "bcrypt"));
+
+s: token = crypto.token(16);
+expect("token is 32 hex chars", token.length == 32);
+s: token2 = crypto.token(16);
+expect("tokens differ", token != token2);
+
+s: secret = "abcdef";
+s: encoded = crypto.hash(secret, "base64_encode");
+s: decoded = crypto.hash(encoded, "base64_decode");
+expect("base64 roundtrip", decoded == secret);
+
+store.write(vault_file, "token=" + token);
+s: persisted = store.read(vault_file);
+expect("vault persisted", persisted == "token=" + token);
+expect("cleanup", store.delete(vault_file));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-44 failed";
+end;

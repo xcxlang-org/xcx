@@ -100,7 +100,7 @@ Returned by every step handler. `Continue` proceeds to the next instruction. `Ha
 pub static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 ```
 
-Set to `true` by the Ctrl-C handler in `main`. The executor checks this on each iteration of the dispatch loop (or on each loop-back jump) to gracefully stop long-running programs.
+Set to `true` by the Ctrl-C handler in `main`. The executor polls this flag every 1024 instructions of the dispatch loop (~1 µs granularity, changed from per-instruction polling in 4.4) to gracefully stop long-running programs.
 
 ---
 
@@ -138,17 +138,16 @@ One `Executor` instance per running call stack (including fibers). Fibers get th
 
 ### Main Dispatch Loop
 
-The executor runs a `loop` over the bytecode array. On each iteration:
+The executor runs a `loop` over the bytecode array. Per iteration:
 
-1. Check `SHUTDOWN`.
-2. Load `chunk.bytecode[ip]`.
-3. Dispatch to the appropriate step handler.
+1. Load `chunk.bytecode[ip]`.
+2. Dispatch to the appropriate step handler.
 
-Step handlers are split into modules and called as free functions taking `(op, locals, &mut exec, vm_arc)`. This keeps the main dispatch function manageable and allows the compiler to inline hot paths.
+The `SHUTDOWN` flag is checked every 1024 executed instructions rather than on every iteration (4.4; see the `SHUTDOWN` section above). Step handlers are split into modules and called as free functions taking `(op, locals, &mut exec, vm_arc)`. This keeps the main dispatch function manageable and allows the compiler to inline hot paths. Comparison opcodes carry an int-int fast path that compares raw 64-bit payloads directly (added 4.4), and array index get/set skip the `RwLock` when the executor register uniquely owns the collection.
 
 ### Function Call Frames (`handle_call` / `handle_call_no_jit`)
 
-Both entry points funnel into a single private `handle_call_inner`, which checks the recursion limit, prepares the new frame (`prepare_frame`), resolves or triggers JIT compilation of the callee via `check_jit_warmup` (only from `handle_call`, which is reached from JIT-compiled code — `handle_call_no_jit` reads the callee's `jit_ptr` directly since it originates from the interpreter loop and does not need to trigger warmup), executes the frame, and tears it down (`cleanup_frame`). Consolidating frame preparation/cleanup into one function removes what was previously duplicated setup and teardown code between the two call paths. When `check_jit_warmup` triggers a fresh JIT compilation and it fails, the JIT is silently disabled for the rest of the run (`vm.disable_jit = true`); nothing is logged and `error_count` is not touched.
+Both entry points funnel into a single private `handle_call_inner`, which checks the recursion limit, prepares the new frame (`prepare_frame`), resolves or triggers JIT compilation of the callee via `check_jit_warmup` (only from `handle_call`, which is reached from JIT-compiled code — `handle_call_no_jit` reads the callee's `jit_ptr` directly since it originates from the interpreter loop and does not need to trigger warmup), executes the frame, and tears it down (`cleanup_frame`). Consolidating frame preparation/cleanup into one function removes what was previously duplicated setup and teardown code between the two call paths. When `check_jit_warmup` triggers a fresh JIT compilation and it fails, the JIT is disabled for the rest of the run (`vm.disable_jit = true`); since 4.4 the failure logs the chunk name and the real Cranelift/module error (the guessed "W^X policy" wording is gone). The recursion limit is `Executor::RECURSION_LIMIT`, and depth is counted in physical (post-inlining) frames since 4.4.
 
 ### `dispatch_jit_call`
 
@@ -244,7 +243,14 @@ These are `#[unsafe(no_mangle)] pub unsafe extern "C"` functions called directly
 |---|---|
 | `xcx_jit_json_bind(out, json_bits, json_tag, path_bits, path_tag)` | Extract path from JSON |
 | `xcx_jit_json_bind_const(out, json_bits, json_tag, path_ptr, path_len)` | Same with compile-time path bytes |
-| `xcx_jit_json_parse(out, bits, tag)` | Parse JSON string; uses a thread-local cache of up to 32 entries (strings ≤16KB) keyed by string pointer or content, evicting the oldest. Cache hits return a `JsonVal::clone()` (Arc-sharing for nested nodes). |
+| `xcx_jit_json_parse(out, bits, tag)` | Parse JSON string through the shared runtime parse path (one cache for both execution modes, keyed by string content only; the JIT-private pointer-keyed cache was removed in 4.4). Cache hits return a `JsonVal::clone()` (Arc-sharing for nested nodes). |
+
+### Strings
+
+| Symbol | Description |
+|---|---|
+| `xcx_jit_str_append_var(vm_ptr, var_idx, src_bits, src_tag)` | `global = global + src` in-place append on the JIT fast path. Sole-owner check uses `strong_count <= 2 && weak == 0`: one reference is the globals slot, the second is the JIT's own managed register copy released by `reload_globals` right after the call. A constant-pool co-owner surfaces as count ≥ 3 and takes the re-allocation path. |
+| `xcx_jit_str_append_local(locals_ptr, local_idx, src_bits, src_tag)` | Same for locals with the strict sole-owner rule (`<= 1`). |
 
 ### I/O
 
@@ -294,8 +300,9 @@ The full compilation and execution pipeline:
 4. `Checker::new(interner)` → `check(program, symbols)` — type checking. Exit on errors.
 5. `Compiler::new()` → `compile(program, interner)` → `(main_chunk, constants, functions)`.
 6. `SharedContext { constants, functions, http_req: None }`.
-7. Spawn `xcx-executor` thread with 64MB stack; call `vm.run(main_chunk, ctx, &[])`.
-8. Join thread; flush stdout/stderr; exit with code 1 if `error_count > 0`.
+7. Start the memory watchdog thread (`start_memory_watchdog`): polls the process' committed private bytes every 100 ms and terminates with a fatal error when the ceiling is crossed (default 8192 MB; `XCX_MAX_RAM_MB` overrides, `0` disables; `XCX_WATCHDOG_DEBUG` prints each reading).
+8. Spawn `xcx-executor` thread with 64MB stack; call `vm.run(main_chunk, ctx, &[])`.
+9. Join thread; flush stdout/stderr; exit with code 1 if `error_count > 0`.
 
 The `--no-jit` flag sets `vm.disable_jit = true`, skipping JIT compilation entirely. The REPL path creates a `Repl` instance instead of running a file.
 

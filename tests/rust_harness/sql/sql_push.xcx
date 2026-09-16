@@ -59,7 +59,7 @@ fiber:b: f = run();
 b: ok = f.next();
 if (ok) then;
     >! "=== sql_push: ALL TESTS PASSED ===";
-els;
+else;
     >! "=== sql_push: ERROR ===";
     halt.error >! "Test execution failed";
 end;

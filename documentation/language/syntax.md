@@ -1,4 +1,4 @@
-# XCX 4.3 Syntax Basics
+# XCX 4.4 Syntax Basics
 
 ## Comments
 
@@ -38,7 +38,15 @@ i: x = 10;
 Blocks are opened by a keyword (e.g., `then`, `do`, `{`) and closed by `end;`.
 
 ```xcx
-if (x > 0) then;
+if (x > 0) then
     >! "Positive";
-end;
+end
 ```
+
+> [!NOTE]
+> **Semicolons after blocks are optional (recommended style: without).**
+> The semicolon after `then`, `do`, `else`, `end` and after the closing `}`
+> of `func`/`fiber` definitions and `{ }`-shaped declarations may be omitted
+> — the bare form is the recommended style. Statement semicolons inside
+> block bodies are unchanged and still required. In XCX 5.0a the semicolon
+> form is removed.

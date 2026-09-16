@@ -4,6 +4,33 @@ use crate::vm::value::Value;
 use crate::vm::core::vm::OpResult;
 use crate::vm::opcode::MethodKind;
 use crate::vm::core::executor::Executor;
+use crate::vm::object::StringObj;
+
+/// Value for a cell the caller omitted. The declared `@default(v)` wins;
+/// otherwise the column type's zero default — a bare `false` for an int or
+/// string column made later reads and `where` filters lie.
+fn omitted_cell_value(col: &crate::vm::object::VMColumn) -> Value {
+    if let Some(s) = &col.default_str {
+        return Value::from_string(Arc::new(StringObj::new(s.clone().into_bytes())));
+    }
+    if let Some(dc) = &col.default_const {
+        return match dc {
+            crate::frontend::ast::DefaultConst::Int(n) => Value::from_i64(*n),
+            crate::frontend::ast::DefaultConst::Float(f) => Value::from_f64(*f),
+            crate::frontend::ast::DefaultConst::Bool(b) => Value::from_bool(*b),
+            crate::frontend::ast::DefaultConst::Str(_) => {
+                Value::from_string(Arc::new(StringObj::new(Vec::new())))
+            }
+        };
+    }
+    match col.ty {
+        crate::frontend::ast::Type::Int => Value::from_i64(0),
+        crate::frontend::ast::Type::Float => Value::from_f64(0.0),
+        crate::frontend::ast::Type::Bool => Value::from_bool(false),
+        crate::frontend::ast::Type::String => Value::from_string(Arc::new(StringObj::new(Vec::new()))),
+        _ => Value::from_bool(false),
+    }
+}
 
 impl Executor {
     pub fn handle_table_insert<'a>(&mut self, dst: u8, t_rc: Arc<RwLock<crate::vm::object::TableObj>>, kind: MethodKind, args: &[Value], names: Option<&[String]>, locals: &mut [Value]) -> OpResult {
@@ -49,7 +76,7 @@ impl Executor {
             } else {
                 let val = if let Some(v) = mapped_row[ci] { v }
                           else if pos_idx < pos_vals.len() { let v = pos_vals[pos_idx]; pos_idx += 1; v }
-                          else { Value::from_bool(false) };
+                          else { omitted_cell_value(col) };
                 unsafe { val.inc_ref(); }
                 row.push(val);
                 if col.is_pk { pk_val = Some(val); pk_idx = Some(ci); }
@@ -95,17 +122,19 @@ impl Executor {
                     sql.push_str(&format!(" WHERE [{}] = ?", cols[pki].name));
                     pieces.push(row[pki]);
                     
-                    let conn = binding.db_conn.lock();
-                    if let Ok(mut stmt) = conn.prepare(&sql) {
-                        for (i, v) in pieces.iter().enumerate() {
-                            match () {
-                                _ if v.is_int() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_i64() as i64); }
-                                _ if v.is_float() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_f64() as f64); }
-                                _ if v.is_bool() => { let _ = stmt.raw_bind_parameter(i + 1, if v.as_bool() { 1i64 } else { 0i64 }); }
-                                _ => { let _ = stmt.raw_bind_parameter(i + 1, v.to_string()); }
+                    let conn_guard = binding.db_conn.lock();
+                    if let Some(conn) = conn_guard.as_ref() {
+                        if let Ok(mut stmt) = conn.prepare(&sql) {
+                            for (i, v) in pieces.iter().enumerate() {
+                                match () {
+                                    _ if v.is_int() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_i64() as i64); }
+                                    _ if v.is_float() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_f64() as f64); }
+                                    _ if v.is_bool() => { let _ = stmt.raw_bind_parameter(i + 1, if v.as_bool() { 1i64 } else { 0i64 }); }
+                                    _ => { let _ = stmt.raw_bind_parameter(i + 1, v.to_string()); }
+                                }
                             }
+                            let _ = stmt.raw_execute();
                         }
-                        let _ = stmt.raw_execute();
                     }
                 }
             }
@@ -126,25 +155,27 @@ impl Executor {
                     pieces.push(row[ci]);
                 }
                 sql.push_str(") "); sql.push_str(&vals_sql); sql.push(')');
-                
-                let conn = binding.db_conn.lock();
-                if let Ok(mut stmt) = conn.prepare(&sql) {
-                    for (i, v) in pieces.iter().enumerate() {
-                        match () {
-                            _ if v.is_int() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_i64()); }
-                            _ if v.is_float() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_f64()); }
-                            _ if v.is_bool() => { let _ = stmt.raw_bind_parameter(i + 1, if v.as_bool() { 1 } else { 0 }); }
-                            _ => { let _ = stmt.raw_bind_parameter(i + 1, v.to_string()); }
+
+                let conn_guard = binding.db_conn.lock();
+                if let Some(conn) = conn_guard.as_ref() {
+                    if let Ok(mut stmt) = conn.prepare(&sql) {
+                        for (i, v) in pieces.iter().enumerate() {
+                            match () {
+                                _ if v.is_int() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_i64()); }
+                                _ if v.is_float() => { let _ = stmt.raw_bind_parameter(i + 1, v.as_f64()); }
+                                _ if v.is_bool() => { let _ = stmt.raw_bind_parameter(i + 1, if v.as_bool() { 1 } else { 0 }); }
+                                _ => { let _ = stmt.raw_bind_parameter(i + 1, v.to_string()); }
+                            }
                         }
+                        let _ = stmt.raw_execute();
                     }
-                    let _ = stmt.raw_execute();
                 }
             }
         }
 
         let mut insert_id = 0;
         if let Some(binding) = &t_mut.sql_binding {
-            insert_id = binding.db_conn.lock().last_insert_rowid();
+            insert_id = binding.db_conn.lock().as_ref().map(|c| c.last_insert_rowid()).unwrap_or(0);
         }
 
         fn make_insert_result(affected: i64, insert_id: i64) -> Value {

@@ -1,4 +1,4 @@
-# XCX 4.3 Functions and Fibers
+# XCX 4.4 Functions and Fibers
 
 > [!IMPORTANT]
 > **Global Scope Rule**: Functions and fibers must be declared at the **top level** of a file. They cannot be nested inside `if`/`while`/`for` blocks or other functions/fibers in a way that affects scoping — all function and fiber names are registered globally during compilation.
@@ -8,6 +8,11 @@
 ### Definition Styles
 
 Parameters follow the `type: name` pattern (e.g., `i: count`).
+
+> [!NOTE]
+> **Semicolons after blocks are optional (recommended style: without).** The
+> `;` after a function's or fiber's closing `}` may be omitted and is
+> removed in XCX 5.0a. Statement semicolons inside the body stay required.
 
 ```xcx
 --- No parameters, no return value
@@ -144,6 +149,14 @@ end;
 
 Equivalent to `while (!f.isDone()) { val = f.next(); ... }`. `break` inside the loop automatically calls `.close()`.
 
+> [!NOTE]
+> **The fiber's `return` value is the last iteration item.** Once the yields
+> are exhausted, the final `next()` executes the fiber's `return` and the
+> loop delivers that value as the last element (a fiber ending with
+> `return 99` emits `99` last). This follows directly from the
+> `while (!isDone()) { next() }` equivalence above and is intentional. It
+> does **not** apply through `yield from` — see Delegation below.
+
 ### Fiber as Function Parameter
 
 ```xcx
@@ -164,6 +177,13 @@ run_checks(checks);
 ### yield from (Delegation)
 
 Delegates execution to a sub-fiber. The compiler desugars this into a loop that yields every value from the sub-fiber.
+
+> [!NOTE]
+> **The sub-fiber's `return` value is not re-yielded.** Delegation runs the
+> sub-fiber to completion and yields only its yielded values (in the example
+> below, `count`'s `return 0` never surfaces). This is intentional and
+> differs from a direct `for` over the same fiber, whose last iteration item
+> **is** the `return` value — see the note in the previous section.
 
 ```xcx
 fiber count(i: n -> i) {

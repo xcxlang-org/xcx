@@ -1,4 +1,4 @@
-# XCX 4.3 Variables and Constants
+# XCX 4.4 Variables and Constants
 
 ## Variable Declarations
 
@@ -22,6 +22,12 @@ i: x, y, z;          --- Declares x, y, z as integers (default 0)
 f: a = 1.0, b, c;    --- Declares a (1.0), b (0.0), and c (0.0)
 s: first, middle, last = "Doe";
 ```
+
+> [!NOTE]
+> **A trailing initializer binds only to the last declared name.** In the
+> example above, `first` and `middle` take the type default (`""`) and only
+> `last` receives `"Doe"`. To set several variables in one statement, give
+> each its own initializer: `s: a = "x", b = "y";`.
 
 
 ## Reassignment

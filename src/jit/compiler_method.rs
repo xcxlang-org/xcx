@@ -20,9 +20,30 @@ use super::emit_object::*;
 use super::emit_misc::*;
 use super::nan_ops::*;
 use super::jit::JIT;
+use cranelift_codegen as codegen;
+
+/// Target alignment (in bytes) for the first machine-code loop header of a
+/// chunk. Intel/AMD frontends deliver a tight loop dramatically faster when
+/// its body does not straddle decode-cache set boundaries; which side of the
+/// boundary a loop lands on is decided by its absolute address, i.e. by the
+/// amount of code emitted before it.
+const LOOP_ALIGN_BYTES: u32 = 64;
+/// Machine-code size of one alignment-pad store (mov [mem+disp32], reg).
+const PAD_UNIT_BYTES: usize = 8;
+/// Alignment convergence is capped; alignment is a pure timing optimization,
+/// so an unconverged chunk simply keeps its most recent padding.
+const ALIGN_ATTEMPTS: u32 = 4;
+
+/// Result of one alignment attempt: either the function was defined (with the
+/// final native pointer) or the probe pass computed new padding and the
+/// caller must rebuild with it.
+pub(crate) enum CompileOutcome {
+    Defined(*const std::ffi::c_void),
+    Retry(HashMap<usize, u32>),
+}
 
 impl JIT {
-    pub fn compile_method_impl(
+    pub(crate) fn compile_method_impl(
         &mut self,
         func_id_idx: usize,
         self_func_idx: u32,
@@ -32,7 +53,9 @@ impl JIT {
         _name: &str,
         is_inner_func: bool,
         inner_func_id: Option<cranelift_module::FuncId>,
-    ) -> Result<*const std::ffi::c_void, String> {
+        header_pads: &HashMap<usize, u32>,
+        final_attempt: bool,
+    ) -> Result<CompileOutcome, String> {
         self.module.clear_context(&mut self.ctx);
         
         let mut sig = self.module.make_signature();
@@ -87,21 +110,27 @@ impl JIT {
         let mut b = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
 
         let mut blocks: HashMap<usize, Block> = HashMap::new();
-        
+        let mut has_backward = false;
+
         let entry_block = b.create_block();
         blocks.insert(0, entry_block);
 
         for (ip, op) in chunk.bytecode.iter().enumerate() {
             let _ = ip;
             match op {
-                OpCode::Jump { target } => { blocks.entry(*target as usize).or_insert_with(|| b.create_block()); }
-                OpCode::JumpIfFalse { target, .. } | OpCode::JumpIfTrue { target, .. } => {
+                OpCode::Jump { target } => {
+                    if (*target as usize) < ip { has_backward = true; }
                     blocks.entry(*target as usize).or_insert_with(|| b.create_block());
                 }
-                OpCode::LoopNext { target, .. } | OpCode::LoopPrev { target, .. } | OpCode::IncLocalLoopNext { target, .. } | 
+                OpCode::JumpIfFalse { target, .. } | OpCode::JumpIfTrue { target, .. } => {
+                    if (*target as usize) < ip { has_backward = true; }
+                    blocks.entry(*target as usize).or_insert_with(|| b.create_block());
+                }
+                OpCode::LoopNext { target, .. } | OpCode::LoopPrev { target, .. } | OpCode::IncLocalLoopNext { target, .. } |
                 OpCode::DecLocalLoopPrev { target, .. } |
                 OpCode::IncVarLoopNext { target, .. } | OpCode::DecVarLoopPrev { target, .. } | OpCode::ArrayLoopNext { target, .. } |
                 OpCode::TableIter { target, .. } => {
+                    if (*target as usize) < ip { has_backward = true; }
                     blocks.entry(*target as usize).or_insert_with(|| b.create_block());
                 }
                 _ => {}
@@ -133,22 +162,34 @@ impl JIT {
                 stack_ptr_offset,
             );
             ctx.set_functions(functions);
+            let global_slot_writes = super::analysis::analyze_global_slot_writes(functions);
+            ctx.set_global_writes(&global_slot_writes);
             ctx.is_inner_func = is_inner_func;
+            ctx.ret_default = chunk.ret_default;
 
             let used_locals = analyze_chunk_locals(&chunk.bytecode);
 
+            let read_locals = analyze_chunk_read_locals(&chunk.bytecode);
+            ctx.set_read_locals(&read_locals);
 
             let bool_array_hints = analyze_bool_array_regs(&chunk.bytecode, constants);
-            let (inferred_types, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, None, chunk.arity, self_func_idx, &bool_array_hints);
+            // Block-0 facts: declared parameter types are authoritative (the
+            // flat pass can misinfer them through back-propagation, which
+            // then corrupts spill-time tag reconstruction); all other
+            // registers keep the flat-inferred seed, which the per-ip
+            // worklist analysis cannot recover on its own for reused
+            // temporaries and which the fast-path selection relies on.
+            let mut initial_types = crate::jit::type_inference::infer_param_types(&chunk.bytecode, chunk.arity, constants);
+            for (i, &ty) in chunk.param_types.iter().enumerate() {
+                if i < 256 && ty != TypeTag::Unknown {
+                    initial_types[i] = ty;
+                }
+            }
+            let (inferred_types, uses_heap) = analyze_chunk_types(&chunk.bytecode, constants, Some(&initial_types), chunk.arity, self_func_idx, &bool_array_hints);
 
 
 
             
-            // Heuristic: if it's a pure math function, we can elide heap tracking.
-            // A function is pure math if it never assigns a non-primitive type.
-            if !uses_heap {
-                // Optimization: if no heap is used, we don't need any GC cleanup.
-            }
             chunk.uses_heap.store(uses_heap, std::sync::atomic::Ordering::Release);
             let global_ints = analyze_global_int_regs(&chunk.bytecode, constants);
             ctx.set_global_int_regs(global_ints.clone());
@@ -160,8 +201,6 @@ impl JIT {
             ctx.set_reg_types_per_ip(inferred_types.clone());
             ctx.uses_heap = uses_heap;
 
-            // XCX_JIT_DEBUG removed
-            
             if is_inner_func {
                 for i in 0..chunk.arity {
                     let bits = arg_vals[i * 2];
@@ -194,12 +233,15 @@ impl JIT {
             let mut terminated = false;
 
             for (ip, op) in chunk.bytecode.iter().enumerate() {
-                // XCX_JIT_DEBUG removed
                 if let Some(&block) = blocks.get(&ip) {
                     if ip > 0 {
-                        if !terminated { 
+                        if !terminated {
+                            // Alignment padding for a loop header entering
+                            // here: emitted on the fall-through predecessor
+                            // only, so it executes once per loop entry.
+                            ctx.emit_alignment_pad(*header_pads.get(&ip).unwrap_or(&0) as usize, &used_globals);
                             ctx.sync_for_jump();
-                            ctx.b.ins().jump(block, &[]); 
+                            ctx.b.ins().jump(block, &[]);
                         }
                         ctx.b.switch_to_block(block);
                         ctx.clear_block_state(false);
@@ -549,7 +591,8 @@ impl JIT {
                         let (json_bits, json_tag) = ctx.use_local(json_src);
                         let (path_bits, path_tag) = ctx.use_local(path_src);
                         let (val_bits, val_tag) = ctx.use_local(val_src);
-                        ctx.b.ins().call(symbols.xcx_jit_json_get_push, &[json_bits, json_tag, path_bits, path_tag, val_bits, val_tag]);
+                        ctx.b.ins().call(symbols.xcx_jit_json_get_push, &[json_bits, json_tag, path_bits, path_tag, val_bits, val_tag, ctx.executor_ptr]);
+                        ctx.emit_halt_if_errors(&symbols);
                     }
                     OpCode::JsonBind { idx, json_src, path_src } => {
                         emit_json_bind_global(&mut ctx, &symbols, idx, json_src, path_src);
@@ -952,6 +995,10 @@ impl JIT {
                         let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_net_call, &[
                             m_idx, u_bits, u_tag, b_bits, b_tag, ctx.consts_ptr
                         ]);
+                        // The helper reports halt-level rejections (SSRF and
+                        // friends) through the error counter — mirror the
+                        // interpreter's halt behavior here as well.
+                        ctx.emit_halt_if_errors(&symbols);
                         
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
@@ -966,6 +1013,8 @@ impl JIT {
                         let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_net_request, &[
                             a_bits, a_tag
                         ]);
+                        // See the NetCall note above: halt on error counter.
+                        ctx.emit_halt_if_errors(&symbols);
                         
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
@@ -1131,6 +1180,44 @@ impl JIT {
         }
         b.finalize();
 
+        // Loop-header alignment probe: compile a throwaway copy of the
+        // finished IR and read its basic-block layout. A backward CFG edge
+        // marks a loop header; if any header is not on the target alignment,
+        // retry the build with entry padding sized to shift it into place.
+        // Convergence is capped — alignment is a pure timing optimization.
+        if !final_attempt && has_backward {
+            let snapshot = self.ctx.func.clone();
+            let mut probe = codegen::Context::for_function(snapshot);
+            // The control plane only feeds cranelift-control fuzzing hooks;
+            // the default instance is a pass-through.
+            if probe.compile(&*self.probe_isa, &mut Default::default()).is_ok() {
+                if let Some(cc) = probe.compiled_code() {
+                    let mut block_ips: Vec<usize> = blocks.keys().copied().collect();
+                    block_ips.sort_unstable();
+                    let mut new_pads = header_pads.clone();
+                    let mut changed = false;
+                    for &(from_off, to_off) in &cc.bb_edges {
+                        if to_off >= from_off { continue; }
+                        let mis = (to_off as usize) % LOOP_ALIGN_BYTES as usize;
+                        if mis == 0 { continue; }
+                        // Blocks are laid out in bytecode order, so the
+                        // k-th block offset corresponds to the k-th block ip.
+                        if let Some(idx) = cc.bb_starts.iter().position(|&o| o == to_off) {
+                            if let Some(&ip) = block_ips.get(idx) {
+                                let cur = *new_pads.get(&ip).unwrap_or(&0);
+                                let extra = ((LOOP_ALIGN_BYTES as usize - mis) + PAD_UNIT_BYTES - 1) / PAD_UNIT_BYTES;
+                                new_pads.insert(ip, cur + extra as u32);
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        return Ok(CompileOutcome::Retry(new_pads));
+                    }
+                }
+            }
+        }
+
         if let Err(errors) = self.module.define_function(func_id, &mut self.ctx) {
             let _ = errors;
             return Err(format!("{:#?}", errors));
@@ -1138,16 +1225,13 @@ impl JIT {
         self.module.clear_context(&mut self.ctx);
 
         if is_inner_func {
-            Ok(std::ptr::null())
+            Ok(CompileOutcome::Defined(std::ptr::null()))
         } else {
             if let Err(e) = self.module.finalize_definitions() {
                 eprintln!("[JIT] Error finalizing definitions: {:?}", e);
                 return Err(e.to_string());
             }
-            
-            
-            
-            Ok(self.module.get_finalized_function(func_id) as *const std::ffi::c_void)
+            Ok(CompileOutcome::Defined(self.module.get_finalized_function(func_id) as *const std::ffi::c_void))
         }
     }
 
@@ -1278,15 +1362,41 @@ impl JIT {
             return Ok(std::ptr::null());
         }
 
+        let mut header_pads: HashMap<usize, u32> = HashMap::new();
+        let mut outcome = None;
+        for attempt in 0..ALIGN_ATTEMPTS {
+            let final_attempt = attempt == ALIGN_ATTEMPTS - 1;
+            match self.compile_method_attempt(func_id_idx, self_func_idx, chunk, constants, functions, name, &header_pads, final_attempt) {
+                Ok(CompileOutcome::Defined(ptr)) => { outcome = Some(Ok(ptr)); break; }
+                Ok(CompileOutcome::Retry(new_pads)) => { header_pads = new_pads; }
+                Err(e) => { outcome = Some(Err(e)); break; }
+            }
+        }
+        let result = outcome.unwrap_or_else(|| Err("loop-header alignment failed to converge".to_string()));
+
+        self.in_progress.remove(&func_id_idx);
+        result
+    }
+
+    fn compile_method_attempt(
+        &mut self,
+        func_id_idx: usize,
+        self_func_idx: u32,
+        chunk: &Chunk,
+        constants: &[VMValue],
+        functions: &[std::sync::Arc<Chunk>],
+        name: &str,
+        header_pads: &HashMap<usize, u32>,
+        final_attempt: bool,
+    ) -> Result<CompileOutcome, String> {
         self.precompile_callees(self_func_idx, chunk, constants, functions);
 
-        let arity = chunk.arity;
-        let res = if self_func_idx == u32::MAX {
-            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, false, None)
+        if self_func_idx == u32::MAX {
+            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, false, None, header_pads, final_attempt)
         } else {
             let ptr_type = self.module.target_config().pointer_type();
             let mut inner_sig = self.module.make_signature();
-            for _ in 0..arity {
+            for _ in 0..chunk.arity {
                 inner_sig.params.push(AbiParam::new(types::I64)); // bits
                 inner_sig.params.push(AbiParam::new(types::I64)); // tag
             }
@@ -1305,11 +1415,12 @@ impl JIT {
                 &inner_sig,
             ).map_err(|e| e.to_string())?;
 
-            self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, true, Some(inner_func_id))?;
+            match self.compile_method_impl(func_id_idx, self_func_idx, chunk, constants, functions, name, true, Some(inner_func_id), header_pads, final_attempt)? {
+                CompileOutcome::Defined(_) => {}
+                CompileOutcome::Retry(pads) => return Ok(CompileOutcome::Retry(pads)),
+            }
             self.compile_outer_wrapper(func_id_idx, self_func_idx, chunk, inner_func_id)
-        };
-
-        self.in_progress.remove(&func_id_idx);
-        res
+                .map(CompileOutcome::Defined)
+        }
     }
 }

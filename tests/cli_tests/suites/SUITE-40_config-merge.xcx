@@ -1,0 +1,83 @@
+--- TEST: SUITE-40
+--- Area: Applications
+--- Priority: high
+--- Name: Layered config merge (cargo-test twin of programs/40_config_merge.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+json: defaults <<< {
+    "host": "localhost",
+    "port": 8080,
+    "debug": false,
+    "retries": 3,
+    "tags": []
+} >>>;
+json: overrides <<< {
+    "port": 9090,
+    "debug": true,
+    "retries": 5
+} >>>;
+
+array:s: okeys = overrides.keys();
+array:s: unknown_keys;
+i: applied = 0;
+i: conflicts = 0;
+for k in okeys do;
+    if (defaults.exists(k)) then;
+        defaults.set(k, overrides.get(k));
+        applied = applied + 1;
+    else;
+        unknown_keys.push(k);
+        conflicts = conflicts + 1;
+    end;
+end;
+
+expect("all 3 override keys known", applied == 3 && conflicts == 0 && unknown_keys.size() == 0);
+expect("merged port", defaults.get("port").toStr() == "9090");
+expect("merged debug", defaults.get("debug").toStr() == "true");
+expect("merged retries", defaults.get("retries").toStr() == "5");
+expect("host untouched", defaults.get("host").toStr() == "localhost");
+expect("tags untouched", defaults.get("tags").size() == 0);
+
+json: typed <<< {"count": 0, "ratio": 0.0, "label": "", "on": false} >>>;
+typed.set("count", 7);
+typed.set("ratio", 0.25);
+typed.set("label", "prod");
+typed.set("on", true);
+i: rc = 0;
+f: rr = 0.0;
+s: rl = "";
+b: ro = false;
+typed.bind("count", rc);
+typed.bind("ratio", rr);
+typed.bind("label", rl);
+typed.bind("on", ro);
+expect("typed count", rc == 7);
+expect("typed ratio", rr > 0.24 && rr < 0.26);
+expect("typed label", rl == "prod");
+expect("typed on", ro);
+
+array:s: absent;
+s: probe = "no_such_key_here";
+if (!typed.exists(probe)) then;
+    absent.push(probe);
+end;
+expect("unknown key absent", absent.size() == 1);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-40 failed";
+end;

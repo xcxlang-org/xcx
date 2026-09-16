@@ -1,0 +1,116 @@
+--- TEST: SUITE-33
+--- Area: Applications
+--- Priority: high
+--- Name: Maze BFS solver (cargo-test twin of programs/33_maze_bfs.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+map: visited {
+    schema = [s <-> b]
+    data = [EMPTY]
+};
+map: dist {
+    schema = [s <-> i]
+    data = [EMPTY]
+};
+array:i: grid {0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0};
+
+func bfs(s: start, s: goal -> i) {
+    visited.clear();
+    dist.clear();
+    array:s: frontier;
+    frontier.push(start);
+    visited.insert(start, true);
+    dist.insert(start, 0);
+    i: d = 0;
+    while (frontier.size() > 0) do;
+        array:s: next;
+        i: idx = 0;
+        while (idx < frontier.size()) do;
+            s: node = frontier.get(idx);
+            if (node == goal) then;
+                return dist.get(node);
+            end;
+            i: comma = node.indexOf(",");
+            i: r = i(node.slice(0, comma));
+            i: c = i(node.slice(comma + 1, node.length));
+
+            i: nr = r - 1;
+            if (nr >= 0) then;
+                if (grid.get(nr * 5 + c) == 0) then;
+                    s: nk = s(nr) + "," + s(c);
+                    if (!visited.contains(nk)) then;
+                        visited.insert(nk, true);
+                        dist.insert(nk, d + 1);
+                        next.push(nk);
+                    end;
+                end;
+            end;
+            nr = r + 1;
+            if (nr < 5) then;
+                if (grid.get(nr * 5 + c) == 0) then;
+                    s: nk2 = s(nr) + "," + s(c);
+                    if (!visited.contains(nk2)) then;
+                        visited.insert(nk2, true);
+                        dist.insert(nk2, d + 1);
+                        next.push(nk2);
+                    end;
+                end;
+            end;
+            i: nc = c - 1;
+            if (nc >= 0) then;
+                if (grid.get(r * 5 + nc) == 0) then;
+                    s: nk3 = s(r) + "," + s(nc);
+                    if (!visited.contains(nk3)) then;
+                        visited.insert(nk3, true);
+                        dist.insert(nk3, d + 1);
+                        next.push(nk3);
+                    end;
+                end;
+            end;
+            nc = c + 1;
+            if (nc < 5) then;
+                if (grid.get(r * 5 + nc) == 0) then;
+                    s: nk4 = s(r) + "," + s(nc);
+                    if (!visited.contains(nk4)) then;
+                        visited.insert(nk4, true);
+                        dist.insert(nk4, d + 1);
+                        next.push(nk4);
+                    end;
+                end;
+            end;
+
+            idx = idx + 1;
+        end;
+        d = d + 1;
+        frontier = next;
+    end;
+    return -1;
+};
+
+expect("start is open", grid.get(0) == 0);
+expect("exit is open", grid.get(24) == 0);
+expect("shortest path", bfs("0,0", "4,4") == 8);
+expect("wall start self distance", bfs("0,1", "0,1") == 0);
+
+grid.update(5, 1);
+expect("blocked corridor", bfs("0,0", "4,4") == -1);
+expect("start still reachable from itself", bfs("0,0", "0,0") == 0);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-33 failed";
+end;

@@ -5,6 +5,33 @@ use crate::vm::utils::json::build_response_json;
 
 static HTTP_AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
 
+/// Handles the halt-level semantics of `is_safe_url` rejections. Prints the
+/// message in the same format as the `halt.fatal` / `halt.error` statements
+/// (`XCX Fatal:` + exit(1), `XCX Error:` + error counter + halt) and returns:
+/// - `Some(true)`  — halt.fatal: the process must terminate with code 1,
+/// - `Some(false)` — halt.error: the error counter was incremented; the
+///   caller must stop execution (the executor checks the counter),
+/// - `None`        — payload-level rejection: the caller continues and
+///   produces the error response value.
+fn safety_halt(e: &str) -> Option<bool> {
+    let upper = e.to_uppercase();
+    let msg = e
+        .trim_start_matches("HALT.FATAL:")
+        .trim_start_matches("HALT.FATAL")
+        .trim_start_matches("HALT.ERROR:")
+        .trim_start_matches("HALT.ERROR");
+    if upper.starts_with("HALT.FATAL") {
+        eprintln!("XCX Fatal: {}", msg);
+        Some(true)
+    } else if upper.starts_with("HALT.ERROR") {
+        eprintln!("XCX Error: {}", msg);
+        crate::vm::core::vm::increment_error_count();
+        Some(false)
+    } else {
+        None
+    }
+}
+
 fn get_agent() -> &'static ureq::Agent {
     HTTP_AGENT.get_or_init(|| {
         ureq::AgentBuilder::new()
@@ -26,10 +53,10 @@ pub unsafe extern "C" fn xcx_jit_net_call(out: *mut Value, method_idx_bits: u64,
     }
 
     if let Err(e) = is_safe_url(&url) {
-        if e.to_uppercase().starts_with("HALT.FATAL") {
-            panic!("halt.fatal:{}", e.trim_start_matches("HALT.FATAL:").trim_start_matches("HALT.FATAL"));
-        } else if e.to_uppercase().starts_with("HALT.ERROR") {
-            panic!("halt.error:{}", e.trim_start_matches("HALT.ERROR:").trim_start_matches("HALT.ERROR"));
+        match safety_halt(&e) {
+            Some(true) => std::process::exit(1),
+            Some(false) => crate::vm::core::vm::increment_error_count(),
+            None => {}
         }
         let mut map = Vec::new();
         map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
@@ -93,18 +120,21 @@ pub fn call(dst: u8, method_idx: u32, url_src: u8, body_src: u8, locals: &mut [V
     let method = ctx_constants[method_idx as usize].to_string();
     
     if let Err(e) = is_safe_url(&url) {
-        if e.to_uppercase().starts_with("HALT.FATAL") {
-            panic!("halt.fatal:{}", e.trim_start_matches("HALT.FATAL:").trim_start_matches("HALT.FATAL"));
-        } else if e.to_uppercase().starts_with("HALT.ERROR") {
-            panic!("halt.error:{}", e.trim_start_matches("HALT.ERROR:").trim_start_matches("HALT.ERROR"));
-        }
+        let halt = match safety_halt(&e) {
+            Some(true) => std::process::exit(1),
+            Some(false) => {
+                crate::vm::core::vm::increment_error_count();
+                true
+            }
+            None => false,
+        };
         let mut map = Vec::new();
         map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
         map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
         let res = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(map))))));
         unsafe { locals[dst as usize].dec_ref(); }
         locals[dst as usize] = res;
-        return OpResult::Continue;
+        return if halt { OpResult::Halt } else { OpResult::Continue };
     }
     
 
@@ -217,10 +247,10 @@ pub unsafe extern "C" fn xcx_jit_net_request(out: *mut Value, arg_bits: u64, arg
     }
 
     if let Err(e) = is_safe_url(&url) {
-        if e.to_uppercase().starts_with("HALT.FATAL") {
-            panic!("halt.fatal:{}", e.trim_start_matches("HALT.FATAL:").trim_start_matches("HALT.FATAL"));
-        } else if e.to_uppercase().starts_with("HALT.ERROR") {
-            panic!("halt.error:{}", e.trim_start_matches("HALT.ERROR:").trim_start_matches("HALT.ERROR"));
+        match safety_halt(&e) {
+            Some(true) => std::process::exit(1),
+            Some(false) => crate::vm::core::vm::increment_error_count(),
+            None => {}
         }
         let mut res_map = Vec::new();
         res_map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
@@ -351,17 +381,23 @@ pub fn request(dst: u8, arg_src: u8, locals: &mut [Value], http_req_val: Option<
         }
         
         if let Err(e) = is_safe_url(&url) {
-            if e.to_uppercase().starts_with("HALT.FATAL") {
-                panic!("halt.fatal:{}", e.trim_start_matches("HALT.FATAL:").trim_start_matches("HALT.FATAL"));
-            } else if e.to_uppercase().starts_with("HALT.ERROR") {
-                panic!("halt.error:{}", e.trim_start_matches("HALT.ERROR:").trim_start_matches("HALT.ERROR"));
-            }
+            let halt = match safety_halt(&e) {
+                Some(true) => std::process::exit(1),
+                Some(false) => {
+                    crate::vm::core::vm::increment_error_count();
+                    true
+                }
+                None => false,
+            };
             let mut res_map = Vec::new();
             res_map.push((std::sync::Arc::new("ok".to_string()), crate::vm::object::JsonVal::Bool(false)));
             res_map.push((std::sync::Arc::new("error".to_string()), crate::vm::object::JsonVal::String(std::sync::Arc::new(crate::vm::object::StringObj::new(e.into_bytes())))));
             let val = Value::from_json(Arc::new(crate::vm::object::JsonObj::new(crate::vm::object::JsonVal::Object(Arc::new(parking_lot::RwLock::new(res_map))))));
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = val;
+            if halt {
+                return OpResult::Halt;
+            }
         } else {
             drop(map);
             if method.to_uppercase() == "HEAD" && url.ends_with("/get") && url.contains("httpbun.com") {
@@ -458,16 +494,25 @@ pub fn is_safe_url(url_str: &str) -> Result<(), String> {
     if url_str.starts_with("file://") {
         return Err("HALT.FATAL: SSRF - file:// URLs are forbidden".to_string());
     }
-    let host = if let Some(start) = url_str.find("://") {
-        let remainder = &url_str[start+3..];
-        let end = remainder.find('/').unwrap_or(remainder.len());
-        let mut host_port = &remainder[..end];
-        if let Some(p) = host_port.find('@') { host_port = &host_port[p+1..]; }
-        if let Some(p) = host_port.find(':') { host_port = &host_port[..p]; }
-        host_port.to_lowercase()
-    } else {
-        url_str.to_lowercase()
+    // SSRF checks analyze a parseable scheme://host URL. A URL with no
+    // scheme or an empty host is malformed input, not a detected attack:
+    // reporting it as SSRF would accuse typos, so it comes back as a plain
+    // (non-halt) error and the request layer surfaces it as a normal
+    // request failure.
+    let Some((scheme, remainder)) = url_str.split_once("://") else {
+        return Err("INVALID: URL has no scheme".to_string());
     };
+    if scheme.is_empty() {
+        return Err("INVALID: URL has an empty scheme".to_string());
+    }
+    let end = remainder.find('/').unwrap_or(remainder.len());
+    let mut host_port = &remainder[..end];
+    if let Some(p) = host_port.find('@') { host_port = &host_port[p+1..]; }
+    if let Some(p) = host_port.find(':') { host_port = &host_port[..p]; }
+    let host = host_port.to_lowercase();
+    if host.is_empty() {
+        return Err("INVALID: URL has an empty host".to_string());
+    }
     if host == "169.254.169.254" || host.starts_with("169.254.") {
         return Err("HALT.FATAL: SSRF - Link-local addresses are forbidden".to_string());
     }

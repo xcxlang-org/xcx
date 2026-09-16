@@ -1,0 +1,34 @@
+--- TEST: MIN-02
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal strings (fast companion of programs/02_strings.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: t = "  MiXeD  ";
+expect("trim lower", t.trim().lower() == "mixed");
+expect("replace", "a-b-c".replace("-", "_") == "a_b_c");
+expect("slice", "programming".slice(0, 7) == "program");
+expect("indexOf", "hello".indexOf("ll") == 2);
+expect("startsWith", "hello".startsWith("he"));
+expect("endsWith", "hello".endsWith("lo"));
+expect("split", "a,b,c".split(",").size() == 3);
+expect("length", "abc".length == 3);
+expect("escape", "a\nb".length == 3);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-02 failed";
+end;

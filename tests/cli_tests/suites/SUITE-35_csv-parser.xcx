@@ -1,0 +1,83 @@
+--- TEST: SUITE-35
+--- Area: Applications
+--- Priority: high
+--- Name: CSV parser state machine (cargo-test twin of programs/35_csv_parser.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+array:s: fields;
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+func parse_row(s: line -> i) {
+    fields.clear();
+    s: cur = "";
+    b: in_q = false;
+    i: i = 0;
+    i: len = line.length;
+    while (i < len) do;
+        s: ch = line.slice(i, i + 1);
+        if (ch == "\"") then;
+            if (in_q) then;
+                if (i + 1 < len) then;
+                    if (line.slice(i + 1, i + 2) == "\"") then;
+                        cur = cur + "\"";
+                        i = i + 1;
+                    else;
+                        in_q = false;
+                    end;
+                else;
+                    in_q = false;
+                end;
+            else;
+                in_q = true;
+            end;
+        else;
+            if (ch == "," && !in_q) then;
+                fields.push(cur);
+                cur = "";
+            else;
+                cur = cur + ch;
+            end;
+        end;
+        i = i + 1;
+    end;
+    fields.push(cur);
+    return fields.size();
+};
+
+expect("row 1 fields", parse_row("name,note") == 2);
+expect("row 1 f0", fields.get(0) == "name");
+expect("row 1 f1", fields.get(1) == "note");
+
+expect("row 2 fields", parse_row("\"Smith, John\",\"said \"\"hi\"\"\"") == 2);
+expect("row 2 f0 quoted comma", fields.get(0) == "Smith, John");
+expect("row 2 f1 escaped quotes", fields.get(1) == "said \"hi\"");
+
+expect("row 3 fields", parse_row("Bob,plain,x y") == 3);
+expect("row 3 f0", fields.get(0) == "Bob");
+expect("row 3 f2", fields.get(2) == "x y");
+
+expect("row 4 fields", parse_row("\"multi,comma\",x,\"\"") == 3);
+expect("row 4 f0", fields.get(0) == "multi,comma");
+expect("row 4 f1", fields.get(1) == "x");
+expect("row 4 f2 empty", fields.get(2) == "");
+
+expect("empty row", parse_row("") == 1);
+expect("empty row single empty field", fields.get(0) == "");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-35 failed";
+end;

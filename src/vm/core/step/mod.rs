@@ -35,7 +35,7 @@ impl Executor {
                 Some(OpResult::Continue)
             }
             OpCode::GetVar { .. } | OpCode::SetVar { .. } | OpCode::IncVar { .. } | OpCode::DecVar { .. } | OpCode::StrAppendVar { .. } | OpCode::StrAppendLocal { .. } => {
-                self.handle_var_op(op, locals, vm_arc)
+                self.handle_var_op(op, locals)
             }
 
             // Categories
@@ -117,38 +117,29 @@ impl Executor {
                 let receiver = locals[base as usize];
                 let (args_buf, n) = extract_method_args(locals, base, arg_count);
                 let args = &args_buf[..n];
-                let name = self.ctx.constants[method_name_idx as usize].to_string();
-                Some(self.handle_method_call_custom(dst, receiver, &name, args, *ip, locals, vm_arc))
+                let name = self.const_string(method_name_idx);
+                Some(self.handle_method_call_custom(dst, receiver, name.as_str(), args, *ip, locals, vm_arc))
             }
             OpCode::MethodCallNamed { dst, kind, base, arg_count, names_idx } => {
                 let receiver = locals[base as usize];
                 let (args_buf, n) = extract_method_args(locals, base, arg_count);
                 let args = &args_buf[..n];
-                let names_val = self.ctx.constants[names_idx as usize];
-                let mut names_vec = Vec::new();
-                if names_val.is_array() {
-                    let arr = names_val.as_array();
-                    let arr_rd = arr.read();
-                    for v in arr_rd.elements.iter() {
-                        names_vec.push(v.to_string());
-                    }
-                }
-                let names = if names_vec.is_empty() { None } else { Some(names_vec.as_slice()) };
+                let names_arc = self.const_name_list(names_idx);
+                let names = names_arc.as_ref().map(|v| v.as_slice());
                 Some(self.handle_method_call(dst, receiver, kind, args, names, *ip, locals, vm_arc))
             }
 
             OpCode::SetName { src, name_idx } => {
-                let name_val = self.ctx.constants[name_idx as usize];
-                let name = name_val.to_string();
+                let name = self.const_string(name_idx);
                 let val = locals[src as usize];
 
                 let idx = {
                     let mut names = vm_arc.global_names.write();
-                    if let Some(&i) = names.get(&name) {
+                    if let Some(&i) = names.get(name.as_str()) {
                         i
                     } else {
                         let next_idx = names.len();
-                        names.insert(name, next_idx);
+                        names.insert((*name).clone(), next_idx);
                         next_idx
                     }
                 };
@@ -163,31 +154,66 @@ impl Executor {
         &mut self,
         op: OpCode,
         locals: &mut [Value],
-        vm_arc: &Arc<VM>,
     ) -> Option<OpResult> {
         match op {
             OpCode::GetVar { dst, idx } => {
-                let val = vm_arc.get_global(idx as usize);
+                let val = unsafe { self.get_global_raw(idx as usize) };
                 unsafe { val.assign_to(&mut locals[dst as usize]); }
             }
             OpCode::SetVar { idx, src } => {
                 let val = locals[src as usize];
-                vm_arc.set_global(idx as usize, val);
+                unsafe { self.set_global_raw(idx as usize, val); }
             }
             OpCode::IncVar { idx } => {
                 let idx = idx as usize;
-                let val = vm_arc.get_global(idx);
+                let val = unsafe { self.get_global_raw(idx) };
                 let res = val.add(Value::from_i64(1));
-                vm_arc.set_global(idx, res);
+                unsafe { self.set_global_raw(idx, res); }
             }
             OpCode::DecVar { idx } => {
                 let idx = idx as usize;
-                let val = vm_arc.get_global(idx);
+                let val = unsafe { self.get_global_raw(idx) };
                 let res = val.sub(Value::from_i64(1));
-                vm_arc.set_global(idx, res);
+                unsafe { self.set_global_raw(idx, res); }
             }
             OpCode::StrAppendVar { var_idx, src } => {
                 let rhs_val = locals[src as usize];
+                let raw = unsafe { self.get_global_raw(var_idx as usize) };
+
+                // Fast sub-path: target string under the usual in-place
+                // threshold and a distinct string rhs — append the rhs bytes
+                // straight from their allocation instead of copying them into
+                // an intermediate Vec first. Falls through to the general
+                // path for self-append, shared strings and non-string rhs.
+                if raw.tag == crate::vm::value::nan_boxing::TAG_STR
+                    && rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR
+                    && rhs_val.bits != raw.bits
+                {
+                    let ptr = raw.bits as *const crate::vm::object::StringObj;
+                    let arc = unsafe { Arc::from_raw(ptr) };
+                    // In-place append requires the globals slot to be the sole
+                    // owner of the buffer. A string literal loaded from the
+                    // chunk's constant pool (or an alias assigned to another
+                    // variable) is a real, observable co-owner: mutating a
+                    // buffer with sc == 2 corrupts the constant pool itself,
+                    // so every later load of the same literal inherits the
+                    // appended content.
+                    if Arc::strong_count(&arc) <= 1 && Arc::weak_count(&arc) == 0 {
+                        unsafe {
+                            let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(
+                                &(*(rhs_val.bits as *const crate::vm::object::StringObj)).data,
+                            );
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+                        unsafe { self.set_global_raw(var_idx as usize, new_val); }
+                        return Some(OpResult::Continue);
+                    }
+                    std::mem::forget(arc);
+                }
+
                 let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
                     let arc = crate::vm::value::heap_object::as_string(&rhs_val);
                     arc.data.clone()
@@ -195,14 +221,18 @@ impl Executor {
                     rhs_val.to_string().into_bytes()
                 };
 
-                let raw = vm_arc.get_global(var_idx as usize);
                 if raw.tag == crate::vm::value::nan_boxing::TAG_STR {
                     let ptr = raw.bits as *const crate::vm::object::StringObj;
                     let arc = unsafe { Arc::from_raw(ptr) };
 
+                    // Same sole-owner rule as the fast sub-path above: the
+                    // globals slot must be the only reference. A second
+                    // reference is a real co-owner (constant pool, aliased
+                    // variable), never a dead register copy, so shared
+                    // buffers always take the re-allocation path.
                     let sc = Arc::strong_count(&arc);
                     let wc = Arc::weak_count(&arc);
-                    if sc <= 2 && wc == 0 {
+                    if sc <= 1 && wc == 0 {
                         let obj_ptr = ptr as *mut crate::vm::object::StringObj;
                         unsafe {
                             (*obj_ptr).hash = None;
@@ -210,7 +240,7 @@ impl Executor {
                         }
                         let bits = Arc::into_raw(arc) as u64;
                         let new_val = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
-                        vm_arc.set_global(var_idx as usize, new_val);
+                        unsafe { self.set_global_raw(var_idx as usize, new_val); }
                     } else {
                         let mut combined = Vec::with_capacity(arc.data.len() + rhs_bytes.len());
                         combined.extend_from_slice(&arc.data);
@@ -218,18 +248,53 @@ impl Executor {
                         std::mem::forget(arc);
                         let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
                         let new_val = crate::vm::value::heap_object::from_string(new_arc);
-                        vm_arc.set_global(var_idx as usize, new_val);
+                        unsafe { self.set_global_raw(var_idx as usize, new_val); }
+                        // set_global_raw takes its own reference for the slot;
+                        // release the construction reference so the stored
+                        // count reflects the slot alone. The sole-owner check
+                        // above reads exactly this count on the next append —
+                        // a surviving construction reference would masquerade
+                        // as a co-owner and force a re-allocation (and leak
+                        // every intermediate buffer) on each iteration.
+                        unsafe { new_val.dec_ref(); }
                     }
                 } else {
                     let s1 = raw.to_string();
                     let suffix = String::from_utf8_lossy(&rhs_bytes).into_owned();
                     let combined = s1 + &suffix;
                     let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
-                    vm_arc.set_global(var_idx as usize, new_val);
+                    unsafe { self.set_global_raw(var_idx as usize, new_val); }
+                    unsafe { new_val.dec_ref(); }
                 }
             }
             OpCode::StrAppendLocal { local_idx, src } => {
                 let rhs_val = locals[src as usize];
+                let raw = locals[local_idx as usize];
+
+                // Fast sub-path, same rationale as StrAppendVar above: skip
+                // the rhs Vec copy when the target is uniquely owned and the
+                // rhs is a different string object.
+                if raw.tag == crate::vm::value::nan_boxing::TAG_STR
+                    && rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR
+                    && rhs_val.bits != raw.bits
+                {
+                    let ptr = raw.bits as *const crate::vm::object::StringObj;
+                    let arc = unsafe { Arc::from_raw(ptr) };
+                    if Arc::strong_count(&arc) <= 1 && Arc::weak_count(&arc) == 0 {
+                        unsafe {
+                            let obj_ptr = ptr as *mut crate::vm::object::StringObj;
+                            (*obj_ptr).hash = None;
+                            (*obj_ptr).data.extend_from_slice(
+                                &(*(rhs_val.bits as *const crate::vm::object::StringObj)).data,
+                            );
+                        }
+                        let bits = Arc::into_raw(arc) as u64;
+                        locals[local_idx as usize] = Value { bits, tag: crate::vm::value::nan_boxing::TAG_STR };
+                        return Some(OpResult::Continue);
+                    }
+                    std::mem::forget(arc);
+                }
+
                 let rhs_bytes = if rhs_val.tag == crate::vm::value::nan_boxing::TAG_STR {
                     let arc = crate::vm::value::heap_object::as_string(&rhs_val);
                     arc.data.clone()
@@ -242,6 +307,8 @@ impl Executor {
                     let ptr = raw.bits as *const crate::vm::object::StringObj;
                     let arc = unsafe { Arc::from_raw(ptr) };
 
+                    // Exclusive ownership through the register: mutating in
+                    // place cannot be observed through any other reference.
                     let sc = Arc::strong_count(&arc);
                     let wc = Arc::weak_count(&arc);
                     if sc <= 1 && wc == 0 {

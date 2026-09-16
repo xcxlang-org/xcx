@@ -1,6 +1,6 @@
 # Compiler — Register Allocation & Scope Tracking
 
-The XCX compile pipeline uses a dense register-based architecture. Locals are allocated sequentially by `FunctionCompiler`; scoped constructs (`if`/`while`/`for` bodies) reuse slots through the scope tracker. There is no separate register-compression pass: `FunctionCompiler` keeps `next_local` and `max_locals_used` in sync during emission, and the chunk's `max_locals` is computed once at `Chunk::new` time.
+The XCX compile pipeline uses a dense register-based architecture. Locals are allocated sequentially by `FunctionCompiler`; scoped constructs (`if`/`while`/`for` bodies) reuse slots through the scope tracker. There is no separate register-compression pass: `FunctionCompiler` keeps `next_local` and `max_locals_used` in sync during emission, and the chunk's `max_locals` is computed once at `Chunk::new` time. One deliberate exception since 4.4: registers allocated for `for..in` collection loops (ArrayLoop receiver/index/size registers) stay burned for the rest of the chunk and are never handed back to the scope tracker (see below).
 
 ---
 
@@ -22,6 +22,8 @@ src/compiler/
 ## Scoped Slot Reuse (`scope_tracker.rs`)
 
 `enter_scope() -> usize` pushes a fresh variable scope and returns the current `next_local`; `exit_scope(saved)` pops the scope and resets `next_local` to the saved value. Registers allocated inside the block (block-local temporaries, condition registers) are therefore available for reuse by later sibling blocks — this is what keeps frames dense despite strictly increasing allocation *within* a block.
+
+**Exception: `for..in` (ArrayLoop) registers stay burned.** Since 4.4 the collection-loop arms (`ForIterType::Array`/`Set`) do not roll `next_local` back after the loop. `ArrayLoopNext` still reads the loop's receiver/index/size registers on the back-edge; rolling back lets later code (and recursive frames of `for..in` walkers) reuse those slots, clobbering the outer loop's index and terminating it after the first recursive call. The registers therefore remain allocated for the rest of the chunk. Fiber loops (`IsDone`/`Next`) keep the classic save/restore, and range `for` loops never allocated a saved window.
 
 `lookup_local(id)` resolves a name to its slot through the scope stack, innermost first. If the name is not local but exists in a parent compiler's locals (lambda capture), the tracker assigns it a leading argument slot: captured variables occupy slots `1..=captures.len()` of the sub-compiler (`0` is the query/row parameter where applicable), appended in first-use order via `self.captures`. `define_local(id, slot)` binds a name to an explicit slot (used for parameters and captures).
 

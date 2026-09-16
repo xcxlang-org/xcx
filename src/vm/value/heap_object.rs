@@ -165,7 +165,7 @@ pub fn to_string(val: &Value) -> String {
         TAG_BOOL  => if val.bits != 0 { "true".to_string() } else { "false".to_string() },
         TAG_DATE  => {
             let ts = val.bits as i64;
-            let dt = chrono::DateTime::from_timestamp_millis(ts).unwrap().naive_utc();
+            let dt = chrono::DateTime::from_timestamp_millis(ts).unwrap().with_timezone(&chrono::Local);
             dt.format("%Y-%m-%d").to_string()
         }
         TAG_STR   => {
@@ -173,14 +173,10 @@ pub fn to_string(val: &Value) -> String {
             String::from_utf8_lossy(&b.data).into_owned()
         }
         TAG_JSON  => {
+            // Always serialize fresh: json trees are mutated in place through
+            // child views, so no wrapper-level cache can know when the tree
+            // changed.
             let arc = as_json(val);
-            let ver = arc.version.load(std::sync::atomic::Ordering::Acquire);
-            let cached_ver = arc.cached_version.load(std::sync::atomic::Ordering::Acquire);
-            if ver == cached_ver {
-                if let Some(s) = arc.cached_str.lock().as_ref() {
-                    return String::from_utf8_lossy(&s.data).into_owned();
-                }
-            }
             let capacity = match &arc.root {
                 crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
                 crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
@@ -188,15 +184,7 @@ pub fn to_string(val: &Value) -> String {
             };
             let mut buf = String::with_capacity(capacity.max(4096));
             arc.root.to_string_buf(&mut buf);
-            let result_str = buf.clone();
-            let string_obj = Arc::new(StringObj::new(buf.into_bytes()));
-            
-            let mut lock = arc.cached_str.lock();
-            if arc.version.load(std::sync::atomic::Ordering::Acquire) == ver {
-                *lock = Some(string_obj.clone());
-                arc.cached_version.store(ver, std::sync::atomic::Ordering::Release);
-            }
-            result_str
+            buf
         }
         TAG_ARR   => {
             let arc = as_array(val);

@@ -1,0 +1,79 @@
+--- TEST: SUITE-37
+--- Area: Applications
+--- Priority: high
+--- Name: Caesar cipher (cargo-test twin of programs/37_caesar_cipher.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: LOWER = "abcdefghijklmnopqrstuvwxyz";
+s: UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+func shift_char(s: ch, i: shift -> s) {
+    i: p = LOWER.indexOf(ch);
+    if (p >= 0) then;
+        i: np = p + shift;
+        while (np >= 26) do;
+            np = np - 26;
+        end;
+        while (np < 0) do;
+            np = np + 26;
+        end;
+        return LOWER.slice(np, np + 1);
+    end;
+    i: u = UPPER.indexOf(ch);
+    if (u >= 0) then;
+        i: np2 = u + shift;
+        while (np2 >= 26) do;
+            np2 = np2 - 26;
+        end;
+        while (np2 < 0) do;
+            np2 = np2 + 26;
+        end;
+        return UPPER.slice(np2, np2 + 1);
+    end;
+    return ch;
+};
+
+s: msg = "Abc XyZ!";
+s: enc = "";
+i: i = 0;
+while (i < msg.length) do;
+    enc = enc + shift_char(msg.slice(i, i + 1), 3);
+    i = i + 1;
+end;
+expect("caesar encode", enc == "Def AbC!");
+
+s: dec = "";
+i: j = 0;
+while (j < enc.length) do;
+    dec = dec + shift_char(enc.slice(j, j + 1), -3);
+    j = j + 1;
+end;
+expect("decode roundtrip", dec == msg);
+
+expect("wrap lower x", shift_char("x", 3) == "a");
+expect("wrap lower z", shift_char("z", 3) == "c");
+expect("wrap upper X", shift_char("X", 3) == "A");
+expect("wrap upper Z", shift_char("Z", 3) == "C");
+expect("negative wrap a", shift_char("a", -3) == "x");
+expect("negative wrap A", shift_char("A", -3) == "X");
+expect("case preserved", shift_char("A", 3) == "D" && shift_char("b", 3) == "e");
+expect("non-alpha passthrough", shift_char("!", 5) == "!");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-37 failed";
+end;

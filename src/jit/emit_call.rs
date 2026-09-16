@@ -80,9 +80,11 @@ pub fn emit_call(
             let inst = ctx.b.ins().call(self_ref, &call_args);
             ctx.b.ins().store(MemFlags::trusted(), cur_depth, ctx.executor_ptr, ctx.call_depth_offset as i32);
 
-            if ctx.uses_heap {
-                ctx.reload_globals();
-            }
+            // The callee may have written any global it references; the
+            // caller's cached Cranelift variables must be refreshed from
+            // memory regardless of the callee's heap usage — narrowed to the
+            // callee's transitive global-slot write set.
+            ctx.reload_globals_after_call(Some(ctx.self_func_idx));
 
             let status = ctx.b.func.dfg.inst_results(inst)[0];
             let res_bits = ctx.b.ins().load(cranelift_codegen::ir::types::I64, cranelift_codegen::ir::MemFlags::trusted(), out_ptr, 0);
@@ -190,9 +192,8 @@ pub fn emit_call(
         let self_ref = ctx.self_func_ref.unwrap();
         let inst = ctx.b.ins().call(self_ref, &call_args);
         ctx.b.ins().store(MemFlags::trusted(), cur_depth, ctx.executor_ptr, ctx.call_depth_offset as i32);
-        if ctx.uses_heap {
-            ctx.reload_globals();
-        }
+        // Same refresh requirement as the inner-func self-call above.
+        ctx.reload_globals_after_call(Some(ctx.self_func_idx));
 
         let _status = ctx.b.func.dfg.inst_results(inst)[0];
         ctx.b.ins().jump(join_blk, &[]);
@@ -357,10 +358,17 @@ pub fn emit_call(
 
         let res_bits = ctx.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 0);
         let res_tag  = ctx.b.ins().load(types::I64, MemFlags::trusted(), out_ptr, 8);
-        if callee_uses_heap {
-            ctx.reload_globals();
-        }
+        // Same refresh requirement as the self-call paths above: heap usage
+        // of the callee says nothing about whether it wrote globals. Both the
+        // direct JIT-to-JIT block and the executor fallback ran `func_idx`,
+        // so its transitive write set narrows the reload.
+        ctx.reload_globals_after_call(Some(func_idx));
 
+        // Frame-recovery semantics: a halt inside the callee aborts only the
+        // callee's frame (its chunk returned after writing the declared
+        // default into the out slot). The caller continues with that value,
+        // so the status is deliberately not propagated here for non-inner
+        // frames; inner (inlined) frames must forward it.
         if ctx.is_inner_func {
             let halt_blk = ctx.create_block();
             let next_blk = ctx.create_block();
@@ -401,9 +409,11 @@ pub fn emit_call(
         let status = ctx.b.func.dfg.inst_results(call_inst)[0];
         
         let res_bits = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), out_ptr, 0);
-        let res_tag  = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), out_ptr, 8);
-        ctx.reload_globals();
+        let res_tag = ctx.b.ins().load(types::I64, cranelift_codegen::ir::MemFlags::trusted(), out_ptr, 8);
+        ctx.reload_globals_after_call(Some(func_idx));
 
+        // Same frame-recovery rule as the direct path above: only inner
+        // (inlined) frames forward the halt status upward.
         if ctx.is_inner_func {
             let halt_blk = ctx.create_block();
             let next_blk = ctx.create_block();
@@ -417,7 +427,7 @@ pub fn emit_call(
 
             ctx.b.switch_to_block(next_blk);
         }
-        
+
         if !ctx.should_skip_dec_ref(dst) {
             let (old_bits, old_tag) = ctx.use_local(dst);
             emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
@@ -467,6 +477,7 @@ pub fn emit_method_call(
                     
                     ctx.b.switch_to_block(slow_blk);
                     let call = ctx.b.ins().call(symbols.xcx_jit_array_get_int, &[recv_bits, recv_tag, idx_bits]);
+                    ctx.emit_halt_if_errors(symbols);
                     let r_bits = ctx.b.inst_results(call)[0];
                     ctx.b.def_var(res_val, r_bits);
                     ctx.b.ins().jump(join_blk, &[]);
@@ -477,6 +488,11 @@ pub fn emit_method_call(
                     let r_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
                     ctx.def_local(dst, final_bits, r_tag);
                 } else {
+                    // OOB raises R303 in the FFI (tally + printed message +
+                    // int-0 default). No inline poll here: this generic path
+                    // is hot (typed-Unknown receivers) and the frame does not
+                    // abort on R303 in JIT mode — the process reports the
+                    // tally at exit, matching pre-parity-pass behavior.
                     let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_array_get, &[recv_bits, recv_tag, idx_bits]);
                     if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                         let (old_bits, old_tag) = ctx.use_local(dst);
@@ -504,11 +520,12 @@ pub fn emit_method_call(
                 ctx.b.def_var(res_val, val_bool);
                 ctx.b.ins().jump(join_blk, &[]);
                 
-                ctx.b.switch_to_block(slow_blk);
-                let call = ctx.b.ins().call(symbols.xcx_jit_array_get_bool, &[recv_bits, recv_tag, idx_bits]);
-                let r_bits = ctx.b.inst_results(call)[0];
-                ctx.b.def_var(res_val, r_bits);
-                ctx.b.ins().jump(join_blk, &[]);
+                    ctx.b.switch_to_block(slow_blk);
+                    let call = ctx.b.ins().call(symbols.xcx_jit_array_get_bool, &[recv_bits, recv_tag, idx_bits]);
+                    ctx.emit_halt_if_errors(symbols);
+                    let r_bits = ctx.b.inst_results(call)[0];
+                    ctx.b.def_var(res_val, r_bits);
+                    ctx.b.ins().jump(join_blk, &[]);
                 
                 ctx.b.switch_to_block(join_blk);
                 ctx.clear_block_state(false);
@@ -528,6 +545,9 @@ pub fn emit_method_call(
                 ctx.def_local(dst, r_bits, r_tag);
             } else if kind_ty == crate::vm::opcode::TypeTag::Map {
                 let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_map_get, &[recv_bits, recv_tag, idx_bits, idx_tag]);
+                // A missing key raises halt.error (interpreter parity), so
+                // this FFI is fallible on every call.
+                ctx.emit_halt_if_errors(symbols);
                 if !recv_is_unowned && !ctx.should_skip_dec_ref(dst) {
                     let (old_bits, old_tag) = ctx.use_local(dst);
                     emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
@@ -579,8 +599,9 @@ pub fn emit_method_call(
                     ctx.b.ins().jump(join_blk, &[]);
                     
                     ctx.b.switch_to_block(slow_blk);
-                    let val_bool_i8 = ctx.b.ins().ireduce(types::I8, val_bits); 
+                    let val_bool_i8 = ctx.b.ins().ireduce(types::I8, val_bits);
                     ctx.b.ins().call(symbols.xcx_jit_array_set_bool, &[recv_bits, recv_tag, idx_bits, val_bool_i8]);
+                    ctx.emit_halt_if_errors(symbols);
                     ctx.b.ins().jump(join_blk, &[]);
                     
                     ctx.b.switch_to_block(join_blk);
@@ -607,6 +628,7 @@ pub fn emit_method_call(
                     
                     ctx.b.switch_to_block(slow_blk);
                     ctx.b.ins().call(symbols.xcx_jit_array_set_int, &[recv_bits, recv_tag, idx_bits, val_bits]);
+                    ctx.emit_halt_if_errors(symbols);
                     ctx.b.ins().jump(join_blk, &[]);
                     
                     ctx.b.switch_to_block(join_blk);
@@ -614,6 +636,7 @@ pub fn emit_method_call(
                 } else {
                     let (val_bits, val_tag) = ctx.use_local(val_reg);
                     ctx.b.ins().call(symbols.xcx_jit_array_update, &[recv_bits, recv_tag, idx_bits, val_bits, val_tag]);
+                    ctx.emit_halt_if_errors(symbols);
                 }
                 let t_bits = ctx.b.ins().iconst(types::I64, 1);
                 let t_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
@@ -643,10 +666,11 @@ pub fn emit_method_call(
                 ctx.b.ins().store(cranelift_codegen::ir::MemFlags::trusted(), val_bool_i8, elem_addr, 0);
                 ctx.b.ins().jump(join_blk, &[]);
                 
-                ctx.b.switch_to_block(slow_blk);
-                let val_bool_i8_slow = ctx.b.ins().ireduce(types::I8, unpacked_bool);
-                ctx.b.ins().call(symbols.xcx_jit_array_set_bool, &[recv_bits, recv_tag, idx_bits, val_bool_i8_slow]);
-                ctx.b.ins().jump(join_blk, &[]);
+                    ctx.b.switch_to_block(slow_blk);
+                    let val_bool_i8_slow = ctx.b.ins().ireduce(types::I8, unpacked_bool);
+                    ctx.b.ins().call(symbols.xcx_jit_array_set_bool, &[recv_bits, recv_tag, idx_bits, val_bool_i8_slow]);
+                    ctx.emit_halt_if_errors(symbols);
+                    ctx.b.ins().jump(join_blk, &[]);
                 
                 ctx.b.switch_to_block(join_blk);
                 ctx.clear_block_state(false);
@@ -756,6 +780,7 @@ pub fn emit_method_call(
             let (idx_bits, _idx_tag) = ctx.use_local(base + 1);
             let (v_bits, v_tag) = ctx.use_local(base + 2);
             ctx.b.ins().call(symbols.xcx_jit_array_insert, &[recv_bits, recv_tag, idx_bits, v_bits, v_tag]);
+            ctx.emit_halt_if_errors(symbols);
             let t_bits = ctx.b.ins().iconst(types::I64, 1);
             let t_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
             ctx.def_local(dst, t_bits, t_tag);
@@ -764,6 +789,7 @@ pub fn emit_method_call(
         MethodKind::Delete | MethodKind::Remove if arg_count == 1 && (ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Array || ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::BoolArray) => {
             let (idx_bits, _idx_tag) = ctx.use_local(base + 1);
             ctx.b.ins().call(symbols.xcx_jit_array_delete, &[recv_bits, recv_tag, idx_bits]);
+            ctx.emit_halt_if_errors(symbols);
             let t_bits = ctx.b.ins().iconst(types::I64, 1);
             let t_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_BOOL as i64);
             ctx.def_local(dst, t_bits, t_tag);
@@ -814,13 +840,52 @@ pub fn emit_method_call(
             ctx.def_local(dst, r_bits, r_tag);
             return;
         }
-        MethodKind::ToStr if arg_count == 0 && ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::Json => {
-            let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_json_to_str, &[recv_bits, recv_tag]);
+        MethodKind::ToStr if arg_count == 0 => {
+            // The Json serializer is only valid for a Tag::Json receiver.
+            // Type inference can claim Json for a register that holds an
+            // unboxed scalar at runtime (json-typed variables and .get()
+            // results materialize as raw int/float/bool/string values, see
+            // json_val_to_value), so the fast path must be tag-guarded and
+            // every other receiver falls back to the universal toStr
+            // dispatch — the same semantics as the interpreter.
+            let json_blk = ctx.create_block();
+            let other_blk = ctx.create_block();
+            let next_blk = ctx.create_block();
+            let res_bits_var = ctx.b.declare_var(types::I64);
+            let res_tag_var = ctx.b.declare_var(types::I64);
+
+            let is_json = ctx.b.ins().icmp_imm(IntCC::Equal, recv_tag, crate::vm::value::TAG_JSON as i64);
+            ctx.b.ins().brif(is_json, json_blk, &[], other_blk, &[]);
+
+            ctx.b.switch_to_block(json_blk);
+            let (j_bits, j_tag) = ctx.call_ffi_value(symbols.xcx_jit_json_to_str, &[recv_bits, recv_tag]);
+            ctx.b.def_var(res_bits_var, j_bits);
+            ctx.b.def_var(res_tag_var, j_tag);
+            ctx.b.ins().jump(next_blk, &[]);
+
+            ctx.b.switch_to_block(other_blk);
+            let k_val = ctx.b.ins().iconst(types::I32, kind as i64);
+            let k_i8  = ctx.b.ins().ireduce(types::I8, k_val);
+            let args_ptr = ctx.b.ins().iconst(types::I64, 0);
+            let a_cnt_i8 = ctx.b.ins().iconst(types::I8, 0);
+            ctx.spill_all();
+            let (s_bits, s_tag) = ctx.call_ffi_value(symbols.xcx_jit_method_dispatch, &[
+                recv_bits, recv_tag, k_i8, args_ptr, a_cnt_i8, ctx.executor_ptr
+            ]);
+            ctx.emit_halt_if_errors(symbols);
+            ctx.b.def_var(res_bits_var, s_bits);
+            ctx.b.def_var(res_tag_var, s_tag);
+            ctx.b.ins().jump(next_blk, &[]);
+
+            ctx.b.switch_to_block(next_blk);
+            let r_bits = ctx.b.use_var(res_bits_var);
+            let r_tag = ctx.b.use_var(res_tag_var);
             if !ctx.should_skip_dec_ref(dst) {
                 let (old_bits, old_tag) = ctx.use_local(dst);
                 emit_conditional_dec_ref(ctx, symbols, old_bits, old_tag);
             }
             ctx.def_local(dst, r_bits, r_tag);
+            ctx.clear_block_state(true);
             return;
         }
         MethodKind::StartsWith if arg_count == 1 && ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::String => {
@@ -881,6 +946,7 @@ pub fn emit_method_call(
             let (start_bits, _start_tag) = ctx.use_local(base + 1);
             let (end_bits, _end_tag) = ctx.use_local(base + 2);
             let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_string_slice, &[recv_bits, recv_tag, start_bits, end_bits]);
+            ctx.emit_halt_if_errors(symbols);
             if !ctx.should_skip_dec_ref(dst) { let (o_b, o_t) = ctx.use_local(dst); emit_conditional_dec_ref(ctx, symbols, o_b, o_t); }
             ctx.def_local(dst, r_bits, r_tag);
             return;
@@ -889,6 +955,7 @@ pub fn emit_method_call(
             let (f_bits, f_tag) = ctx.use_local(base + 1);
             let (t_bits, t_tag) = ctx.use_local(base + 2);
             let (r_bits, r_tag) = ctx.call_ffi_value(symbols.xcx_jit_string_replace, &[recv_bits, recv_tag, f_bits, f_tag, t_bits, t_tag]);
+            ctx.emit_halt_if_errors(symbols);
             if !ctx.should_skip_dec_ref(dst) { let (o_b, o_t) = ctx.use_local(dst); emit_conditional_dec_ref(ctx, symbols, o_b, o_t); }
             ctx.def_local(dst, r_bits, r_tag);
             return;
@@ -910,14 +977,16 @@ pub fn emit_method_call(
             return;
         }
         MethodKind::ToInt if arg_count == 0 && ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::String => {
-            let call = ctx.b.ins().call(symbols.xcx_jit_string_to_int, &[recv_bits, recv_tag]);
+            let call = ctx.b.ins().call(symbols.xcx_jit_string_to_int, &[recv_bits, recv_tag, ctx.executor_ptr]);
+            ctx.emit_halt_if_errors(symbols);
             let r_bits = ctx.b.inst_results(call)[0];
             let r_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_INT as i64);
             ctx.def_local(dst, r_bits, r_tag);
             return;
         }
         MethodKind::ToFloat if arg_count == 0 && ctx.get_reg_type(base as usize) == crate::vm::opcode::TypeTag::String => {
-            let call = ctx.b.ins().call(symbols.xcx_jit_string_to_float, &[recv_bits, recv_tag]);
+            let call = ctx.b.ins().call(symbols.xcx_jit_string_to_float, &[recv_bits, recv_tag, ctx.executor_ptr]);
+            ctx.emit_halt_if_errors(symbols);
             let r_val = ctx.b.inst_results(call)[0];
             let r_bits = ctx.b.ins().bitcast(types::I64, MemFlags::new(), r_val);
             let r_tag = ctx.b.ins().iconst(types::I64, crate::vm::value::TAG_FLOAT as i64);

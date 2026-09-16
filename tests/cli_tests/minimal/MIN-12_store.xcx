@@ -1,0 +1,34 @@
+--- TEST: MIN-12
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal store (fast companion of programs/12_store.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.delete("min12.txt");
+expect("write", store.write("min12.txt", "line1"));
+store.append("min12.txt", "\nline2");
+expect("read has", store.read("min12.txt") HAS "line2");
+expect("exists", store.exists("min12.txt"));
+expect("size", store.size("min12.txt") == 11);
+expect("mkdir", store.mkdir("min12_dir"));
+expect("isDir", store.isDir("min12_dir"));
+expect("delete", store.delete("min12.txt") && !store.exists("min12.txt"));
+expect("delete dir", store.delete("min12_dir"));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-12 failed";
+end;

@@ -988,7 +988,6 @@ impl<'a> Parser<'a> {
                         if self.current.kind == TokenKind::Comma {
                             self.advance(); 
                         } else if self.current.kind != TokenKind::Semicolon && self.current.kind != TokenKind::EOF && self.current.kind != TokenKind::RightParen && self.current.kind != TokenKind::RightBracket {
-                            // Logic here might need to be careful not to consume semicolon if it was already advanced by parse_expression
                         } else {
                             break; 
                         }

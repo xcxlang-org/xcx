@@ -112,6 +112,27 @@ impl JsonVal {
         }
     }
 
+    /// Builds an object's entry list with the exact semantics of the old
+    /// `from_serde` route (keys came out of a serde `BTreeMap`): entries are
+    /// ordered alphabetically by key and a duplicated key keeps the value of
+    /// its last occurrence in the document. Direct-deserialization needs this
+    /// because the visitor receives members in document order.
+    fn object_from_members(members: Vec<(Arc<String>, JsonVal)>) -> Self {
+        let mut vec = members;
+        vec.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        let mut deduped: Vec<(Arc<String>, JsonVal)> = Vec::with_capacity(vec.len());
+        let mut i = 0;
+        while i < vec.len() {
+            let mut j = i + 1;
+            while j < vec.len() && vec[j].0.as_str() == vec[i].0.as_str() {
+                j += 1;
+            }
+            deduped.push(vec[j - 1].clone());
+            i = j;
+        }
+        JsonVal::Object(Arc::new(RwLock::new(deduped)))
+    }
+
     pub fn to_serde(&self) -> serde_json::Value {
         match self {
             JsonVal::Null => serde_json::Value::Null,
@@ -253,24 +274,6 @@ impl JsonVal {
         Some(current)
     }
 
-    pub fn make_mutable(&mut self) {
-        match self {
-            JsonVal::Array(a) => {
-                if Arc::strong_count(a) > 1 {
-                    let vec = unsafe { &*(*a).data_ptr() };
-                    *self = JsonVal::Array(Arc::new(RwLock::new(vec.clone())));
-                }
-            }
-            JsonVal::Object(o) => {
-                if Arc::strong_count(o) > 1 {
-                    let vec = unsafe { &*(*o).data_ptr() };
-                    *self = JsonVal::Object(Arc::new(RwLock::new(vec.clone())));
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn deep_clone(&self) -> Self {
         match self {
             JsonVal::Array(a) => {
@@ -285,6 +288,96 @@ impl JsonVal {
             }
             other => other.clone(),
         }
+    }
+}
+
+/// Direct deserialization into `JsonVal`. The previous route parsed into
+/// `serde_json::Value` first (a BTreeMap-backed tree with its own String
+/// allocations) and then converted the whole tree again in `from_serde`;
+/// building the XCX structures during the parse removes that entire
+/// intermediate tree and one full traversal. `object_from_members` restores
+/// the exact key semantics the BTreeMap route produced.
+impl<'de> serde::Deserialize<'de> for JsonVal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::Deserialize as _;
+
+        struct JsonValVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for JsonValVisitor {
+            type Value = JsonVal;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("any valid JSON value")
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(JsonVal::Bool(v))
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(JsonVal::Int(v))
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+                if v <= i64::MAX as u64 {
+                    Ok(JsonVal::Int(v as i64))
+                } else {
+                    Ok(JsonVal::Float(v as f64))
+                }
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+                Ok(JsonVal::Float(v))
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(JsonVal::Null)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(JsonVal::Null)
+            }
+
+            fn visit_some<D2>(self, d: D2) -> Result<Self::Value, D2::Error>
+            where
+                D2: serde::Deserializer<'de>,
+            {
+                JsonVal::deserialize(d)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(JsonVal::String(Arc::new(crate::vm::object::StringObj::new(
+                    v.as_bytes().to_vec(),
+                ))))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut vec = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(4096));
+                while let Some(v) = seq.next_element::<JsonVal>()? {
+                    vec.push(v);
+                }
+                Ok(JsonVal::Array(Arc::new(RwLock::new(vec))))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut members = Vec::new();
+                while let Some((k, v)) = map.next_entry::<String, JsonVal>()? {
+                    members.push((intern_key(k), v));
+                }
+                Ok(JsonVal::object_from_members(members))
+            }
+        }
+
+        deserializer.deserialize_any(JsonValVisitor)
     }
 }
 

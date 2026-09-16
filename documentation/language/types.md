@@ -1,4 +1,4 @@
-# XCX 4.3 Data Types
+# XCX 4.4 Data Types
 
 ## Simple Types
 

@@ -25,10 +25,10 @@ mod tests {
         let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
 
         let vm = Arc::new(VM::new());
-        let ctx = SharedContext { 
-            constants, 
-            functions, 
-            http_req: None 
+        let ctx = SharedContext {
+            constants,
+            functions,
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         vm
@@ -132,7 +132,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -160,7 +160,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -225,7 +225,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -249,7 +249,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, idx, true, "startsWith(\"admin\") should be true");
@@ -272,7 +272,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, idx, false, "startsWith(\"admin\") should be false");
@@ -295,7 +295,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, idx, true, "endsWith(\".xcx\") should be true");
@@ -318,7 +318,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, idx, false, "endsWith(\".rs\") should be false");
@@ -341,7 +341,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_int(&vm, idx, 42, ".toInt() should return 42");
@@ -364,7 +364,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_float(&vm, idx, 3.14, ".toFloat() expected 3.14");
@@ -394,7 +394,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_int(&vm, first_idx, 1, "After sort first element should be 1");
@@ -421,7 +421,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, idx, true, "@wait(10) should execute");
@@ -451,7 +451,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_bool(&vm, ok_idx,   true,  "bcrypt verify should be true");
@@ -481,7 +481,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_int(&vm, idx, 55, "fib(10) should be 55");
@@ -514,7 +514,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_int(&vm, idx, 25, "Primes up to 100 should be 25");
@@ -551,7 +551,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
         assert_int(&vm, idx, 42, "test_propagation(10) should be 42");
@@ -631,7 +631,7 @@ mod tests {
         let ctx_s = SharedContext { 
             constants: constants_s, 
             functions: functions_s, 
-            http_req: None 
+            http_req: None
         };
 
         let vm_s_copy = vm_s.clone();
@@ -660,7 +660,7 @@ mod tests {
         let ctx_c = SharedContext { 
             constants: constants_c, 
             functions: functions_c, 
-            http_req: None 
+            http_req: None
         };
         vm_c.clone().run(Arc::new(main_chunk_c), ctx_c, &[]);
 
@@ -774,7 +774,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -832,7 +832,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -890,7 +890,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -928,7 +928,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -973,7 +973,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 
@@ -1015,7 +1015,7 @@ mod tests {
         let ctx = SharedContext { 
             constants, 
             functions, 
-            http_req: None 
+            http_req: None
         };
         vm.clone().run(Arc::new(main_chunk), ctx, &[]);
 

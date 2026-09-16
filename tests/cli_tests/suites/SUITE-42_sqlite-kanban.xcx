@@ -1,0 +1,76 @@
+--- TEST: SUITE-42
+--- Area: Applications
+--- Priority: high
+--- Name: SQLite kanban board (cargo-test twin of programs/42_sqlite_kanban.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.delete("prog42_kanban.db");
+database: kanban {
+    engine = "sqlite",
+    path = "prog42_kanban.db"
+};
+
+table: boards {
+    columns = [ id :: i @auto @pk, name :: s @unique ]
+    rows = [EMPTY]
+};
+table: tasks {
+    columns = [
+        id :: i @auto @pk,
+        title :: s,
+        state :: s @default("todo"),
+        board :: i @default(1)
+    ]
+    rows = [EMPTY]
+};
+
+yield kanban.sync(boards);
+yield kanban.sync(tasks);
+
+yield kanban.insert(boards, name = "main") as b1;
+expect("board inserted", b1.insertId == 1);
+
+yield kanban.insert(tasks, title = "design schema") as t1;
+yield kanban.insert(tasks, title = "write code") as t2;
+yield kanban.insert(tasks, title = "write tests") as t3;
+expect("three tasks", t3.insertId == 3);
+
+table: backlog = yield kanban.fetch(tasks).where(state == "todo");
+expect("backlog count", backlog.count() == 3);
+
+yield kanban.exec("UPDATE tasks SET state = ? WHERE title = ?", ["done", "design schema"]) as moved;
+expect("move affected", moved.affected == 1);
+
+table: done_tasks = yield kanban.fetch(tasks).where(state == "done");
+expect("one done", done_tasks.count() == 1);
+expect("done title", done_tasks.get(0).title == "design schema");
+
+table: still_open = yield kanban.fetch(tasks).where(state == "todo");
+expect("two open", still_open.count() == 2);
+
+yield kanban.remove(tasks).where(state == "done");
+table: after_remove = yield kanban.fetch(tasks);
+expect("remove cleared done", after_remove.count() == 2);
+
+kanban.close();
+expect("closed", !kanban.isOpen());
+expect("file removed", store.delete("prog42_kanban.db"));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-42 failed";
+end;

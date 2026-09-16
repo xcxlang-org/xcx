@@ -23,6 +23,7 @@ impl Executor {
                     }
                     Err(_) => {
                         eprintln!("halt.error: Cannot convert \"{}\" to Integer{}", s_str, self.current_span_info(ip));
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         return OpResult::Halt;
                     }
                 }
@@ -36,6 +37,7 @@ impl Executor {
                     }
                     Err(_) => {
                         eprintln!("halt.error: Cannot convert \"{}\" to Float{}", s_str, self.current_span_info(ip));
+                        self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         return OpResult::Halt;
                     }
                 }

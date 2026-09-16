@@ -1,0 +1,89 @@
+--- TEST: SUITE-45
+--- Area: Applications
+--- Priority: high
+--- Name: Random and perf (cargo-test twin of programs/45_random_perf.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+i: pos = 50;
+i: lo = 100;
+i: hi = 0;
+i: steps = 0;
+i: t0 = perf.us();
+while (steps < 500) do;
+    i: roll = random.int(1, 6);
+    if (roll <= 2 && pos > 0) then;
+        pos = pos - 1;
+    end;
+    if (roll >= 5) then;
+        pos = pos + 1;
+    end;
+    if (pos < lo) then;
+        lo = pos;
+    end;
+    if (pos > hi) then;
+        hi = pos;
+    end;
+    steps = steps + 1;
+end;
+i: t1 = perf.us();
+
+expect("walk ran 500 steps", steps == 500);
+expect("perf monotonic", t1 >= t0);
+expect("pos bounded below", lo >= 0);
+
+f: fmin = 100.0;
+f: fmax = 0.0;
+i: draws = 0;
+while (draws < 300) do;
+    f: fv = random.float(0.0, 1.0 @step 0.05);
+    if (fv < fmin) then;
+        fmin = fv;
+    end;
+    if (fv > fmax) then;
+        fmax = fv;
+    end;
+    draws = draws + 1;
+end;
+expect("float draws in range", fmin >= 0.0 && fmax <= 1.0);
+
+set:S: suits {"hearts", "diamonds", "clubs", "spades"};
+i: pick_ok = 0;
+i: picks = 0;
+while (picks < 100) do;
+    s: card = random.choice from suits;
+    if (suits.contains(card)) then;
+        pick_ok = pick_ok + 1;
+    end;
+    picks = picks + 1;
+end;
+expect("choice stays inside set", pick_ok == 100);
+
+set:N: seen {0,,10};
+i: outside = 0;
+i: sample = 0;
+for i in 1 to 300 do;
+    sample = random.int(0, 10);
+    if (!seen.contains(sample)) then;
+        outside = outside + 1;
+    end;
+end;
+expect("all draws inside 0..10", outside == 0);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-45 failed";
+end;

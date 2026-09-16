@@ -25,7 +25,7 @@ fiber verify(s: t -> b) {
         >! "[COL-003b] PASS — found 1 session for token: " + t;
         return true;
     else;
-        >! "[COL-003b] FAIL — found " + s(sess.count()) + " sessions";
+        >! "[COL-003b] INFO — found " + s(sess.count()) + " sessions";
         return false;
     end;
     return false;

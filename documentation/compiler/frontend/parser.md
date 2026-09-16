@@ -269,17 +269,19 @@ if (condition) [then]
 end;
 ```
 
-`elseif`/`elif`/`elf` all parse the same way. The condition must be parenthesized. `then` (with its optional `;`) is consumed when present but not enforced; `end` is likewise consumed only when present.
+`elseif`/`elif` parse the same way (`elf` and `els` were removed as keywords in 4.4 and now lex as plain identifiers). The condition must be parenthesized. `then` (with its optional `;`) is consumed when present but not enforced; `end` is likewise consumed only when present.
+
+**Block semicolons are optional (4.4).** The semicolon after `then`, `do`, `else`, `end`, and after the closing `}` of `func`/`fiber` definitions and `{ }`-shaped declarations (`map`/`table`/`database`) is consumed when present and not required. The bare form is the recommended style; statement semicolons inside block bodies remain required. The `;` form is removed in XCX 5.0a.
 
 ### While Statement (`parse_while_statement`)
 
 ```
-while (condition) [do];
+while (condition) [do][;]
     body
-end;
+end[;]
 ```
 
-The condition must be parenthesized; `do` is optional but a `;` is required right after it. A missing `end` is tolerated (consumed only when present).
+The condition must be parenthesized; `do` is optional and so is the `;` after it. A missing `end` is tolerated (consumed only when present).
 
 ### For Statement (`parse_for_statement`)
 
@@ -299,12 +301,12 @@ func name([Type param, ... -> ReturnType]) {
 };
 ```
 
-Parameters are `(Type name)` or `(Type : name)` pairs (names may be dotted). The optional return type is placed after an `->` arrow **inside** the parameter list; an `->` after `)` is rejected with a dedicated error. The block is bounded by `{}` and requires a trailing `;`.
+Parameters are `(Type name)` or `(Type : name)` pairs (names may be dotted). The optional return type is placed after an `->` arrow **inside** the parameter list; an `->` after `)` is rejected with a dedicated error. The block is bounded by `{}`; a trailing `;` after the closing brace is optional (recommended style: without).
 
 ### Fiber Statements (`parse_fiber_statement`)
 
 Two forms:
-1. **Definition**: `fiber name(Type param, ... -> ReturnType) { ... };` — the return type sits inside the parens after `->` (or comes from the `fiber : Type name(...)` spelling); the body is brace-delimited. Stores as `FiberDef`.
+1. **Definition**: `fiber name(Type param, ... -> ReturnType) { ... }` — the return type sits inside the parens after `->` (or comes from the `fiber : Type name(...)` spelling); the body is brace-delimited; a trailing `;` after `}` is optional. Stores as `FiberDef`.
 2. **Instantiation**: `fiber [: InnerType] varName = FiberName(args);` — stores as `FiberDecl`.
 
 ### Halt Statement (`parse_halt_stmt`)
@@ -437,6 +439,12 @@ Specialized `expect` for `;`. The error message is context-aware:
 - After `do` → "Expected ';' after 'do'. Did you forget the semicolon?"
 - Otherwise → "Expected ';' at the end of the statement."
 
+Since 4.4, block-position semicolons (after `then`/`do`/`else`, after `end`, and
+after the closing `}` of `func`/`fiber`/data-literal declarations) are consumed
+optionally and no longer route through `expect_semicolon`. The function remains
+for flat statement terminators (assignments, calls, `return`, `break`,
+`continue`, declarations), where `;` is still required.
+
 ---
 
 ## Identifier Parsing (`parse_identifier_as_string_id`)
@@ -459,6 +467,7 @@ pub struct Expander<'a> {
     visiting_files: HashSet<PathBuf>,
     included_files: HashSet<PathBuf>,
     aliases: HashMap<StringId, String>,
+    alias_exports: Vec<(StringId, HashSet<StringId>)>,
     include_paths: Vec<PathBuf>,
 }
 ```
@@ -478,7 +487,15 @@ Walks the top-level statement list. For each `StmtKind::Include`:
 
 When `include "lib.xcx" as lib;` is used, all top-level names in `lib.xcx` are renamed to `lib.name` in the AST. Call sites that reference `lib.foo(...)` or `lib.foo` are rewritten to `FunctionCall { name: "lib.foo" }` or `Identifier("lib.foo")` respectively.
 
-The expansion also handles the edge case of mathematical constants (`PI`, `E`, `TAU`, `PHI`, `SQRT2`, `LN2`, `LN10`, `INF`, `INT_MAX`, `INT_MIN`) in aliased includes — these are prefixed the same as functions.
+The expansion also handles the edge case of mathematical constants (`PI`, `E`,
+`TAU`, `PHI`, `SQRT2`, `LN2`, `LN10`, `INF`, `INT_MAX`, `INT_MIN`) in aliased
+includes. Since 4.4 the rewrite is conditional: for each aliased include the
+expander records the module's unprefixed top-level names (`alias_exports`, in
+encounter order), and a bare math-constant identifier is rewritten to
+`<alias>.<NAME>` only when that module actually declares the symbol (first
+match in include order). Aliases whose module does not export the name leave
+the identifier untouched, so user variables named `PI`/`E`/`TAU` resolve
+normally.
 
 ### Include Path Registration
 

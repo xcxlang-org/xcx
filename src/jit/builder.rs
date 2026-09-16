@@ -186,3 +186,24 @@ pub fn create_jit_builder() -> JITBuilder {
 
     builder
 }
+
+/// ISA used by the loop-alignment probe pass. Identical settings to the JIT
+/// builder (so generated code layout matches byte-for-byte) plus
+/// `machine_code_cfg_info`, which makes the probe report basic-block start
+/// offsets and CFG edges for the finished machine code.
+pub fn probe_isa() -> std::sync::Arc<dyn codegen::isa::TargetIsa> {
+    let mut flag_builder = codegen::settings::builder();
+    flag_builder.set("use_colocated_libcalls", "false").unwrap();
+    flag_builder.set("is_pic", "false").unwrap();
+    flag_builder.set("opt_level", "speed").unwrap();
+    flag_builder.set("enable_alias_analysis", "true").unwrap();
+    flag_builder.set("regalloc_checker", "false").unwrap();
+    flag_builder.set("machine_code_cfg_info", "true").unwrap();
+
+    let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
+        panic!("host machine is not supported: {}", msg);
+    });
+    isa_builder
+        .finish(codegen::settings::Flags::new(flag_builder))
+        .unwrap()
+}

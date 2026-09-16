@@ -13,4 +13,4 @@ pub use stmt::{Stmt, StmtKind, HaltLevel, ForIterType};
 pub use expr::{Expr, ExprKind, SetRange};
 pub use crate::sema::types::{Type, SetType, DatabaseOpKind};
 pub use argument::Argument;
-pub use table::{ColumnDef, ColumnAttribute};
+pub use table::{ColumnDef, ColumnAttribute, DefaultConst};

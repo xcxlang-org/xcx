@@ -184,7 +184,7 @@ fn run_file(
         Ok(s) => s,
         Err(e) => {
             eprintln!("Could not read file {}: {}", filename, e);
-            return;
+            std::process::exit(1);
         }
     };
 
@@ -279,7 +279,9 @@ fn run_file(
     vm_inner.jit_threshold = jit_threshold;
     let vm = Arc::new(vm_inner);
     let vm2 = vm.clone();
-    
+
+    start_memory_watchdog();
+
     let handle = std::thread::Builder::new()
         .name("xcx-executor".to_string())
         .stack_size(64 * 1024 * 1024) // 64MB
@@ -289,6 +291,13 @@ fn run_file(
         .expect("Failed to spawn VM thread");
 
     handle.join().expect("VM thread panicked");
+
+    if std::env::var("XCX_WATCHDOG_DEBUG").is_ok() {
+        unsafe extern "C" {
+            fn mi_stats_print(out: *mut core::ffi::c_void);
+        }
+        unsafe { mi_stats_print(std::ptr::null_mut()) };
+    }
     
     use std::io::Write;
     let _ = std::io::stdout().flush();
@@ -299,4 +308,123 @@ fn run_file(
         eprintln!("[XCX] Process failed with {} errors.", error_count);
         std::process::exit(1);
     }
+}
+
+/// Default memory ceiling for a running XCX process (committed private
+/// bytes). Chosen above the heaviest legitimate benchmark peaks (~300 MB)
+/// and far below the 18 GB runaway-leak incidents that motivated it.
+const MEMORY_WATCHDOG_DEFAULT_MB: usize = 8 * 1024;
+
+/// Polls the process' committed private memory every 250 ms and terminates
+/// the process the moment it exceeds the ceiling. A runaway leak must not be
+/// allowed to degrade the host machine — by the time a graceful unwind could
+/// be attempted, the address space itself is the hazard, so this exits hard.
+/// Override the ceiling with `XCX_MAX_RAM_MB` (0 disables the watchdog).
+#[cfg(windows)]
+fn start_memory_watchdog() {
+    let limit_mb: usize = std::env::var("XCX_MAX_RAM_MB")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(MEMORY_WATCHDOG_DEFAULT_MB);
+    if limit_mb == 0 {
+        return;
+    }
+
+    std::thread::Builder::new()
+        .name("xcx-mem-watchdog".to_string())
+        .spawn(move || {
+            let debug = std::env::var("XCX_WATCHDOG_DEBUG").is_ok();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let used_mb = unsafe { private_bytes_mb() };
+                if debug {
+                    eprintln!("[watchdog] used={}MB", used_mb);
+                }
+                if used_mb > limit_mb {
+                    flush_all_output();
+                    eprintln!(
+                        "[XCX] Fatal: memory limit exceeded ({} MB in use, limit {} MB). Terminating to protect the host.",
+                        used_mb, limit_mb
+                    );
+                    std::process::exit(1);
+                }
+            }
+        })
+        .expect("Failed to spawn memory watchdog thread");
+}
+
+#[cfg(not(windows))]
+fn start_memory_watchdog() {}
+
+#[cfg(windows)]
+unsafe fn private_bytes_mb() -> usize {
+    #[repr(C)]
+    struct ProcessMemoryCountersEx {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+        /// PRIVATE_USAGE — committed private bytes, the leak metric.
+        private_usage: usize,
+    }
+
+    unsafe extern "system" {
+        // K32 variant: modern kernel32 export of GetProcessMemoryInfo (the
+        // psapi.dll forwarder is unreliable to link directly here).
+        fn K32GetProcessMemoryInfo(
+            process: *mut core::ffi::c_void,
+            counters: *mut ProcessMemoryCountersEx,
+            cb: u32,
+        ) -> i32;
+        fn GetCurrentProcess() -> *mut core::ffi::c_void;
+        fn GetLastError() -> u32;
+    }
+
+    let mut counters = ProcessMemoryCountersEx {
+        cb: std::mem::size_of::<ProcessMemoryCountersEx>() as u32,
+        page_fault_count: 0,
+        peak_working_set_size: 0,
+        working_set_size: 0,
+        quota_peak_paged_pool_usage: 0,
+        quota_paged_pool_usage: 0,
+        quota_non_paged_pool_usage: 0,
+        pagefile_usage: 0,
+        peak_pagefile_usage: 0,
+        private_usage: 0,
+    };
+    // PRIVATE_USAGE (== PagefileUsage semantics) = committed private bytes —
+    // the metric that grows with a leak regardless of what the working set
+    // trims. The EX struct is required: the plain 64-byte buffer is rejected
+    // with ERROR_INSUFFICIENT_BUFFER (122).
+    let ok = unsafe {
+        K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb)
+    };
+    if polls_debug() {
+        let err = unsafe { GetLastError() };
+        eprintln!(
+            "[watchdog-dbg] ok={} err={} private_usage={}MB cb={}",
+            ok, err, counters.private_usage / (1024 * 1024), counters.cb
+        );
+    }
+    if ok != 0 {
+        counters.private_usage / (1024 * 1024)
+    } else {
+        0
+    }
+}
+
+fn polls_debug() -> bool {
+    // Raw per-poll diagnostics only under the explicit debug flag.
+    std::env::var("XCX_WATCHDOG_DEBUG").is_ok()
+}
+
+fn flush_all_output() {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
 }

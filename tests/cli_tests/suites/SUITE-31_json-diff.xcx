@@ -1,0 +1,86 @@
+--- TEST: SUITE-31
+--- Area: Applications
+--- Priority: high
+--- Name: Structural JSON diff (cargo-test twin of programs/31_json_diff.xcx)
+--- Note: exercises recursive for..in json walking (regression guard for the
+--- inliner/loop-register collision fixed in 4.4); exits nonzero via
+--- halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+json: doc_a <<< {"name": "app", "version": 3, "db": {"host": "a", "port": 5432}} >>>;
+json: doc_b <<< {"name": "app", "version": 4, "db": {"host": "b", "port": 5432}, "cache": true} >>>;
+
+array:s: paths_a;
+array:s: paths_b;
+
+func collect(json: doc, s: prefix, array:s: out) {
+    array:s: ks = doc.keys();
+    for k in ks do;
+        s: p = k;
+        if (prefix != "") then;
+            p = prefix + "." + k;
+        end;
+        json: child = doc.get(p);
+        s: as_text = child.toStr();
+        if (as_text HAS "{") then;
+            collect(child, p, out);
+        else;
+            out.push(p);
+        end;
+    end;
+};
+
+collect(doc_a, "", paths_a);
+collect(doc_b, "", paths_b);
+
+expect("paths a count", paths_a.size() == 4);
+expect("paths b count", paths_b.size() == 5);
+
+i: n_add = 0;
+i: n_rem = 0;
+i: n_chg = 0;
+i: n_same = 0;
+
+for p in paths_b do;
+    if (paths_a.contains(p)) then;
+        if (doc_a.get(p).toStr() == doc_b.get(p).toStr()) then;
+            n_same = n_same + 1;
+        else;
+            n_chg = n_chg + 1;
+        end;
+    else;
+        n_add = n_add + 1;
+    end;
+end;
+
+for p in paths_a do;
+    if (!paths_b.contains(p)) then;
+        n_rem = n_rem + 1;
+    end;
+end;
+
+expect("added = cache", n_add == 1 && paths_b.contains("cache"));
+expect("removed none", n_rem == 0);
+expect("changed version", n_chg == 2 && doc_b.get("version").toStr() == "4");
+expect("changed host", doc_b.get("db.host").toStr() == "b");
+expect("same count", n_same == 2);
+expect("name unchanged", doc_a.get("name").toStr() == doc_b.get("name").toStr());
+expect("port unchanged", doc_a.get("db.port").toStr() == doc_b.get("db.port").toStr());
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-31 failed";
+end;

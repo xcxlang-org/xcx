@@ -1,0 +1,32 @@
+--- TEST: MIN-18
+--- Area: HTTP Client
+--- Priority: high
+--- Name: Minimal HTTP client error contract (server-independent; pair with MIN-17 for live checks)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+json: bad = net.get("http://127.0.0.1:59999/health");
+expect("closed port flag", !bad.ok);
+expect("closed port status", bad.get("status").toStr() == "0");
+s: err;
+bad.bind("error", err);
+expect("error text", err.length > 0);
+json: body = bad.get("body");
+expect("body false shape", body.toStr() == "false");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-18 failed";
+end;

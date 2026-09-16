@@ -21,9 +21,14 @@ Compilation of one function is initiated by `JIT::compile_method` (implemented i
 1. **Clear Context:** Instantiates/clears JIT function generation state (`module.clear_context`).
 2. **Signature Build & Declaration:** Builds the target function's calling convention and declares the function.
 3. **Symbol Importation:** Maps FFI symbols into the Cranelift internal function representation (`SymbolRegistry::new` + `import_in_func`).
-4. **Register Pre-Analysis:** Sweeps the chunk's bytecode to build pointer tracking maps, type tag inference grids, and liveness regions (`src/jit/analysis.rs`).
+4. **Register Pre-Analysis:** Sweeps the chunk's bytecode to build pointer tracking maps, type tag inference grids, and liveness regions (`src/jit/analysis.rs`). Parameter registers are seeded from the chunk's declared signature types (`Chunk::param_types`); remaining registers keep flat inference, and the seed never invents operand facts — an arithmetic op's result type is derived from its operands only.
 5. **Cranelift IR Builder Execution:** Loops over bytecode, generating Cranelift IR for each operation.
 6. **Code Generation:** Emits compiled machine code into executable memory using Cranelift's JIT infrastructure.
+
+Two 4.4 properties of the pipeline:
+
+- **Determinism:** analyses that collect register/global sets use ordered containers (`BTreeSet`), and spill/reload emission sorts by index instead of iterating a hash map, so the same binary produces the same machine code on every run.
+- **Failure reporting:** code finalization failures report the chunk name and the real Cranelift/module error at all three compile sites (warmup, FFI-entry, and direct) instead of silently disabling the JIT.
 
 ---
 
@@ -62,11 +67,11 @@ For internal self-recursive or local segment calls, the compiler generates two n
 - **Inner Function (`Linkage::Local`):** Receives parameters directly via register-based CPU ABIs (pairs of `(bits_reg, tag_reg)`) instead of reading them from the `locals_ptr` stack frame.
 - **Outer Wrapper (`Linkage::Export`):** Serves as the FFI bridge for the interpreter. It unpacks arguments from `locals_ptr`, executes the local inner function, records the resulting `Value` back into `out_ptr`, and returns the frame status.
 
-**Recursion depth guard:** before performing a local recursive call, the compiler emits a native comparison of the call-depth counter (stored on the `Executor`) against a fixed limit of `800`, using `IntCC::SignedGreaterThanOrEqual`. On overflow, execution branches to a dedicated block that invokes the `xcx_jit_check_recursion` FFI helper to report the failure and returns a halt status — the failure path itself is not inlined at each call site, keeping the guard's generated code compact (registers are spilled ahead of the guard on some paths, not inside the overflow block). On the non-overflow path the depth counter is incremented before the recursive call and restored to its prior value afterwards.
+**Recursion depth guard:** before performing a local recursive call, the compiler emits a native comparison of the call-depth counter (stored on the `Executor`) against a fixed limit of `800`, using `IntCC::SignedGreaterThanOrEqual`. On overflow, execution branches to a dedicated block that invokes the `xcx_jit_check_recursion` FFI helper to report the failure and returns a halt status — the failure path itself is not inlined at each call site, keeping the guard's generated code compact (registers are spilled ahead of the guard on some paths, not inside the overflow block). On the non-overflow path the depth counter is incremented before the recursive call and restored to its prior value afterwards. Because HIR inlining flattens self-calls, the depth counter measures physical (post-inlining) frames, so equivalent programs may recurse deeper than in 4.3.
 
 #### 2. Cross-Function Direct Call Dispatch
 When calling another function (`func_idx != ctx.self_func_idx`), the compiler audits the callee's JIT status:
-- **Fast-Path (Direct Call):** If the target function has already been JIT-compiled (callee's `jit_ptr` is non-null), the compiler emits a Cranelift `call_indirect` instruction directly to that memory location. The compiler increments `call_depth` check-bounds, moves the VM register stack pointer (`stack_ptr`) forward by `callee_chunk.max_locals` to frame local scopes, and restores them on return. Global variables are reloaded from memory after the call only when the callee's static analysis marks it as heap-touching (`callee_uses_heap`); a callee known to be pure math skips the reload.
+- **Fast-Path (Direct Call):** If the target function has already been JIT-compiled (callee's `jit_ptr` is non-null), the compiler emits a Cranelift `call_indirect` instruction directly to that memory location. The compiler increments `call_depth` check-bounds, moves the VM register stack pointer (`stack_ptr`) forward by `callee_chunk.max_locals` to frame local scopes, and restores them on return. Global variables are reloaded from memory after the call, narrowed to the callee's **transitive global-slot write set** — computed as a fixpoint over the call graph (recursion-safe). Callees that write no globals add zero reload cost; the older `callee_uses_heap` gate is superseded.
 - **Slow-Path Fallback:** If the callee is uncompiled (`jit_ptr` is null), processing falls back to the interpreter interface via the `xcx_jit_call_recursive` FFI helper.
 
 ```
@@ -99,5 +104,5 @@ Through this registration, JIT-generated Cranelift IR calls external routines fo
 - Deep recursion checks (`xcx_jit_check_recursion`, `xcx_jit_dec_recursion`).
 - Bounds-checked collection fallbacks (`xcx_jit_array_get_bool` and equivalents), invoked when a fast-path bounds check on `Array`/`BoolArray` element access fails — see `compiler/jit/jit_codegen.md`.
 
-### Macro-driven Declarations (`src/jit/symbol_macros.rs`)
-The `declare_jit_symbols!` macro exists and can generate (1) the fields of the `SymbolRegistry` struct, (2) the fields of the `ImportedSymbols` struct, (3) the linkage declarations inside `SymbolRegistry::new`, and (4) the per-function imports in `SymbolRegistry::import_in_func` — but it is currently **unused dead code**: `src/jit/symbols/mod.rs` hand-writes the registry and `symbol_macros.rs` is not declared in `src/jit/mod.rs`.
+### Macro-driven Declarations (`src/jit/symbol_macros.rs` — removed 2026-09-07)
+A `declare_jit_symbols!` macro existed that could generate (1) the fields of the `SymbolRegistry` struct, (2) the fields of the `ImportedSymbols` struct, (3) the linkage declarations inside `SymbolRegistry::new`, and (4) the per-function imports in `SymbolRegistry::import_in_func` — but it was never wired into the module tree: `src/jit/symbols/mod.rs` hand-writes the registry. The dead file was deleted on 2026-09-07 (verified: cargo did not recompile on its removal).

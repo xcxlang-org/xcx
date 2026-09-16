@@ -207,11 +207,10 @@ impl FunctionCompiler {
                     self.emit(OpCode::MethodCall { dst: size_reg, kind: MethodKind::Size, base: receiver_reg, arg_count: 0 }, &stmt.span);
                     let zero_idx = ctx.add_constant(Value::from_i64(0));
                     self.emit(OpCode::LoadConst { dst: index_reg, idx: zero_idx }, &stmt.span);
-                    let loop_var_reg = if let Some(s) = self.lookup_local(var_name) {
-                        let r = s as u8; if s >= self.next_local { self.next_local = s + 1; } r
-                    } else {
-                        let s = self.push_reg(); self.define_local(*var_name, s as usize); s
-                    };
+                    // Fresh register for the loop variable — see the fiber arm:
+                    // a stale slot can alias the iterable's own storage.
+                    let loop_var_reg = self.push_reg();
+                    self.define_local(*var_name, loop_var_reg as usize);
                     let saved_for = self.enter_scope();
                     self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: None });
                     let start_label = self.bytecode.len();
@@ -313,11 +312,13 @@ impl FunctionCompiler {
                 }
                 ForIterType::Fiber => {
                     let fiber_reg = self.compile_expr(start, ctx);
-                    let loop_var_reg = if let Some(s) = self.lookup_local(var_name) {
-                        let r = s as u8; if s >= self.next_local { self.next_local = s + 1; } r
-                    } else {
-                        let s = self.push_reg(); self.define_local(*var_name, s as usize); s
-                    };
+                    // The loop variable always gets a fresh register, like the
+                    // range arm. Reusing a stale local slot here can alias the
+                    // iterable's own storage (two loops over the same variable
+                    // name recycle registers), and every Next() would then
+                    // overwrite the fiber with the yielded value.
+                    let loop_var_reg = self.push_reg();
+                    self.define_local(*var_name, loop_var_reg as usize);
                     let saved_for = self.enter_scope();
                     self.loop_stack.push(LoopFrame { start_pc: 0, breaks: Vec::new(), continues: Vec::new(), fiber_reg: Some(fiber_reg as usize) });
                     let start_label = self.bytecode.len();

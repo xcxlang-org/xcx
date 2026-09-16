@@ -50,7 +50,12 @@ impl Executor {
             _ => { return OpResult::Halt; }
         }
 
-        let conn = db_rc.conn.lock();
+        let conn_guard = db_rc.conn.lock();
+        let Some(conn) = conn_guard.as_ref() else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("R401: database connection is closed{}", self.current_span_info(ip));
+            return OpResult::Halt;
+        };
         match conn.prepare(&sql) {
             Ok(mut stmt) => {
                 let col_count = stmt.column_count();
@@ -88,7 +93,13 @@ impl Executor {
                             if let Ok(v) = row.get::<_, i64>(i) { xrow.push(Value::from_i64(v)); }
                             else if let Ok(v) = row.get::<_, f64>(i) { xrow.push(Value::from_f64(v)); }
                             else if let Ok(v) = row.get::<_, String>(i) { xrow.push(Value::from_string(Arc::new(StringObj::new(v.into_bytes())))); }
-                            else { xrow.push(Value::from_bool(false)); }
+                            else {
+                                // SQL NULL → documented default of the column's
+                                // declared type (database.md, @optional Behavior);
+                                // bool false when the column is not in the skeleton.
+                                xrow.push(Self::null_default(&col_names[i], target_table.as_ref())
+                                    .unwrap_or_else(|| Value::from_bool(false)));
+                            }
                         }
                         xrows.extend(xrow);
                     }
@@ -113,6 +124,24 @@ impl Executor {
                 return OpResult::Continue;
             }
         }
-        OpResult::Continue
-    }
+    OpResult::Continue
+}
+
+/// database.md, @optional Behavior: SQL NULL reads back as the column's
+/// declared-type default ("" for `s`, 0 for `i`, …). `false` (the historic
+/// fallback) only when the column is not present in the table skeleton.
+fn null_default(name: &str, table: Option<&Arc<RwLock<TableObj>>>) -> Option<Value> {
+    use crate::frontend::ast::Type;
+    let table = table?;
+    let binding = table.read();
+    let col = binding.columns.iter().find(|c| c.name == name)?;
+    Some(match col.ty {
+        Type::Int => Value::from_i64(0),
+        Type::Float => Value::from_f64(0.0),
+        Type::String => Value::from_string(Arc::new(StringObj::new(Vec::new()))),
+        Type::Bool => Value::from_bool(false),
+        Type::Date => Value::from_date(0),
+        _ => Value::from_bool(false),
+    })
+}
 }

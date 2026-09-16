@@ -1,0 +1,18 @@
+--- TEST: MIN-17
+--- Area: HTTP Server
+--- Priority: high
+--- Name: Minimal HTTP server (skipped by the spec runner; verify manually with a client)
+--- Runner: blocking server, manual run only
+
+fiber handle_health(json: req -> json) {
+    yield net.respond(200, <<< {"status": "ok"} >>>);
+    return <<< {} >>>;
+};
+
+serve: mini {
+    port = 8199,
+    host = "127.0.0.1",
+    routes = [
+        "GET /health" :: handle_health
+    ]
+};

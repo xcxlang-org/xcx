@@ -28,6 +28,7 @@ pub fn run_inliner_pass(funcs: &mut HashMap<u32, HirFunc>) {
                     func,
                     depth,
                     &mut new_locals,
+                    false,
                 ));
             }
 
@@ -58,6 +59,7 @@ fn inline_in_block(
     caller: &HirFunc,
     depth: usize,
     new_locals: &mut Vec<HirLocalDef>,
+    in_loop: bool,
 ) -> Vec<HirStmt> {
     let mut result = Vec::new();
     for stmt in stmts {
@@ -69,6 +71,7 @@ fn inline_in_block(
             caller,
             depth,
             new_locals,
+            in_loop,
         ));
     }
     result
@@ -82,43 +85,44 @@ fn inline_in_stmt(
     caller: &HirFunc,
     depth: usize,
     new_locals: &mut Vec<HirLocalDef>,
+    in_loop: bool,
 ) -> Vec<HirStmt> {
     let mut prepended = Vec::new();
 
     match &mut stmt.kind {
         HirStmtKind::ExprStmt(expr) => {
-            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::VarDecl { value, .. } => {
             if let Some(val) = value {
-                prepended = extract_calls_from_expr(val, funcs, func_indices, next_local, caller, depth, new_locals);
+                prepended = extract_calls_from_expr(val, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
             }
         }
         HirStmtKind::Assign { value, .. } => {
-            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::AssignGlobal { value, .. } => {
-            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::Print(expr) => {
-            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::TerminalWrite(expr) => {
-            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::Return(expr) => {
             if let Some(e) = expr {
-                prepended = extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals);
+                prepended = extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
             }
         }
         HirStmtKind::Wait(expr) => {
-            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::Yield { value, .. } => {
-            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(value, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::YieldFrom(expr) => {
-            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
         }
         HirStmtKind::FunctionCallStmt { name, args } => {
             for arg in args.iter_mut() {
@@ -130,11 +134,12 @@ fn inline_in_stmt(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 ));
             }
             if let Some(&callee_id) = func_indices.get(name) {
                 if let Some(callee) = funcs.get(&callee_id) {
-                    if super::inline_policy::should_inline(callee, caller, depth) {
+                    if super::inline_policy::should_inline(callee, caller, depth, in_loop) {
                         let (inline_stmts, result_local) = super::inline::inline_call_site(callee, args, *next_local);
                         for local in &callee.locals {
                             new_locals.push(local.clone());
@@ -152,7 +157,7 @@ fn inline_in_stmt(
             }
         }
         HirStmtKind::If { condition, then_branch, else_ifs, else_branch } => {
-            prepended = extract_calls_from_expr(condition, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(condition, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
             *then_branch = inline_in_block(
                 std::mem::take(then_branch),
                 funcs,
@@ -161,9 +166,10 @@ fn inline_in_stmt(
                 caller,
                 depth,
                 new_locals,
+                in_loop,
             );
             for (cond, branch) in else_ifs {
-                let cond_prepended = extract_calls_from_expr(cond, funcs, func_indices, next_local, caller, depth, new_locals);
+                let cond_prepended = extract_calls_from_expr(cond, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
                 *branch = inline_in_block(
                     std::mem::take(branch),
                     funcs,
@@ -172,6 +178,7 @@ fn inline_in_stmt(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 );
                 prepended.extend(cond_prepended);
             }
@@ -184,11 +191,12 @@ fn inline_in_stmt(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 );
             }
         }
         HirStmtKind::While { condition, body } => {
-            prepended = extract_calls_from_expr(condition, funcs, func_indices, next_local, caller, depth, new_locals);
+            prepended = extract_calls_from_expr(condition, funcs, func_indices, next_local, caller, depth, new_locals, in_loop);
             *body = inline_in_block(
                 std::mem::take(body),
                 funcs,
@@ -197,13 +205,14 @@ fn inline_in_stmt(
                 caller,
                 depth,
                 new_locals,
+                true,
             );
         }
         HirStmtKind::For { start, end, step, body, .. } => {
-            prepended.extend(extract_calls_from_expr(start, funcs, func_indices, next_local, caller, depth, new_locals));
-            prepended.extend(extract_calls_from_expr(end, funcs, func_indices, next_local, caller, depth, new_locals));
+            prepended.extend(extract_calls_from_expr(start, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+            prepended.extend(extract_calls_from_expr(end, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             if let Some(s) = step {
-                prepended.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals));
+                prepended.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
             *body = inline_in_block(
                 std::mem::take(body),
@@ -213,6 +222,7 @@ fn inline_in_stmt(
                 caller,
                 depth,
                 new_locals,
+                true,
             );
         }
         HirStmtKind::InlineBlock { stmts, .. } => {
@@ -224,6 +234,7 @@ fn inline_in_stmt(
                 caller,
                 depth,
                 new_locals,
+                in_loop,
             );
         }
         // Bypasses statements containing no function calls to inline:
@@ -248,6 +259,7 @@ fn extract_calls_from_expr(
     caller: &HirFunc,
     depth: usize,
     new_locals: &mut Vec<HirLocalDef>,
+    in_loop: bool,
 ) -> Vec<HirStmt> {
     let mut stmts = Vec::new();
     match &mut expr.kind {
@@ -261,11 +273,12 @@ fn extract_calls_from_expr(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 ));
             }
             if let Some(&callee_id) = func_indices.get(name) {
                 if let Some(callee) = funcs.get(&callee_id) {
-                    if super::inline_policy::should_inline(callee, caller, depth) {
+                    if super::inline_policy::should_inline(callee, caller, depth, in_loop) {
                         let (inline_stmts, result_local) = super::inline::inline_call_site(callee, args, *next_local);
 
                         for local in &callee.locals {
@@ -285,19 +298,19 @@ fn extract_calls_from_expr(
             }
         }
         HirExprKind::Binary { left, right, .. } => {
-            stmts.extend(extract_calls_from_expr(left, funcs, func_indices, next_local, caller, depth, new_locals));
-            stmts.extend(extract_calls_from_expr(right, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(left, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+            stmts.extend(extract_calls_from_expr(right, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::Unary { right, .. } => {
-            stmts.extend(extract_calls_from_expr(right, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(right, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::ArrayLiteral { elements } => {
             for e in elements {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::MethodCall { receiver, args, .. } => {
-            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             for arg in args {
                 stmts.extend(extract_calls_from_expr(
                     arg.expr_mut(),
@@ -307,79 +320,80 @@ fn extract_calls_from_expr(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 ));
             }
         }
         HirExprKind::Index { receiver, index } => {
-            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals));
-            stmts.extend(extract_calls_from_expr(index, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+            stmts.extend(extract_calls_from_expr(index, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::MemberAccess { receiver, .. } => {
-            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(receiver, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::SetLiteral { elements, range, .. } => {
             for e in elements {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
             if let Some(r) = range {
-                stmts.extend(extract_calls_from_expr(&mut r.start, funcs, func_indices, next_local, caller, depth, new_locals));
-                stmts.extend(extract_calls_from_expr(&mut r.end, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(&mut r.start, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+                stmts.extend(extract_calls_from_expr(&mut r.end, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
                 if let Some(s) = &mut r.step {
-                    stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals));
+                    stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
                 }
             }
         }
         HirExprKind::ArrayOrSetLiteral { elements } => {
             for e in elements {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::RandomChoice { set } => {
-            stmts.extend(extract_calls_from_expr(set, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(set, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::RandomInt { min, max, step } => {
-            stmts.extend(extract_calls_from_expr(min, funcs, func_indices, next_local, caller, depth, new_locals));
-            stmts.extend(extract_calls_from_expr(max, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(min, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+            stmts.extend(extract_calls_from_expr(max, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             if let Some(s) = step {
-                stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::RandomFloat { min, max, step } => {
-            stmts.extend(extract_calls_from_expr(min, funcs, func_indices, next_local, caller, depth, new_locals));
-            stmts.extend(extract_calls_from_expr(max, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(min, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+            stmts.extend(extract_calls_from_expr(max, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             if let Some(s) = step {
-                stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(s, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::MapLiteral { elements, .. } => {
             for (k, v) in elements {
-                stmts.extend(extract_calls_from_expr(k, funcs, func_indices, next_local, caller, depth, new_locals));
-                stmts.extend(extract_calls_from_expr(v, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(k, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
+                stmts.extend(extract_calls_from_expr(v, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::TableLiteral { rows, .. } => {
             for row in rows {
                 for e in row {
-                    stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                    stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
                 }
             }
         }
         HirExprKind::DatabaseLiteral(elements) => {
             for (_, e) in elements {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::TerminalCommand(_, args) => {
             for e in args {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::Lambda { body, .. } => {
-            stmts.extend(extract_calls_from_expr(body, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(body, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::Tuple(elements) => {
             for e in elements {
-                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals));
+                stmts.extend(extract_calls_from_expr(e, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
             }
         }
         HirExprKind::ModuleCall { args, .. } => {
@@ -392,14 +406,15 @@ fn extract_calls_from_expr(
                     caller,
                     depth,
                     new_locals,
+                    in_loop,
                 ));
             }
         }
         HirExprKind::As { expr, .. } => {
-            stmts.extend(extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         HirExprKind::Yield(expr) => {
-            stmts.extend(extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals));
+            stmts.extend(extract_calls_from_expr(expr, funcs, func_indices, next_local, caller, depth, new_locals, in_loop));
         }
         // Bypasses leaf node expressions that cannot contain nested expressions or function calls:
         // IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, Local, Global, RawBlock, DateLiteral, Tag

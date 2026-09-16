@@ -82,8 +82,6 @@ impl<'a> Cursor<'a> {
     // without careful management of line/col/char_pos.
     pub fn backtrack(&mut self, n: usize) {
         self.pos -= n;
-        // Simple backtrack doesn't fix char_pos/line/col perfectly, 
-        // but for small symbol peeks it's usually okay.
         self.char_pos -= n;
         self.col -= n;
     }

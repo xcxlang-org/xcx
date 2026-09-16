@@ -1,0 +1,30 @@
+--- TEST: MIN-22
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal backup (fast companion of programs/22_backup.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.write("min22_src.txt", "payload-123");
+expect("source written", store.exists("min22_src.txt"));
+store.write("min22_dst.txt", store.read("min22_src.txt"));
+expect("backup equal", store.read("min22_dst.txt") == "payload-123");
+expect("cleanup src", store.delete("min22_src.txt"));
+expect("cleanup dst", store.delete("min22_dst.txt"));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-22 failed";
+end;

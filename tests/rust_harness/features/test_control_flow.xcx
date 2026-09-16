@@ -1,5 +1,5 @@
 --- test_control_flow.xcx
---- if/elseif/elif/elf/else/els, for, while, break, continue
+--- if/elseif/elif/else, for, while, break, continue
 
 >! "Running test_control_flow.xcx...";
 
@@ -11,14 +11,14 @@ if (score >= 90) then;
     grade = "A";
 elif (score >= 75) then;
     grade = "B";
-elf (score >= 60) then;
+elseif (score >= 60) then;
     grade = "C";
-els;
+else;
     grade = "F";
 end;
 
 if (grade != "B") then; 
-    halt.error >! "If/elif/elf/els failed"; 
+    halt.error >! "If/elif/else failed"; 
 end;
 
 --- While loop

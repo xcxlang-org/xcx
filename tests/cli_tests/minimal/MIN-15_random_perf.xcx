@@ -1,0 +1,63 @@
+--- TEST: MIN-15
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal random and perf (fast companion of programs/15_random_perf.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+i: v = 0;
+i: mn = 100;
+i: mx = 0;
+for i in 1 to 200 do;
+    v = random.int(1, 10);
+    if (v < mn) then;
+        mn = v;
+    end;
+    if (v > mx) then;
+        mx = v;
+    end;
+end;
+expect("int bounds", mn >= 1 && mx <= 10);
+f: fv = 0.0;
+f: fmn = 10.0;
+f: fmx = 0.0;
+for i in 1 to 200 do;
+    fv = random.float(0.0, 2.0);
+    if (fv < fmn) then;
+        fmn = fv;
+    end;
+    if (fv > fmx) then;
+        fmx = fv;
+    end;
+end;
+expect("float bounds", fmn >= 0.0 && fmx <= 2.0);
+array:s: pool {"x", "y", "z"};
+s: pick = "";
+b: ok = true;
+for i in 1 to 20 do;
+    pick = random.choice from pool;
+    if (!(pick == "x" || pick == "y" || pick == "z")) then;
+        ok = false;
+    end;
+end;
+expect("choice in pool", ok);
+i: t1 = perf.us();
+i: t2 = perf.us();
+expect("perf monotonic", t2 >= t1);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-15 failed";
+end;

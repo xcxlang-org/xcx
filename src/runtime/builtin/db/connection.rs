@@ -3,6 +3,7 @@ use crate::vm::value::Value;
 use crate::vm::core::vm::OpResult;
 use parking_lot::{RwLock, Mutex};
 use crate::vm::object::DatabaseObj;
+use crate::vm::opcode::MethodKind;
 use crate::vm::Executor;
 
 impl Executor {
@@ -13,7 +14,7 @@ impl Executor {
         match rusqlite::Connection::open(&path) {
             Ok(conn) => {
                 let db_data = Arc::new(DatabaseObj {
-                    conn: Arc::new(Mutex::new(conn)),
+                    conn: Arc::new(Mutex::new(Some(conn))),
                     engine: engine,
                     path: path.clone(),
                     tables: Arc::new(RwLock::new(std::collections::HashMap::new())),
@@ -38,12 +39,34 @@ impl Executor {
         }
     }
 
-    pub fn handle_database_maintenance(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, _ip: usize, locals: &mut [Value]) -> OpResult {
-        let conn = db_rc.conn.lock();
-        // WAL checkpoint
-        let _ = conn.execute("PRAGMA wal_checkpoint(PASSIVE);", []);
-        unsafe { locals[dst as usize].dec_ref(); }
-        locals[dst as usize] = Value::from_bool(true);
+    pub fn handle_database_maintenance(&mut self, dst: u8, db_rc: Arc<DatabaseObj>, kind: MethodKind, _ip: usize, locals: &mut [Value]) -> OpResult {
+        let mut conn_guard = db_rc.conn.lock();
+        match kind {
+            MethodKind::IsOpen => {
+                let open = conn_guard.is_some();
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = Value::from_bool(open);
+            }
+            MethodKind::Sync => {
+                // Bare sync with no table: checkpoint only, connection stays open.
+                if let Some(conn) = conn_guard.as_ref() {
+                    let _ = conn.execute("PRAGMA wal_checkpoint(PASSIVE);", []);
+                }
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = Value::from_bool(true);
+            }
+            _ => {
+                // Close: checkpoint, then drop the connection so the database
+                // file is released (store.delete can remove it afterwards).
+                // Idempotent — closing a closed database stays true.
+                if let Some(conn) = conn_guard.as_ref() {
+                    let _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE);", []);
+                }
+                *conn_guard = None;
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = Value::from_bool(true);
+            }
+        }
         OpResult::Continue
     }
 }

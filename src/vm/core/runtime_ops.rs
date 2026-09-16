@@ -126,21 +126,21 @@ impl RuntimeOps {
             crate::vm::value::Tag::Array => {
                 let arr = c.as_array();
                 let len = arr.read().len() as i64;
-                if name == "size" || name == "count" || name == "length" {
+                if name == "size" || name == "count" || name == "length" || name == "len" {
                     res = Value::from_i64(len);
                 }
             }
             crate::vm::value::Tag::Set => {
                 let set = c.as_set();
                 let len = set.read().elements.len() as i64;
-                if name == "size" || name == "count" {
+                if name == "size" || name == "count" || name == "len" {
                     res = Value::from_i64(len);
                 }
             }
             crate::vm::value::Tag::Map => {
                 let map = c.as_map();
                 let len = map.read().elements.len() as i64;
-                if name == "size" || name == "count" {
+                if name == "size" || name == "count" || name == "len" {
                     res = Value::from_i64(len);
                 }
             }
@@ -152,13 +152,13 @@ impl RuntimeOps {
                         if let Some((_, val)) = o_read.iter().find(|(k, _)| k.as_str() == name) {
                             res = crate::vm::utils::json_val_to_value(val);
                         }
-                        if name == "size" || name == "count" || name == "length" {
+                        if name == "size" || name == "count" || name == "length" || name == "len" {
                             res = Value::from_i64(o_read.len() as i64);
                         }
                     }
                     crate::vm::object::JsonVal::Array(a) => {
                         let a_read = a.read();
-                        if name == "size" || name == "count" || name == "length" {
+                        if name == "size" || name == "count" || name == "length" || name == "len" {
                             res = Value::from_i64(a_read.len() as i64);
                         }
                     }
@@ -177,15 +177,19 @@ impl RuntimeOps {
             crate::vm::value::Tag::Date => {
                 let ts = c.as_date();
                 use chrono::{Datelike, Timelike};
+                // Local-time view, consistent with .format() (handle_date_method):
+                // date("YYYY-MM-DD") stores midnight **local** as UTC millis, and
+                // date.now() stores the true instant — both must present the same
+                // wall clock through properties and formatting.
                 if let Some(dt) = chrono::DateTime::from_timestamp_millis(ts) {
-                    let utc = dt.naive_utc();
+                    let local = dt.with_timezone(&chrono::Local);
                     match name {
-                        "year" => res = Value::from_i64(utc.year() as i64),
-                        "month" => res = Value::from_i64(utc.month() as i64),
-                        "day" => res = Value::from_i64(utc.day() as i64),
-                        "hour" => res = Value::from_i64(utc.hour() as i64),
-                        "minute" => res = Value::from_i64(utc.minute() as i64),
-                        "second" => res = Value::from_i64(utc.second() as i64),
+                        "year" => res = Value::from_i64(local.year() as i64),
+                        "month" => res = Value::from_i64(local.month() as i64),
+                        "day" => res = Value::from_i64(local.day() as i64),
+                        "hour" => res = Value::from_i64(local.hour() as i64),
+                        "minute" => res = Value::from_i64(local.minute() as i64),
+                        "second" => res = Value::from_i64(local.second() as i64),
                         "ms" => res = Value::from_i64(dt.timestamp_subsec_millis() as i64),
                         _ => {}
                     }
@@ -222,9 +226,10 @@ impl RuntimeOps {
 
                         if let Some(binding) = binding_opt {
                             let table_name = binding.table_name.clone();
-                            let conn = binding.db_conn.lock();
                             let sql = format!("SELECT * FROM [{}]", table_name);
-                             if let Ok(mut stmt) = conn.prepare(&sql) {
+                            let conn_guard = binding.db_conn.lock();
+                            let mut prepared = conn_guard.as_ref().and_then(|c| c.prepare(&sql).ok());
+                             if let (_conn, Some(stmt)) = (conn_guard.as_ref(), prepared.as_mut()) {
                                  let mut new_rows = Vec::new();
                                  if let Ok(rows_iter) = stmt.query_map(rusqlite::params![], |row| {
                                      let mut row_vals = Vec::with_capacity(cols.len());

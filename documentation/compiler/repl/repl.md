@@ -33,6 +33,8 @@ The execution loop manages command input and evaluation cycles:
    - **Compilation:** Compiles AST nodes into a `main` execution chunk, updating JIT structures and static constants.
    - **VM Execution:** Dispatches the main bytecode chunk to `self.vm.run` inside a temporary execution context.
 
+Cooperative shutdown is backed by a single consolidated `SHUTDOWN` flag (set by the Ctrl-C handler); the VM dispatch loop polls it every 1024 executed instructions, so an interrupt stops a running REPL evaluation cleanly instead of being ignored.
+
 ---
 
 ## Multi-Line Input Editor (`src/repl/input.rs`)

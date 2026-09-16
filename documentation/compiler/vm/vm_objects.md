@@ -52,7 +52,7 @@ pub struct ArrayObj {
 }
 ```
 
-Dynamic ordered collection. Wrapped in `Arc<RwLock<ArrayObj>>`. The `RwLock` allows shared reads across concurrent fiber execution.
+Dynamic ordered collection. Wrapped in `Arc<RwLock<ArrayObj>>`. The `RwLock` allows shared reads across concurrent fiber execution. Since 4.4 the hot paths skip the lock entirely when the executor register uniquely owns the collection: `GetIndex`/`SetIndex` on a uniquely-owned array, and `StrAppendLocal`/`StrAppendVar` in-place appends, operate directly on the backing store without acquiring `RwLock`.
 
 `Drop` decrements the reference count of every element:
 ```rust
@@ -177,7 +177,7 @@ An in-memory JSON tree. All nodes are `Clone`. Arrays and objects are wrapped in
 
 `pointer(path: &str) -> Option<JsonVal>` — RFC 6901 JSON pointer traversal. Splits path on `/`, traverses arrays by index and objects by key.
 
-`deep_clone()` — recursively copies every node. The JIT JSON parse cache uses `is_flat()` to decide when to clone. (Note: `shallow_clone` was removed in Phase 3C).
+`deep_clone()` — recursively copies every node. The shared `json.parse` cache (one cache for both execution modes since 4.4, keyed by string content) stores parsed roots; hits return an `Arc`-shared clone of the root. (Note: `shallow_clone` was removed in Phase 3C).
 
 ---
 
@@ -288,20 +288,7 @@ Wrapped in `Arc<DatabaseObj>`.
 
 ## Stack Structures
 
-### `ValueStack`
-
-```rust
-pub struct ValueStack {
-    pub stack: Vec<Value>,  // pre-allocated to MAX_STACK (256K values)
-    pub sp:    usize,
-}
-```
-
-A pre-allocated value stack. `MAX_STACK = 256 * 1024` values (2MB at 8 bytes/value). Operations: `push`, `pop`, `peek(distance)`, `get(idx)`, `set(idx, val)`. All are `#[inline]` and panic on overflow/underflow.
-
-`Drop` decrements refcounts for all values still on the stack when the stack is freed.
-
-Note: in the current `Executor` design the executor uses its own inline `Vec<Value>` stack (`stack: Vec<Value>`) initialized to 64K entries; `ValueStack` is available as an alternative but the main execution path uses the executor's own field. (Note: `StackGuard` was removed in Phase 3A as recursion limits are enforced elsewhere).
+The legacy `ValueStack` type (a pre-allocated `Vec<Value>` with explicit `sp`, `push`/`pop`/`peek`) and the `vm/frame` module (`CallFrame`, `FrameStack`) were removed in 4.4 as remnants of an older stack-based design. The executor is the only execution structure: it uses its own inline `Vec<Value>` stack (`stack: Vec<Value>`) initialized to 64K entries (512K when JIT is active), and recursion limits are enforced by `Executor::call_depth` / the JIT's native 800-frame guard.
 
 ---
 

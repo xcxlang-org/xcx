@@ -1,0 +1,41 @@
+--- TEST: MIN-05
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal maps (fast companion of programs/05_maps.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+map: m {
+    schema = [s <-> i]
+    data = [ "a" :: 1, "b" :: 2 ]
+};
+expect("init size", m.size() == 2);
+m.insert("c", 3);
+expect("insert get", m.get("c") == 3);
+expect("contains", m.contains("b"));
+expect("keys", m.keys().size() == 3);
+array:i: vals = m.values();
+i: sum = 0;
+for v in vals do;
+    sum = sum + v;
+end;
+expect("values sum", sum == 6);
+expect("remove", m.remove("a") && !m.contains("a"));
+expect("toJson", m.toJson().toStr() HAS "\"b\"");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-05 failed";
+end;

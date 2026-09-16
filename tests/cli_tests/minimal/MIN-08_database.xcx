@@ -1,0 +1,46 @@
+--- TEST: MIN-08
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal database (fast companion of programs/08_database.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.delete("min08.db");
+database: db {
+    engine = "sqlite",
+    path = "min08.db"
+};
+table: items {
+    columns = [ id :: i @auto @pk, name :: s @unique, qty :: i @default(1) ]
+    rows = [EMPTY]
+};
+yield db.sync(items);
+yield db.insert(items, name = "a") as r1;
+yield db.insert(items, name = "b", qty = 5) as r2;
+expect("insert ids", r1.insertId == 1 && r2.insertId == 2);
+expect("default applied", r1.affected == 1);
+table: all = yield db.fetch(items);
+expect("fetch count", all.count() == 2);
+yield db.remove(items).where(name == "a");
+table: left = yield db.fetch(items);
+expect("remove where", left.count() == 1);
+db.close();
+expect("closed", !db.isOpen());
+expect("cleanup", store.delete("min08.db"));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-08 failed";
+end;

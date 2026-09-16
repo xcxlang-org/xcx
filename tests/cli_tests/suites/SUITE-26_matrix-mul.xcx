@@ -1,0 +1,51 @@
+--- TEST: SUITE-26
+--- Area: Applications
+--- Priority: high
+--- Name: 3x3 matrix multiply (cargo-test twin of programs/26_matrix.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+array:i: a {1, 2, 3, 4, 5, 6, 7, 8, 9};
+array:i: b {9, 8, 7, 6, 5, 4, 3, 2, 1};
+array:i: c;
+
+for i in 0 to 2 do;
+    for j in 0 to 2 do;
+        i: sum = 0;
+        for k in 0 to 2 do;
+            sum = sum + a.get(i * 3 + k) * b.get(k * 3 + j);
+        end;
+        c.push(sum);
+    end;
+end;
+
+expect("result size", c.size() == 9);
+expect("c[0]", c.get(0) == 30);
+expect("c[1]", c.get(1) == 24);
+expect("c[2]", c.get(2) == 18);
+expect("c[3]", c.get(3) == 84);
+expect("c[4]", c.get(4) == 69);
+expect("c[5]", c.get(5) == 54);
+expect("c[6]", c.get(6) == 138);
+expect("c[7]", c.get(7) == 114);
+expect("c[8]", c.get(8) == 90);
+expect("input a untouched", a.get(0) == 1 && a.get(8) == 9);
+expect("input b untouched", b.get(0) == 9 && b.get(8) == 1);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-26 failed";
+end;

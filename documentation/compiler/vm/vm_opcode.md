@@ -30,6 +30,7 @@ pub struct Chunk {
     pub arity:        usize,
     pub uses_heap:    Arc<AtomicBool>,
     pub used_locals:  Arc<Vec<u8>>,
+    pub param_types:  Vec<TypeTag>,
 }
 ```
 
@@ -42,6 +43,7 @@ Each function and the top-level program are compiled into a `Chunk`. Key fields:
 - `call_count` — incremented on each call. When it crosses the dynamic threshold `vm.jit_threshold` (default 50), the JIT compiles the chunk.
 - `jit_ptr` — atomic pointer to the JIT-compiled native function; `null` if not yet compiled.
 - `used_locals` — bitmask of which local slots are actually referenced, produced by `jit::analysis::analyze_chunk_locals`. Used by the JIT to skip zeroing unused slots.
+- `param_types` (4.4) — the declared signature type of each parameter. The JIT type inference seeds parameter registers from these declared types instead of `Unknown`; other registers keep flat inference.
 
 `Chunk` is `Clone`; all fields use `Arc` so clones share the same underlying data.
 
@@ -189,11 +191,16 @@ Compiled from the self-concatenation assignment pattern `x = x + expr` (see `com
 | `StrAppendMember` | `container, name_idx, src` | Append `locals[src]` to the string stored at JSON field `name_idx` of `container`. |
 | `StrAppendElement` | `container, index, src` | Append `locals[src]` to the string element at `index` of array `container`. |
 
-All four opcodes are backed by copy-on-write string concatenation logic handled inline inside `Value::add`. When the target string's `Arc` has exactly one strong count and no weak counts (`strong_count == 1 && weak_count == 0`), it mutates the buffer in place; otherwise, it allocates a new copy.
+All four opcodes are backed by copy-on-write string concatenation logic. Ownership rules differ by site (4.4):
+
+- **`StrAppendVar` (interpreter, `get_global_raw`):** in-place extension only when the globals slot is the buffer's **sole owner** (`strong_count <= 1 && weak_count == 0`). A string literal loaded from the chunk's constant pool is a real second owner (`LoadConst` shares the pool's `Arc`), so the first append to a literal-initialized global re-allocates; the re-allocation path releases the construction reference after the store so the count reflects real owners. Mutating a shared buffer would corrupt the constant pool — every later load of the same literal would inherit the appended content.
+- **`StrAppendLocal` (interpreter):** same sole-owner rule (`<= 1`); locals store by transfer, so freshly built buffers are exactly singly owned.
+- **JIT helpers (`xcx_jit_str_append_var` / `_local`):** the var variant keeps threshold `<= 2` — the second reference there is the JIT's own managed register copy, released by `reload_globals` right after the call. A constant-pool co-owner surfaces as count ≥ 3 and re-allocates.
+- `StrAppendMember` / `StrAppendElement`: in-place extension only under `Arc::get_mut` / `strong_count == 1` respectively, otherwise clone-on-write.
 
 ### Comparison
 
-All write `bool` to `dst`.
+All write `bool` to `dst`. Every comparison opcode carries an int-int fast path (4.4) that compares the raw 64-bit payloads directly when both operands are `TAG_INT`, instead of ranking the operands first.
 
 | Opcode | Operation |
 |---|---|
@@ -249,7 +256,7 @@ Set iteration is compiled through a `MethodCall { kind: Values }` conversion fol
 | Opcode | Fields | Description |
 |---|---|---|
 | `Call` | `dst, func_idx: u32, base: u8, arg_count: u8` | Call function `func_idx`. Arguments are locals `[base..base+arg_count]`. Result stored in `dst`. |
-| `MethodCall` | `dst, kind: MethodKind, base, arg_count` | Call a built-in method on the value at `locals[base]`. |
+| `MethodCall` | `dst, kind: MethodKind, base, arg_count` | Call a built-in method on the value at `locals[base]`. More than 16 arguments is rejected at compile time (`arg_count: u8` cannot overflow at runtime). |
 | `MethodCallNamed` | `dst, kind: MethodKind, base, arg_count, names_idx: u32` | `MethodCall` with named arguments; `names_idx` indexes a constant-pool string array holding per-argument names (empty string for positional slots). |
 | `MethodCallCustom` | `dst, method_name_idx: u32, base, arg_count` | Method dispatch by string name from the constant pool. Used for dynamic JSON path access and row column resolution. |
 

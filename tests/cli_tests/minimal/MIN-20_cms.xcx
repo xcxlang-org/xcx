@@ -1,0 +1,49 @@
+--- TEST: MIN-20
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal CMS (self-test then serves; skipped by the spec runner)
+
+store.delete("min20_cms.json");
+store.write("min20_cms.json", <<< {"next_id": 1, "articles": []} >>>.toStr());
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+json: db = json.parse(store.read("min20_cms.json"));
+expect("db loaded", db.get("articles").size() == 0);
+json: a1 <<< {"id": 1, "slug": "hello", "title": "Hello"} >>>;
+db.get("articles").push(a1);
+db.set("next_id", 2);
+store.write("min20_cms.json", db.toStr());
+json: reloaded = json.parse(store.read("min20_cms.json"));
+expect("persisted", reloaded.get("articles").size() == 1);
+expect("id counter", reloaded.get("next_id") == 2);
+store.delete("min20_cms.json");
+
+if (failures > 0) then;
+    halt.error >! "MIN-20 self-test failed";
+end;
+
+fiber handle_list(json: req -> json) {
+    yield net.respond(200, db.get("articles"));
+    return <<< {} >>>;
+};
+
+>! "MIN20 READY on http://127.0.0.1:8198";
+
+serve: mini {
+    port = 8198,
+    host = "127.0.0.1",
+    routes = [
+        "GET /articles" :: handle_list
+    ]
+};

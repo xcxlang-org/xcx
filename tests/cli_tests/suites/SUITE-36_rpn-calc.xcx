@@ -1,0 +1,112 @@
+--- TEST: SUITE-36
+--- Area: Applications
+--- Priority: high
+--- Name: RPN calculator (cargo-test twin of programs/36_rpn_calc.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+array:i: st;
+s: err = "";
+
+--- Applies op to the top two stack items. Operands are popped before the
+--- operator is matched; on any rejection they are pushed back in original
+--- order so a failed apply is transactional and the stack is unchanged.
+func apply(s: op -> b) {
+    if (st.size() < 2) then;
+        err = "not enough operands";
+        return false;
+    end;
+    i: rhs = st.pop();
+    i: lhs = st.pop();
+    if (op == "+") then;
+        st.push(lhs + rhs);
+    end;
+    if (op == "-") then;
+        st.push(lhs - rhs);
+    end;
+    if (op == "*") then;
+        st.push(lhs * rhs);
+    end;
+    if (op == "/") then;
+        if (rhs == 0) then;
+            err = "division by zero";
+            st.push(lhs);
+            st.push(rhs);
+            return false;
+        end;
+        st.push(lhs / rhs);
+    end;
+    if (op == "%") then;
+        if (rhs == 0) then;
+            err = "modulo by zero";
+            st.push(lhs);
+            st.push(rhs);
+            return false;
+        end;
+        st.push(lhs % rhs);
+    end;
+    return true;
+};
+
+--- Resets the shared stack and err channel, then evaluates one
+--- space-separated RPN expression left to right.
+func run_expr(s: expr) {
+    st.clear();
+    err = "";
+    array:s: tokens = expr.split(" ");
+    for tk in tokens do;
+        if (tk == "+" || tk == "-" || tk == "*" || tk == "/" || tk == "%") then;
+            apply(tk);
+        else;
+            st.push(i(tk));
+        end;
+    end;
+};
+
+run_expr("10 3 +");
+expect("rpn 10 3 + = 13", st.size() == 1 && st.pop() == 13);
+
+run_expr("8 2 / 3 *");
+expect("rpn 8 2 / 3 * = 12", st.size() == 1 && st.pop() == 12);
+
+run_expr("7 2 %");
+expect("rpn 7 2 % = 1", st.size() == 1 && st.pop() == 1);
+
+run_expr("9 4 - 2 *");
+expect("rpn 9 4 - 2 * = 10", st.size() == 1 && st.pop() == 10);
+
+run_expr("1 2 3 + +");
+expect("rpn 1 2 3 + + = 6", st.size() == 1 && st.pop() == 6);
+
+run_expr("2 3 + 4 * 5 -");
+expect("rpn 2 3 + 4 * 5 - = 15", st.size() == 1 && st.pop() == 15);
+
+run_expr("5 /");
+expect("operator with one operand rejected", err == "not enough operands" && st.size() == 1 && st.pop() == 5);
+
+run_expr("5 0 /");
+expect("division by zero keeps stack", err == "division by zero" && st.size() == 2 && st.get(0) == 5 && st.get(1) == 0);
+
+run_expr("+ 3");
+expect("leading operator rejected, operand kept", err == "not enough operands" && st.size() == 1 && st.pop() == 3);
+
+run_expr("4 0 %");
+expect("modulo by zero keeps stack", err == "modulo by zero" && st.size() == 2 && st.get(1) == 0);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-36 failed";
+end;

@@ -22,7 +22,6 @@ pub fn emit_binop_int<F>(
     dst: u8,
     src1: u8,
     src2: u8,
-    _sign_extend: bool, 
     op: F
 ) where F: FnOnce(&mut FunctionBuilder, Value, Value) -> Value {
     let (l_bits, _) = ctx.use_local(src1);
@@ -46,7 +45,7 @@ pub fn emit_add_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymb
         emit_const_int(ctx, symbols, dst, l.wrapping_add(r));
         return;
     }
-    emit_binop_int(ctx, symbols, dst, src1, src2, false, |b, l, r| b.ins().iadd(l, r));
+    emit_binop_int(ctx, symbols, dst, src1, src2, |b, l, r| b.ins().iadd(l, r));
 }
 
 pub fn emit_sub_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymbols, dst: u8, src1: u8, src2: u8) {
@@ -54,7 +53,7 @@ pub fn emit_sub_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymb
         emit_const_int(ctx, symbols, dst, l.wrapping_sub(r));
         return;
     }
-    emit_binop_int(ctx, symbols, dst, src1, src2, false, |b, l, r| b.ins().isub(l, r));
+    emit_binop_int(ctx, symbols, dst, src1, src2, |b, l, r| b.ins().isub(l, r));
 }
 
 pub fn emit_mul_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymbols, dst: u8, src1: u8, src2: u8) {
@@ -62,7 +61,7 @@ pub fn emit_mul_int(ctx: &mut CodegenCtx, symbols: &super::symbols::ImportedSymb
         emit_const_int(ctx, symbols, dst, l.wrapping_mul(r));
         return;
     }
-    emit_binop_int(ctx, symbols, dst, src1, src2, true, |b, l, r| b.ins().imul(l, r));
+    emit_binop_int(ctx, symbols, dst, src1, src2, |b, l, r| b.ins().imul(l, r));
 }
 
 pub fn emit_binop_float<F>(
@@ -271,8 +270,7 @@ pub fn emit_int_concat(
 ) {
     let (l_bits, _) = ctx.use_local(src1);
     let (r_bits, _) = if src1 == src2 { (l_bits, ctx.b.ins().iconst(types::I64, 0)) } else { ctx.use_local(src2) };
-    
-    // Fast path assumes numbers are properly tracked so string creation shouldn't crash.
+
     let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_int_concat, &[l_bits, r_bits]);
     
     if !ctx.should_skip_dec_ref(dst) {

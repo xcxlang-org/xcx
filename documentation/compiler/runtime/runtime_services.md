@@ -26,8 +26,9 @@ The function `serve_impl` instantiates and drives the HTTP server context:
      obj.push(("body", body_val));
      obj.push(("ip", JsonVal::String(client_ip)));
      ```
-4. **Execution:** Delegates routing matching. Matches the pattern `METHOD URL` against keys in the routes dictionary (a `Map` or an array of `Map`s); `*` and trailing-`*` prefix keys are supported. If a match is found, it runs the designated chunk inside VM executors (`vm.run`).
-5. **Fallbacks:** If no route pattern matches, the handler serves a standard `404 Not Found` response; if a matched handler returns without responding, a `500 Internal Server Error` is sent.
+4. **Execution:** Delegates routing matching. Matches the pattern `METHOD URL` against keys in the routes dictionary (a `Map` or an array of `Map`s); `*` and trailing-`*` prefix keys are supported. If a match is found, it runs the designated chunk inside VM executors (`vm.run`). Since 4.4, **handler execution is serialized** (process-wide `HANDLER_EXEC_LOCK`): request I/O (body reads, response writes) stays parallel across the per-request threads, but handlers themselves run one at a time, because VM state is unsynchronized. A counter handler therefore sees no lost updates; a handler calling the server's own endpoint would deadlock. Concurrent handler state is a 5.0a design item.
+5. **Body limit:** request bodies over 10 MB are rejected with `413` before the handler runs. A declared `Content-Length` over the limit is rejected without reading the body; undeclared/chunked bodies are bounded to limit+1 bytes read.
+6. **Fallbacks:** If no route pattern matches, the handler serves a standard `404 Not Found` response; if a matched handler returns without responding, a `500 Internal Server Error` is sent.
 
 ### HTTP Client (`client.rs`)
 Enables making external HTTP requests. Supports method verbs, headers payload conversion, thread isolation, and response retrieval. All outgoing request paths — the interpreter path (`call`, `request`) and the JIT FFI path (`xcx_jit_net_call`, `xcx_jit_net_request`) — share a single process-wide `ureq::Agent` behind a `OnceLock` (`HTTP_AGENT`, initialized lazily on first use with a 10-second connect timeout). Reusing one agent keeps its underlying connection pool warm across requests to the same host, avoiding a fresh TCP/TLS handshake on every call; per-request SSRF validation and timeouts are unaffected by pooling and still apply to each request individually.
@@ -70,7 +71,7 @@ Provides interface wrappers to filesystem storage logic (`read_write.rs`, `fs_op
 Before executing any filesystem access (read, write, append, directory listing), paths are validated by `validate_path_safety`:
 - Traversal checks reject paths carrying directory escape segments (`..`).
 - System root blocks reject absolute prefix values `/` or drives mapping (`C:`).
-- **PAX Installation Directory Exemption:** In XCX 4.3, path writes/reads are permitted if the resolved path resides under the compiler's installation directory structure (allowing the `pax` package manager subsystem to update and load libraries).
+- **PAX Installation Directory Exemption:** Since XCX 4.3, path writes/reads are permitted if the resolved path resides under the compiler's installation directory structure (allowing the `pax` package manager subsystem to update and load libraries).
 
 Failure to pass security checks instantly raises a `halt.fatal` exception.
 

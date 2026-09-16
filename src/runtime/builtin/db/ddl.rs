@@ -17,7 +17,10 @@ impl Executor {
             let conn_clone = db_rc.conn.clone();
             let mut cols = Vec::new();
             {
-                let conn = conn_clone.lock();
+                let conn_guard = conn_clone.lock();
+                let Some(conn) = conn_guard.as_ref() else {
+                    return OpResult::Continue;
+                };
                 let sql = format!("PRAGMA table_info([{}])", name);
                 if let Ok(mut stmt) = conn.prepare(&sql) {
                     if let Ok(rows) = stmt.query_map([], |row| {
@@ -28,7 +31,10 @@ impl Executor {
                                 else if ctype.to_uppercase().contains("FLOAT") || ctype.to_uppercase().contains("REAL") { crate::frontend::ast::Type::Float }
                                 else if ctype.to_uppercase().contains("BOOL") { crate::frontend::ast::Type::Bool }
                                 else { crate::frontend::ast::Type::String };
-                        Ok(VMColumn { name: cname, ty, is_pk: is_pk != 0, is_auto: is_pk != 0 && ctype.to_uppercase().contains("INTEGER"), is_unique: false })
+                        // SQLite column defaults cannot be recovered from PRAGMA
+                        // table_info, so tables loaded back from the database
+                        // carry no default and must not be re-synced.
+                        Ok(VMColumn { name: cname, ty, is_pk: is_pk != 0, is_auto: is_pk != 0 && ctype.to_uppercase().contains("INTEGER"), is_unique: false, default_sql: None, default_const: None, default_str: None })
                     }) {
                         for r in rows { if let Ok(info) = r { cols.push(info); } }
                     }
@@ -87,10 +93,23 @@ impl Executor {
             if col.is_unique {
                 sql.push_str(" UNIQUE");
             }
+            // A declared @default(v) must live in the SQL schema: inserts that
+            // omit the column rely on the database to fill it, and XCX-side
+            // omission rules (database.md, column omission) are defined in
+            // terms of that server-side DEFAULT.
+            if let Some(d) = &col.default_sql {
+                sql.push_str(" DEFAULT ");
+                sql.push_str(d);
+            }
         }
         sql.push(')');
-        
-        let conn = db_rc.conn.lock();
+
+        let conn_guard = db_rc.conn.lock();
+        let Some(conn) = conn_guard.as_ref() else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("R401: database connection is closed{}", self.current_span_info(ip));
+            return OpResult::Halt;
+        };
         match conn.execute(&sql, []) {
             Ok(_) => {
                 table.sql_binding = Some(crate::vm::object::SqlBinding {
@@ -125,7 +144,12 @@ impl Executor {
             return OpResult::Halt;
         };
 
-        let conn = db_rc.conn.lock();
+        let conn_guard = db_rc.conn.lock();
+        let Some(conn) = conn_guard.as_ref() else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("R401: database connection is closed{}", self.current_span_info(ip));
+            return OpResult::Halt;
+        };
         match kind {
             MethodKind::Drop => {
                 let sql = format!("DROP TABLE IF EXISTS [{}]", table_name);

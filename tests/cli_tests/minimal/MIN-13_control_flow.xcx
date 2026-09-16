@@ -1,0 +1,64 @@
+--- TEST: MIN-13
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal control flow (fast companion of programs/13_control_flow.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+i: sum = 0;
+for i in 1 to 5 do;
+    sum = sum + i;
+end;
+expect("for range", sum == 15);
+i: steps = 0;
+for i in 0 to 6 @step 2 do;
+    steps = steps + 1;
+end;
+expect("step count", steps == 4);
+i: acc = 0;
+i: c = 0;
+while (c < 3) do;
+    c = c + 1;
+    acc = acc + c;
+end;
+expect("while", acc == 6);
+i: broke = 0;
+for i in 1 to 10 do;
+    if (i == 3) then;
+        break;
+    end;
+    broke = broke + 1;
+end;
+expect("break", broke == 2);
+i: odd = 0;
+for i in 1 to 5 do;
+    if (i % 2 == 0) then;
+        continue;
+    end;
+    odd = odd + 1;
+end;
+expect("continue", odd == 3);
+i: nested = 0;
+for i in 1 to 3 do;
+    for j in 1 to 3 do;
+        nested = nested + 1;
+    end;
+end;
+expect("nested", nested == 9);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-13 failed";
+end;

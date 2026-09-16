@@ -201,6 +201,25 @@ impl SymbolRegistry {
         add_val_param(&mut sig_val_ret_f64);
         sig_val_ret_f64.returns.push(AbiParam::new(types::F64));
 
+        // (b, t, exec) -> i64
+        let mut sig_val_exec_ret_i64 = module.make_signature();
+        add_val_param(&mut sig_val_exec_ret_i64);
+        sig_val_exec_ret_i64.params.push(AbiParam::new(ptr_type));
+        sig_val_exec_ret_i64.returns.push(AbiParam::new(types::I64));
+
+        // (b, t, exec) -> f64
+        let mut sig_val_exec_ret_f64 = module.make_signature();
+        add_val_param(&mut sig_val_exec_ret_f64);
+        sig_val_exec_ret_f64.params.push(AbiParam::new(ptr_type));
+        sig_val_exec_ret_f64.returns.push(AbiParam::new(types::F64));
+
+        // (b1, t1, b2, t2, b3, t3, exec) -> void
+        let mut sig_val_val_val_exec_ret_void = module.make_signature();
+        add_val_param(&mut sig_val_val_val_exec_ret_void);
+        add_val_param(&mut sig_val_val_val_exec_ret_void);
+        add_val_param(&mut sig_val_val_val_exec_ret_void);
+        sig_val_val_val_exec_ret_void.params.push(AbiParam::new(ptr_type));
+
         // (b, t) -> u8/bool
         let mut sig_val_ret_bool = module.make_signature();
         add_val_param(&mut sig_val_ret_bool);
@@ -537,8 +556,8 @@ impl SymbolRegistry {
             xcx_jit_string_replace: module.declare_function("xcx_jit_string_replace", Linkage::Import, &sig_val_val_val_val_ret).unwrap(),
             xcx_jit_string_index_of: module.declare_function("xcx_jit_string_index_of", Linkage::Import, &sig_val_val_ret_i64).unwrap(),
             xcx_jit_string_last_index_of: module.declare_function("xcx_jit_string_last_index_of", Linkage::Import, &sig_val_val_ret_i64).unwrap(),
-            xcx_jit_string_to_int: module.declare_function("xcx_jit_string_to_int", Linkage::Import, &sig_val_ret_i64).unwrap(),
-            xcx_jit_string_to_float: module.declare_function("xcx_jit_string_to_float", Linkage::Import, &sig_val_ret_f64).unwrap(),
+            xcx_jit_string_to_int: module.declare_function("xcx_jit_string_to_int", Linkage::Import, &sig_val_exec_ret_i64).unwrap(),
+            xcx_jit_string_to_float: module.declare_function("xcx_jit_string_to_float", Linkage::Import, &sig_val_exec_ret_f64).unwrap(),
             
             xcx_jit_map_size: module.declare_function("xcx_jit_map_size", Linkage::Import, &sig_val_ret_i64).unwrap(),
             xcx_jit_map_contains: module.declare_function("xcx_jit_map_contains", Linkage::Import, &sig_val_val_ret_i32).unwrap(),
@@ -712,7 +731,7 @@ impl SymbolRegistry {
             xcx_jit_json_get: module.declare_function("xcx_jit_json_get", Linkage::Import, &sig_val_val_val_ret).unwrap(),
             xcx_jit_json_set: module.declare_function("xcx_jit_json_set", Linkage::Import, &sig_val_val_val_ret_i32).unwrap(),
             xcx_jit_json_push: module.declare_function("xcx_jit_json_push", Linkage::Import, &sig_val_val_ret_void).unwrap(),
-            xcx_jit_json_get_push: module.declare_function("xcx_jit_json_get_push", Linkage::Import, &sig_val_val_val_ret_void).unwrap(),
+            xcx_jit_json_get_push: module.declare_function("xcx_jit_json_get_push", Linkage::Import, &sig_val_val_val_exec_ret_void).unwrap(),
             xcx_jit_cast_string: module.declare_function("xcx_jit_cast_string", Linkage::Import, &sig_val_val_ret).unwrap(),
             xcx_jit_cast_bool: module.declare_function("xcx_jit_cast_bool", Linkage::Import, &sig_val_val_ret).unwrap(),
             xcx_jit_cast_int: module.declare_function("xcx_jit_cast_int", Linkage::Import, &sig_val_val_ret).unwrap(),

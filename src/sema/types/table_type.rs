@@ -1,6 +1,6 @@
 use crate::intern::StringId;
 use super::ty::Type;
-use crate::frontend::ast::ColumnAttribute;
+use crate::frontend::ast::{ColumnAttribute, DefaultConst};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnType {
@@ -10,6 +10,7 @@ pub struct ColumnType {
     pub is_pk: bool,
     pub is_optional: bool,
     pub has_default: bool,
+    pub default_const: Option<DefaultConst>,
     pub is_unique: bool,
 }
 
@@ -28,8 +29,9 @@ impl From<Vec<crate::frontend::ast::ColumnDef>> for TableType {
                 let is_unique = c.is_unique();
                 let is_optional = c.attributes.iter().any(|a| matches!(a, ColumnAttribute::Optional));
                 let has_default = c.attributes.iter().any(|a| matches!(a, ColumnAttribute::Default(_)));
+                let default_const = c.default_const();
                 let ty = c.ty;
-                ColumnType { name, ty, is_auto, is_pk, is_optional, has_default, is_unique }
+                ColumnType { name, ty, is_auto, is_pk, is_optional, has_default, default_const, is_unique }
             }).collect()
         }
     }

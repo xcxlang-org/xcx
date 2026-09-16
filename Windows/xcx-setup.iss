@@ -1,8 +1,8 @@
 ; XCX Compiler Ecosystem - Inno Setup Script
-; Version: 4.3
+; Version: 4.4
 
 #define MyAppName "XCX Compiler Ecosystem"
-#define MyAppVersion "4.3"
+#define MyAppVersion "4.4"
 #define MyAppPublisher "XCX Team"
 #define MyAppExeName "xcx.exe"
 #define MyAppURL "https://xcxlang.com"
@@ -47,7 +47,7 @@ MinVersion=10.0
 LicenseFile={#SourcePath}\resources\LICENSE.txt
 InfoBeforeFile={#SourcePath}\resources\README.txt
 OutputDir={#SourcePath}\Output
-OutputBaseFilename=xcx-setup-v4.3
+OutputBaseFilename=xcx-setup-v4.4
 SetupIconFile={#SourcePath}\resources\icons\xcx.ico
 ; Sidebar image for wizard (164x314 px, BMP or PNG format)
 WizardImageFile={#SourcePath}\resources\wizard\wizard-sidebar.bmp

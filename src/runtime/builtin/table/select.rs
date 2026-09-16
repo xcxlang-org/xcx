@@ -24,10 +24,10 @@ impl Executor {
 
                 if let Some(MethodKind::Remove) = t.pending_op {
                     if let Some(binding) = &t.sql_binding {
-                        let conn = binding.db_conn.lock();
+                        let conn_guard = binding.db_conn.lock();
                         let mut sql = format!("DELETE FROM [{}]", binding.table_name);
                         if let Some(w) = &sql_where { sql.push_str(" WHERE "); sql.push_str(w); }
-                        let affected = conn.execute(&sql, []).unwrap_or(0);
+                        let affected = conn_guard.as_ref().and_then(|c| c.execute(&sql, []).ok()).unwrap_or(0);
                         let mut obj = Vec::new();
                         obj.push((std::sync::Arc::new("affected".to_string()), crate::vm::object::JsonVal::Int(affected as i64)));
                         obj.push((std::sync::Arc::new("insertId".to_string()), crate::vm::object::JsonVal::Int(0)));
@@ -118,8 +118,8 @@ impl Executor {
             MethodKind::Count | MethodKind::Len | MethodKind::Size => {
                 let res = if let (Some(binding), Some(where_clause)) = (&t.sql_binding, &t.sql_where) {
                     let sql = format!("SELECT COUNT(*) FROM [{}] WHERE {}", binding.table_name, where_clause);
-                    let conn = binding.db_conn.lock();
-                    let count: i64 = conn.query_row(&sql, [], |row| row.get(0)).unwrap_or(0);
+                    let conn_guard = binding.db_conn.lock();
+                    let count: i64 = conn_guard.as_ref().and_then(|c| c.query_row(&sql, [], |row| row.get(0)).ok()).unwrap_or(0);
                     Value::from_i64(count)
                 } else {
                     Value::from_i64(t.len() as i64)
@@ -198,8 +198,9 @@ impl Executor {
             let mut new_rows = Vec::new();
             let mut ok = false;
             {
-                let conn = binding.db_conn.lock();
-                if let Ok(mut stmt) = conn.prepare(&sql) {
+                let conn_guard = binding.db_conn.lock();
+                let mut prepared = conn_guard.as_ref().and_then(|c| c.prepare(&sql).ok());
+                if let (_conn, Some(stmt)) = (conn_guard.as_ref(), prepared.as_mut()) {
                     if let Ok(rows_iter) = stmt.query_map(rusqlite::params![], |row: &rusqlite::Row<'_>| -> rusqlite::Result<Vec<Value>> {
                         let mut row_vals = Vec::with_capacity(cols.len());
                         for (i, col) in cols.iter().enumerate() {

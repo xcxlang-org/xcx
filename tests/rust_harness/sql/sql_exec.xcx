@@ -56,6 +56,6 @@ fiber:b: f = run();
 b: ok = f.next();
 if (ok) then;
     >! "=== sql_exec: ALL TESTS PASSED ===";
-els;
+else;
     >! "=== sql_exec: ERROR ===";
 end;

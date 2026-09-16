@@ -1,0 +1,82 @@
+--- TEST: SUITE-32
+--- Area: Applications
+--- Priority: high
+--- Name: LRU cache (cargo-test twin of programs/32_lru_cache.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+i: cap = 3;
+map: lru {
+    schema = [s <-> s]
+    data = [EMPTY]
+};
+array:s: order;
+
+func touch(s: k) {
+    i: pos = order.find(k);
+    if (pos >= 0) then;
+        order.delete(pos);
+    end;
+    order.push(k);
+};
+
+func put(s: k, s: v) {
+    if (!lru.contains(k) && lru.size() >= cap) then;
+        s: victim = order.get(0);
+        order.delete(0);
+        lru.remove(victim);
+    end;
+    lru.insert(k, v);
+    touch(k);
+};
+
+func get(s: k -> s) {
+    if (!lru.contains(k)) then;
+        return "MISS";
+    end;
+    touch(k);
+    return lru.get(k);
+};
+
+put("a", "1");
+put("b", "2");
+put("c", "3");
+expect("cache full", lru.size() == 3);
+
+expect("hit a", get("a") == "1");
+expect("order after hit a", order.get(0) == "b" && order.get(2) == "a");
+
+put("d", "4");
+expect("evicted lru b", !lru.contains("b"));
+expect("kept mru a", lru.contains("a"));
+expect("cache still full", lru.size() == 3);
+
+expect("hit c", get("c") == "3");
+expect("miss b", get("b") == "MISS");
+
+put("e", "5");
+expect("evicted lru a", !lru.contains("a"));
+expect("final members", lru.contains("c") && lru.contains("d") && lru.contains("e"));
+expect("final order", order.get(0) == "d" && order.get(1) == "c" && order.get(2) == "e");
+
+put("c", "30");
+expect("value overwritten", get("c") == "30");
+expect("no eviction on update", lru.size() == 3);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-32 failed";
+end;

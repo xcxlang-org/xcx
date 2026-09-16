@@ -1,0 +1,5 @@
+--- Support module for MIN-16 (aliased include)
+const f: TAU = 6.283185307179586;
+func square(i: x -> i) {
+    return x * x;
+};

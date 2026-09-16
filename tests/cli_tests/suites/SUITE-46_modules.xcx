@@ -1,0 +1,58 @@
+--- TEST: SUITE-46
+--- Area: Applications
+--- Priority: high
+--- Name: Module system (cargo-test twin of programs/46_modules.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+include "su46_units.xcx" as units;
+include "su46_geometry.xcx";
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+--- Aliased module: 10 km in miles (0.621371 * 10 = 6.21371)
+f: miles = units.km_to_miles(10.0);
+expect("km_to_miles 10km", miles > 6.213 && miles < 6.214);
+
+--- 100 C is exactly 212 F; all operands are binary-exact here
+f: boil = units.c_to_f(100.0);
+expect("c_to_f boiling point", boil == 212.0);
+
+--- 80 kg in pounds
+f: lb = units.kg_to_lb(80.0);
+expect("kg_to_lb 80kg", lb > 176.36 && lb < 176.38);
+
+--- Unaliased module: symbols used directly, no prefix
+f: field = circle_area(2.0);
+expect("circle_area r=2", field > 12.5663 && field < 12.5664);
+
+f: plot = rect_area(7.5, 4.0);
+expect("rect_area 7.5x4", plot == 30.0);
+
+--- Aliased constant read directly
+expect("KM_TO_MILES constant", units.KM_TO_MILES > 0.6213 && units.KM_TO_MILES < 0.6214);
+
+--- Unaliased module constant read directly
+expect("PI constant", PI > 3.14159 && PI < 3.1416);
+
+--- Mixed computation across both modules: area of a circle whose
+--- radius equals 5 km expressed in miles
+f: r_miles = units.km_to_miles(5.0);
+f: area_sq_miles = circle_area(r_miles);
+expect("cross-module composition", area_sq_miles > 30.32 && area_sq_miles < 30.33);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-46 failed";
+end;

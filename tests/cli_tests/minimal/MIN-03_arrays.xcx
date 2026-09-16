@@ -1,0 +1,47 @@
+--- TEST: MIN-03
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal arrays (fast companion of programs/03_arrays.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+array:i: a {3, 1, 2};
+expect("init size", a.size() == 3);
+a.push(9);
+expect("push", a.size() == 4 && a.get(3) == 9);
+expect("pop", a.pop() == 9 && a.size() == 3);
+a.sort();
+expect("sort", a.get(0) == 1 && a.get(2) == 3);
+a.reverse();
+expect("reverse", a.get(0) == 3 && a.get(2) == 1);
+expect("slice", a.slice(0, 2).size() == 2);
+a.insert(1, 7);
+expect("insert", a.get(1) == 7);
+a.update(0, 5);
+expect("update", a.get(0) == 5);
+a.delete(2);
+expect("delete", a.size() == 3);
+expect("find contains", a.contains(7) && a.find(7) == 1);
+expect("isEmpty", a.isEmpty() == false);
+i: sum = 0;
+for v in a do;
+    sum = sum + v;
+end;
+expect("iterate sum", sum == 13);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-03 failed";
+end;

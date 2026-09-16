@@ -32,8 +32,16 @@ pub struct CodegenCtx<'a> {
 
 ### Preloading and Spilling Mechanics
 - **Preloading:** The context resolves which locals are used by calling `preload_locals`. It emits Cranelift load instructions to fetch register data from the pointer-offset of `locals_ptr` and binds them to Cranelift SSA variable definitions.
-- **Spilling:** Because FFI methods can cause context switches or GC sweeps, registers must sometimes be written back (spilled) to the stack structure. `spill_all` stores all dirty Cranelift variables back into their offsets relative to `locals_ptr`.
-- **Reloading:** At control boundaries or post-call entry blocks, registers are refreshed from stack slots (`reload_globals` / `clear_block_state`).
+- **Spilling:** Because FFI methods can cause context switches or GC sweeps, registers must sometimes be written back (spilled) to the stack structure. `spill_all` stores dirty Cranelift variables back into their offsets relative to `locals_ptr`, with **dead-store elision** (4.4): a dirty register that is never read anywhere in the chunk (per-opcode read-set analysis, argument windows included) and statically holds a scalar skips its memory store at every call/dispatch boundary.
+- **Reloading:** At control boundaries or post-call entry blocks, registers are refreshed from stack slots (`reload_globals` / `clear_block_state`). Since 4.4, `reload_globals` after a user-function call is narrowed to the callee's transitive global-slot write set (fixpoint over the call graph, recursion-safe); callees that write no globals add zero reload cost.
+
+### Determinism
+
+Code generation is deterministic: the analysis passes collect register and global sets into ordered containers (`BTreeSet`) rather than hash sets, and spill/reload emission sorts by index. The same binary compiles the same chunk to the same machine code on every process, removing per-process speed variance.
+
+### Loop-Header Alignment (4.4)
+
+Hot loop headers are aligned to 64-byte boundaries. The compiler performs a throwaway probe build to learn each loop header's final code position and re-emits with padding where needed. Runtime semantics are unchanged; the JIT compile time of chunks containing loops roughly doubles.
 
 ### Constant Tracking in Registers (`register_const`)
 
@@ -72,8 +80,10 @@ To avoid the overhead of calling runtime FFI helpers, collection size queries (`
 
 `Get`/`Set`/`Update` method calls on an `Array` receiver whose element type is statically known to be `Int` (and any access on a `BoolArray` receiver) compile to a native bounds check plus a direct memory access rather than an unconditional FFI call. The raw `GetIndex`/`SetIndex` opcodes, however, only inline for `BoolArray` — on a non-BoolArray container they compile to unconditional FFI calls (`xcx_jit_array_get` / `xcx_jit_array_update`):
 - The index is compared against the array's length (`index < len`) with a native Cranelift `icmp`.
-- On the in-bounds path, the element is read or written directly from the array's backing buffer.
+- On the in-bounds path, the element is read or written directly from the array's backing buffer; the fast paths stay poll-free (no error-tally check), so loop-heavy code pays nothing.
 - On the out-of-bounds path, execution falls back to the corresponding runtime helper, which raises the standard bounds error.
+
+**Halt parity (4.4):** fallible JIT fast paths check the process error tally exactly like the generic dispatch. `"str".replace("", x)` raises R307, an out-of-bounds string `slice` raises R303, `map.get` on a missing key raises `halt.error`, and failing `.toInt()`/`.toFloat()` casts raise `halt.error` — same codes and messages as the interpreter, with the tally driving the process exit code.
 
 ### `BoolArray` Fast Path
 
@@ -93,6 +103,7 @@ Bytecode instructions do not natively carry static types. The compiler runs abst
 
 ### Flow Propagation Rules
 `analyze_chunk_types` propagates type tags (`TypeTag`) through registers by processing the bytecode layout forwards:
+- **Parameter seeding (4.4):** parameter registers start from the chunk's declared signature types (`Chunk::param_types`) instead of `Unknown`; all other registers keep the flat sweep below, and the seed never invents operand facts (an arithmetic op's result type is derived from its operands only, string-before-float).
 - Math operations (e.g. `Add`, `Sub`) default outputs to `TypeTag::Int` or `TypeTag::Float` if their sources are already inferred as such.
 - Relational operators unify outputs to `TypeTag::Bool`.
 - Collection operations set registers to `TypeTag::Array`, `TypeTag::BoolArray`, or `TypeTag::Map`. A `LoadConst` whose constant value is a `BoolArray` is recognized directly (`is_bool_array()`) and tagged `TypeTag::BoolArray`, rather than falling through to `TypeTag::Unknown`.

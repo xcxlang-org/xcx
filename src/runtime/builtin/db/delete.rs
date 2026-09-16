@@ -27,7 +27,14 @@ impl Executor {
         }
 
         let sql = args[0].to_string();
-        let conn = db_rc.conn.lock();
+        let conn_guard = db_rc.conn.lock();
+        let Some(conn) = conn_guard.as_ref() else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("R401: database connection is closed{}", self.current_span_info(ip));
+            unsafe { locals[dst as usize].dec_ref(); }
+            locals[dst as usize] = Value::from_bool(false);
+            return OpResult::Halt;
+        };
         match conn.execute(&sql, []) {
             Ok(affected) => {
                 let mut obj = Vec::new();

@@ -20,7 +20,7 @@ pub unsafe extern "C" fn xcx_jit_method_dispatch(
     };
     
     let executor = unsafe { &mut *executor_ptr };
-    
+
     match unsafe { executor.dispatch_method(receiver, kind, args, None) } {
         Ok(val) => {
             unsafe { *out = val; }

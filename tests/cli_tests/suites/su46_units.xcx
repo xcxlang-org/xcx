@@ -1,0 +1,15 @@
+--- Support module for SUITE-46 (aliased include)
+
+f: KM_TO_MILES = 0.621371;
+
+func km_to_miles(f: km -> f) {
+    return km * KM_TO_MILES;
+};
+
+func c_to_f(f: celsius -> f) {
+    return celsius * 9.0 / 5.0 + 32.0;
+};
+
+func kg_to_lb(f: kg -> f) {
+    return kg * 2.2046226218;
+};

@@ -4,9 +4,7 @@ use super::token_kind::TokenKind;
 // Lookup table for XCX keywords.
 pub fn lookup(text: &str, interner: &mut Interner) -> TokenKind {
     let lower_text = text.to_lowercase();
-    
-    // Map exact case-sensitive matches for set operations if needed, 
-    // but XCX prefers case-insensitive for keywords except specific math constants.
+
     match text {
         "UNION" => return TokenKind::Union,
         "INTERSECTION" => return TokenKind::Intersection,
@@ -35,8 +33,8 @@ pub fn lookup(text: &str, interner: &mut Interner) -> TokenKind {
         "false" => TokenKind::False,
         "if" => TokenKind::If,
         "then" => TokenKind::Then,
-        "elseif" | "elif" | "elf" => TokenKind::ElseIf,
-        "else" | "els" => TokenKind::Else,
+        "elseif" | "elif" => TokenKind::ElseIf,
+        "else" => TokenKind::Else,
         "end" => TokenKind::End,
         "for" => TokenKind::For,
         "in" => TokenKind::In,

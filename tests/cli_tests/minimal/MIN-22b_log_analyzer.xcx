@@ -1,0 +1,43 @@
+--- TEST: MIN-22B
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal log analyzer (fast companion of programs/22_log_analyzer.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.write("min22b.log", "INFO a\nERROR b\nINFO c");
+s: log = store.read("min22b.log");
+array:s: lines = log.split("\n");
+expect("line count", lines.size() == 3);
+i: infos = 0;
+i: errors = 0;
+s: ln = "";
+for i in 0 to lines.size() - 1 do;
+    ln = lines.get(i);
+    if (ln.indexOf("INFO") == 0) then;
+        infos = infos + 1;
+    end;
+    if (ln.indexOf("ERROR") == 0) then;
+        errors = errors + 1;
+    end;
+end;
+expect("info count", infos == 2);
+expect("error count", errors == 1);
+store.delete("min22b.log");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-22B failed";
+end;

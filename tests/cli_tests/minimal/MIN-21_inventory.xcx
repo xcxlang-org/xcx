@@ -1,0 +1,48 @@
+--- TEST: MIN-21
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal inventory (fast companion of programs/21_inventory.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+store.delete("min21.db");
+database: shop {
+    engine = "sqlite",
+    path = "min21.db"
+};
+table: products {
+    columns = [ id :: i @auto @pk, sku :: s @unique, qty :: i @default(0) ]
+    rows = [EMPTY]
+};
+yield shop.sync(products);
+yield shop.insert(products, sku = "S1") as r1;
+expect("default qty insert", r1.insertId == 1);
+yield shop.insert(products, sku = "S2", qty = 7) as r2;
+expect("explicit qty insert", r2.insertId == 2);
+yield shop.exec("UPDATE products SET qty = qty + ? WHERE sku = ?", [10, "S1"]) as restock;
+expect("restock", restock.affected == 1);
+table: low = yield shop.fetch(products).where(qty < 10);
+expect("low stock one", low.count() == 1);
+yield shop.remove(products).where(qty < 100);
+table: cleared = yield shop.fetch(products);
+expect("cleared", cleared.count() == 0);
+shop.close();
+expect("closed", !shop.isOpen());
+store.delete("min21.db");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-21 failed";
+end;

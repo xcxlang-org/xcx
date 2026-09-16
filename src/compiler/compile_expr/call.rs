@@ -300,12 +300,35 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                         let json_src = fc.compile_expr(get_recv, ctx);
                         let path_src = fc.compile_expr(get_args[0].expr(), ctx);
                         let val_src = fc.compile_expr(args[0].expr(), ctx);
-                        
+
                         let dst = fc.push_reg();
                         fc.emit(OpCode::JsonFastGetPush { json_src, path_src, val_src }, &expr.span);
                         fc.pop_reg(); // Push returns void
                         return dst;
                     }
+                }
+            }
+
+            // .bind(path, target) in expression position: writes the value at
+            // path into the pre-declared target variable (its slot is known at
+            // compile time) and yields `true`, per the documented `-> b`
+            // signature. Without this rewrite the call degrades to a generic
+            // method call that can never write the target.
+            if method_name == "bind" && args.len() == 2 {
+                if let ExprKind::Identifier(target_id) = &args[1].expr().kind {
+                    let json_src = fc.compile_expr(receiver, ctx);
+                    let path_src = fc.compile_expr(args[0].expr(), ctx);
+                    if let Some(local_idx) = fc.lookup_local(target_id) {
+                        fc.emit(OpCode::JsonBindLocal { dst: local_idx as u8, json_src, path_src }, &expr.span);
+                    } else {
+                        let idx = ctx.globals.get(target_id).copied().unwrap_or(0);
+                        fc.emit(OpCode::JsonBind { idx: idx as u32, json_src, path_src }, &expr.span);
+                    }
+                    fc.next_local = json_src as usize;
+                    let true_idx = ctx.add_constant(Value::from_bool(true));
+                    let dst = fc.push_reg();
+                    fc.emit(OpCode::LoadConst { dst, idx: true_idx }, &expr.span);
+                    return dst;
                 }
             }
 
@@ -358,7 +381,7 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
             }
             let dst = base;
             let is_builtin_property = match method_name.as_str() {
-                "length" | "year" | "month" | "day" | "hour" | "minute" | "second" | "size" | "count" | "status" | "ok" | "error" => true,
+                "length" | "year" | "month" | "day" | "hour" | "minute" | "second" | "size" | "count" | "len" | "status" | "ok" | "error" => true,
                 _ => false
             };
 

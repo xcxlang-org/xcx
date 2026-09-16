@@ -86,8 +86,6 @@ pub fn emit_store_delete(
     ctx.def_local(dst, res_bits, res_tag);
 }
 
-// NOTE: database_init uses special FFI signature handling. Leaving out_ptr assumption out for this special case unless it actually returns a Value! 
-// Wait, database_init returns a string error or true. It returns a Value! So it DOES use call_ffi_value!
 pub fn emit_database_init(
     ctx: &mut CodegenCtx,
     symbols: &ImportedSymbols,

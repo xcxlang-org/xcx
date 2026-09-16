@@ -1,0 +1,11 @@
+--- Support module for SUITE-46 (direct include)
+
+f: PI = 3.14159265358979;
+
+func circle_area(f: r -> f) {
+    return PI * r * r;
+};
+
+func rect_area(f: w, f: h -> f) {
+    return w * h;
+};

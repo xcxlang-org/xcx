@@ -1,0 +1,78 @@
+--- TEST: SUITE-38
+--- Area: Applications
+--- Priority: high
+--- Name: Fiber pipeline (cargo-test twin of programs/38_fiber_pipeline.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+fiber producer(i: n -> i) {
+    i: v = 1;
+    while (v <= n) do;
+        yield v * v;
+        v = v + 1;
+    end;
+    return 0;
+};
+
+fiber filter_even(i: n -> i) {
+    fiber:i: got = producer(n);
+    while (!got.isDone()) do;
+        i: val = got.next();
+        if (val % 2 == 0) then;
+            yield val;
+        end;
+    end;
+    return 0;
+};
+
+fiber:i: even_pipe = filter_even(4);
+i: count = 0;
+i: sum = 0;
+while (!even_pipe.isDone()) do;
+    i: x = even_pipe.next();
+    if (x > 0) then;
+        count = count + 1;
+        sum = sum + x;
+    end;
+end;
+expect("even squares", count == 2 && sum == 20);
+
+fiber:i: p1 = producer(3);
+expect("fiber fresh", !p1.isDone());
+i: drained = 0;
+i: last = 0;
+while (!p1.isDone()) do;
+    i: y = p1.next();
+    last = y;
+    drained = drained + 1;
+end;
+--- The fiber's trailing `return 0` is delivered as a final next() value,
+--- so draining producer(3) yields 1, 4, 9 and then the return value 0.
+expect("drain count includes return value", drained == 4 && last == 0);
+
+fiber:i: closed_early = producer(10);
+i: taken = 0;
+while (taken < 2 && !closed_early.isDone()) do;
+    i: dummy = closed_early.next();
+    taken = taken + 1;
+end;
+closed_early.close();
+expect("closed early", closed_early.isDone());
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-38 failed";
+end;

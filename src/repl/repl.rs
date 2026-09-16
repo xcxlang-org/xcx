@@ -29,7 +29,7 @@ impl Repl {
     pub fn run(&mut self) {
         println!("XCX Interactive Mode (REPL)");
         println!("Type code directly (use arrows to navigate). Type '!exec' on a new line to execute.");
-        println!("Type '!help' for assistance or '.terminal !exit;' to quit.");
+        println!("Type '!help' for assistance or '!exit' to quit.");
 
         let reader = crate::repl::input::InputReader::new();
         loop {

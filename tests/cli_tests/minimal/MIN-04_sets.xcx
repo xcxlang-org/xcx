@@ -1,0 +1,40 @@
+--- TEST: MIN-04
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal sets (fast companion of programs/04_sets.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+set:N: s {1,,5};
+expect("range size", s.size() == 5);
+expect("add dup", s.add(3) == false && s.size() == 5);
+expect("contains", s.contains(3));
+set:N: t {4,,8};
+set:N: u = s UNION t;
+expect("union", u.size() == 8);
+set:N: x = s INTERSECTION t;
+expect("intersection", x.size() == 2);
+set:N: d = s DIFFERENCE t;
+expect("difference", d.size() == 3);
+i: cnt = 0;
+for v in s do;
+    cnt = cnt + 1;
+end;
+expect("iterate", cnt == 5);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-04 failed";
+end;

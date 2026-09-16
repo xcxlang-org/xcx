@@ -1,0 +1,33 @@
+--- TEST: MIN-01
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal arithmetic (fast companion of programs/01_arithmetic.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+expect("int add", 2 + 3 == 5);
+expect("precedence", 2 + 3 * 4 == 14);
+expect("trunc div", 10 / 3 == 3);
+expect("mod", 10 % 3 == 1);
+expect("digit concat", s(48 ++ 77) == "4877");
+expect("cast i", i(3.7) == 3);
+expect("cast f", f(2) == 2.0);
+expect("cast s", s(42) == "42");
+expect("auto-convert", "v=" + 42 == "v=42");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-01 failed";
+end;

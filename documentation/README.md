@@ -1,6 +1,6 @@
 # XCX Technical Documentation Suite
 
-Welcome to the official technical documentation for XCX 4.3 and the XCX Compiler.
+Welcome to the official technical documentation for XCX 4.4 and the XCX Compiler.
 
 ## 📖 Language Reference
 Comprehensive guides on the XCX language syntax and features.
@@ -40,4 +40,4 @@ Guides for the XCX ecosystem tools.
 - [DOC Tool Manual](tooling/doc_manual.md): Offline error code reference utility.
 
 ---
-*Documentation Version: 4.3.0 *
+*Documentation Version: 4.4.0 *

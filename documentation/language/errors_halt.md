@@ -1,4 +1,4 @@
-# XCX 4.3 Error Handling and the Halt Instruction
+# XCX 4.4 Error Handling and the Halt Instruction
 
 The XCX language utilizes a structured `halt` system to manage runtime errors and semantic (compiler) errors detected during the compilation and analysis phases.
 
@@ -22,10 +22,10 @@ The XCX language utilizes a structured `halt` system to manage runtime errors an
 *   **S105** – Const reassignment (attempt to assign a new value to a constant)
 *   **S106** – Break outside loop (the `break` keyword used outside a loop context)
 *   **S107** – Continue outside loop (the `continue` keyword used outside a loop context)
-*   **S108** – Member access on primitive (attempt to access a member/field of a primitive type)
-*   **S109** – Method not found on type
-*   **S110** – Field not found or wrong arg count (invalid field name or wrong number of parameters in a method call)
-*   **S111** – Static analysis/method signature mismatch
+*   **S108** – Index access not supported (bracket indexing used on a type that does not support `[]`)
+*   **S109** – Property not found on type (accessing a field that does not exist on the value)
+*   **S110** – Method not found on type (calling a method missing from the type's method table)
+*   **S111** – Incorrect number of arguments (call does not match the function/method signature)
 *   **S208–S212** – Fiber constraint errors (e.g., `yield` keyword used outside a fiber, invalid fiber instantiation)
 
 ### Runtime Errors (Runtime) — Raise `halt.error` or `halt.fatal`

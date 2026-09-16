@@ -1,6 +1,6 @@
 # XCX Compiler Technical Documentation Suite
 
-This directory contains the comprehensive technical architectural specifications and compiler documentation for the XCX language compiler system (v4.3).
+This directory contains the comprehensive technical architectural specifications and compiler documentation for the XCX language compiler system (v4.4).
 
 ## Table of Contents
 

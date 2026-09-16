@@ -47,8 +47,8 @@ impl<'a> Parser<'a> {
             if self.current.kind != TokenKind::RightParen { return None; }
             self.advance();
             if self.current.kind == TokenKind::Then { self.advance(); }
-            self.expect_semicolon();
-            
+            if self.current.kind == TokenKind::Semicolon { self.advance(); }
+
             let mut branch = Vec::new();
             while !matches!(self.current.kind, TokenKind::ElseIf | TokenKind::Else | TokenKind::End | TokenKind::EOF) {
                 if let Some(stmt) = self.parse_statement() {
@@ -77,9 +77,9 @@ impl<'a> Parser<'a> {
 
         if self.current.kind == TokenKind::End {
             self.advance();
-            self.expect_semicolon();
+            if self.current.kind == TokenKind::Semicolon { self.advance(); }
         }
-        
+
         Some(Stmt {
             kind: StmtKind::If { condition: Box::new(condition), then_branch, else_ifs: else_ifs.into_iter().map(|(c, b)| (Box::new(c), b)).collect(), else_branch },
             span: start_span,
@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
         if self.current.kind != TokenKind::RightParen { return None; }
         self.advance();
         if self.current.kind == TokenKind::Do { self.advance(); }
-        self.expect_semicolon();
+        if self.current.kind == TokenKind::Semicolon { self.advance(); }
 
         let mut body = Vec::new();
         while self.current.kind != TokenKind::End && self.current.kind != TokenKind::EOF {
@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
 
         if self.current.kind == TokenKind::End {
             self.advance();
-            self.expect_semicolon();
+            if self.current.kind == TokenKind::Semicolon { self.advance(); }
         }
 
         Some(Stmt {
@@ -150,7 +150,7 @@ impl<'a> Parser<'a> {
         };
 
         if self.current.kind == TokenKind::Do { self.advance(); }
-        self.expect_semicolon();
+        if self.current.kind == TokenKind::Semicolon { self.advance(); }
 
         let mut body = Vec::new();
         while self.current.kind != TokenKind::End && self.current.kind != TokenKind::EOF {
@@ -163,17 +163,17 @@ impl<'a> Parser<'a> {
 
         if self.current.kind == TokenKind::End {
             self.advance();
-            self.expect_semicolon();
+            if self.current.kind == TokenKind::Semicolon { self.advance(); }
         }
 
         Some(Stmt {
-            kind: StmtKind::For { 
-                var_name, 
-                start: Box::new(start), 
-                end: Box::new(end), 
-                step: step.map(Box::new), 
-                body, 
-                iter_type 
+            kind: StmtKind::For {
+                var_name,
+                start: Box::new(start),
+                end: Box::new(end),
+                step: step.map(Box::new),
+                body,
+                iter_type
             },
             span: start_span,
         })

@@ -1,0 +1,40 @@
+--- TEST: MIN-06
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal tables (fast companion of programs/06_tables.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+table: t {
+    columns = [ id :: i @auto, name :: s, qty :: i @default(0) ]
+    rows = [EMPTY]
+};
+t.add("x");
+t.add("y", 5);
+expect("row count", t.count() == 2);
+expect("auto id", t.get(1).id == 2);
+expect("default qty", t.get(0).qty == 0);
+expect("named access", t.get(1).name == "y");
+table: low = t.where(qty < 10);
+expect("where all", low.count() == 2);
+table: named = t.where(name == "y");
+expect("where one", named.count() == 1);
+json: j = t.toJson();
+expect("toJson", j.size() == 2);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-06 failed";
+end;

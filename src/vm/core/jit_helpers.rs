@@ -42,8 +42,15 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
         let ptr = raw.bits as *const crate::vm::object::StringObj;
         let arc = unsafe { Arc::from_raw(ptr) };
 
+        // Threshold 2, NOT the interpreter's sole-owner 1: get_global hands
+        // us a plain copy and the JIT additionally holds the global's value
+        // in a managed register copy (released by reload_globals right
+        // after this call), so sc == 2 is the unique-slot steady state. The
+        // constant-pool co-owner case surfaces as sc >= 3 and always takes
+        // the re-allocation path, mirroring the interpreter's fix.
         let sc = Arc::strong_count(&arc);
-        if sc <= 2 {
+        let wc = Arc::weak_count(&arc);
+        if sc <= 2 && wc == 0 {
             let obj_ptr = ptr as *mut crate::vm::object::StringObj;
             unsafe {
                 (*obj_ptr).hash = None;
@@ -167,7 +174,8 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
                         jp = ptr as *mut std::ffi::c_void;
                         f.jit_ptr.store(jp, Ordering::Release);
                     },
-                    Err(_e) => {
+                    Err(e) => {
+                        eprintln!("[XCX] JIT disabled: code finalization failed for `{name}`: {e}. Falling back to the interpreter.");
                         executor.vm.disable_jit.store(true, Ordering::Release);
                     }
                 }
@@ -283,7 +291,12 @@ pub unsafe extern "C" fn xcx_jit_call_recursive(
             0
         }
         OpResult::Halt => {
-            unsafe { *out = Value::from_i64(0); }
+            // Frame recovery: the caller's destination register must observe a
+            // value of the callee's declared return type — write its default.
+            let halted = &executor.ctx.functions[func_idx as usize];
+            let v = halted.ret_default.unwrap_or_else(|| Value::from_i64(0));
+            if v.is_ptr() { unsafe { v.inc_ref(); } }
+            unsafe { *out = v; }
             1
         }
         _ => {
@@ -587,26 +600,6 @@ pub unsafe extern "C" fn xcx_jit_string_length(bits: u64, tag: u64) -> i64 {
     }
 }
 
-thread_local! {
-    static JSON_PARSE_CACHE: std::cell::RefCell<Vec<(usize, crate::vm::object::JsonVal, String, bool)>> = std::cell::RefCell::new(Vec::new());
-}
-fn is_flat(val: &crate::vm::object::JsonVal) -> bool {
-    match val {
-        crate::vm::object::JsonVal::Array(_) => false,
-        crate::vm::object::JsonVal::Object(o) => {
-            let vec = unsafe { &*(*o).data_ptr() };
-            for (_, v) in vec.iter() {
-                match v {
-                    crate::vm::object::JsonVal::Array(_) | crate::vm::object::JsonVal::Object(_) => return false,
-                    _ => {}
-                }
-            }
-            true
-        }
-        _ => true,
-    }
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64) {
     let v = Value { bits, tag };
@@ -619,52 +612,19 @@ pub unsafe extern "C" fn xcx_jit_json_parse(out: *mut Value, bits: u64, tag: u64
     }
     if !v.is_string() { unsafe { *out = Value::from_i64(0); return; } }
 
+    // Routing through handle_json_parse gives the JIT the exact interpreter
+    // semantics: one shared parse cache, R305 fatal on malformed input, and
+    // an owned (deep-cloned) result per call. The former JIT-local cache
+    // duplicated that cache with divergent eviction and a pointer key that
+    // was unsafe under allocator address reuse.
     let string_ptr = v.unpack_ptr::<crate::vm::object::StringObj>();
-    
-    let key = string_ptr as usize;
     let bytes = unsafe { &(*string_ptr).data };
-    let s_str = unsafe { std::str::from_utf8_unchecked(bytes) };
-
-    let cached = JSON_PARSE_CACHE.with(|cache| {
-        let c = cache.borrow();
-        if let Some(item) = c.iter().find(|(k, _, _, _)| *k == key) {
-            return Some((item.1.clone(), item.3));
+    match std::str::from_utf8(bytes) {
+        Ok(s) => unsafe { *out = crate::runtime::builtin::json::parse::handle_json_parse(s); },
+        Err(_) => {
+            let lossy = String::from_utf8_lossy(bytes).into_owned();
+            unsafe { *out = crate::runtime::builtin::json::parse::handle_json_parse(&lossy); }
         }
-        if let Some(item) = c.iter().find(|(_, _, s, _)| s == s_str) {
-            return Some((item.1.clone(), item.3));
-        }
-        None
-    });
-
-    if let Some((json_val, _)) = cached {
-        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(json_val.clone()));
-        unsafe { *out = Value::from_json(new_obj); }
-        return;
-    }
-
-    let parsed_val = crate::runtime::builtin::json::parse::handle_json_parse(s_str);
-    if parsed_val.is_json() {
-        let json_obj = parsed_val.as_json();
-        let json_val = json_obj.root.clone();
-        let s_string = s_str.to_string();
-        let flat = is_flat(&json_val);
-        if s_str.len() <= 16384 {
-            JSON_PARSE_CACHE.with(|cache| {
-                let mut c = cache.borrow_mut();
-                let exists = c.iter().any(|(k, _, _, _)| *k == key) || c.iter().any(|(_, _, s, _)| s == s_str);
-                if !exists {
-                    if c.len() >= 32 {
-                        c.remove(0);
-                    }
-                    c.push((key, json_val.clone(), s_string, flat));
-                }
-            });
-        }
-        
-        let new_obj = std::sync::Arc::new(crate::vm::object::JsonObj::new(json_val));
-        unsafe { *out = Value::from_json(new_obj); }
-    } else {
-        unsafe { *out = parsed_val; }
     }
 }
 
@@ -701,28 +661,28 @@ pub unsafe extern "C" fn xcx_jit_perf_ns(out: *mut Value, vm_ptr: *mut VM) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_print(bits: u64, tag: u64) {
     let v = Value { bits, tag: tag };
-    #[cfg(unix)]
-    crate::runtime::builtin::io::write_buffered(&(v.to_string() + "\x1b[K\r\n"));
-    #[cfg(not(unix))]
+    // The EEL sequence cleans the line after REPL-style in-place updates;
+    // a bare \n is correct on every platform (ttys expand it via onlcr, and
+    // captured pipes must not receive a stray \r).
     crate::runtime::builtin::io::write_buffered(&(v.to_string() + "\x1b[K\n"));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_halt_alert(bits: u64, tag: u64) {
-    let v = Value { bits, tag: tag };
-    crate::runtime::builtin::io::eprint_buffered(&format!("ALERT: {}", v.to_string()));
+    let v = Value { bits: bits, tag: tag };
+    crate::runtime::builtin::io::eprint_buffered(&format!("XCX Alert: {}", v.to_string()));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_halt_error(_exec_ptr: *mut Executor, bits: u64, tag: u64) {
     let v = Value { bits, tag: tag };
-    crate::runtime::builtin::io::eprint_buffered(&format!("ERROR halt: {}", v.to_string()));
+    crate::runtime::builtin::io::eprint_buffered(&format!("XCX Error: {}", v.to_string()));
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_halt_fatal(bits: u64, tag: u64) {
     let v = Value { bits, tag: tag };
-    eprintln!("FATAL ERROR halt: {}", v.to_string());
+    eprintln!("XCX Fatal: {}", v.to_string());
     std::process::exit(1);
 }
 

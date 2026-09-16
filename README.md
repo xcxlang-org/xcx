@@ -11,7 +11,7 @@
 ![Last Commit](https://img.shields.io/github/last-commit/xcxlang-org/xcx)
 ![Repo Size](https://img.shields.io/github/repo-size/xcxlang-org/xcx)
 
-> **XCX 4.3 is the current release.** XCX 4.4 is under development, focused on `--no-jit` interpreter-mode performance, recursion time, and continued technical-debt cleanup. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
+> **XCX 4.4: The Interpreter & Determinism Update is out. This is the last release of the 4.x series.** Work has begun on **XCX 5.0a**: pattern matching, block syntax cleanup, and more performance. If you run into something unexpected, [open an issue](https://github.com/xcxlang-org/xcx/issues).
 
 ---
 
@@ -21,7 +21,7 @@ Most backend languages make you choose between two bad options: high-level langu
 
 XCX is an experiment in a third path: a statically typed language where HTTP, SQLite, JSON, crypto, and file I/O are part of the language itself, not libraries you bolt on. No `package.json`. No ORM. No middleware boilerplate. You write logic; the runtime handles the rest.
 
-It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.3 is the current release, built on a redesigned VM and JIT with substantially improved performance. One contributor so far.
+It started in December 2025 as a question: *can an AI generate a working language runtime from scratch?* It went through a Python prototype, a C rewrite, and finally a Rust implementation that became XCX 3.x. XCX 4.4 is the current version, built on a redesigned VM and JIT with substantially improved performance. One contributor so far.
 
 ---
 
@@ -42,35 +42,35 @@ fiber handle_login(json: req -> json) {
     resp.set("token", token);
     yield net.respond(200, resp);
     return <<< {} >>>;
-};
+}
 
 fiber handle_404(json: req -> json) {
     yield net.respond(404, <<< {"error": "not found"} >>>);
     return <<< {} >>>;
-};
+}
 
 serve: api {
     host   = "[IP_ADDRESS]",
     port   = 8000,
     routes = ["POST /login" :: handle_login, "*" :: handle_404]
-};
+}
 ```
 
 **HTTP server with SQLite in ~20 lines:**
 
 ```xcx
-database: app { engine = "sqlite", path = "app.db" };
+database: app { engine = "sqlite", path = "app.db" }
 
 table: users {
     columns = [ id :: i @auto @pk, name :: s @unique, age :: i ]
     rows = [EMPTY]
-};
+}
 
 fiber handle_users(json: req -> json) {
     table: all = yield app.fetch(users);
     yield net.respond(200, all.toJson());
     return <<< {} >>>;
-};
+}
 
 fiber handle_create(json: req -> json) {
     json: body; req.bind("body", body);
@@ -83,13 +83,13 @@ fiber handle_create(json: req -> json) {
     resp.set("id", saved.insertId);
     yield net.respond(201, resp);
     return <<< {} >>>;
-};
+}
 
 serve: api {
     host   = "[IP_ADDRESS]",
     port   = 8080,
     routes = ["GET /users" :: handle_users, "POST /users" :: handle_create]
-};
+}
 ```
 
 ---
@@ -120,8 +120,7 @@ With XCX 4.3, the benchmark suite was overhauled and moved to its own repo:
 This is the new Main Suite, run under a stricter, more transparent methodology
 than previous releases.
 
-> ⚠️ These benchmarks reflect the **current state of XCX 4.3**.
-> The runtime, VM, and JIT are still under active development and will change.
+> ⚠️ These benchmarks reflect the current state of XCX 4.4.
 >
 > The goal of this section is **transparency**, not competition.
 
@@ -138,8 +137,8 @@ than previous releases.
 | 07 | Go [AOT] | 3.10ms | 242.37ms | 16.16ms | 0.17*ms |
 | 08 | Java [JIT] | 2.64ms | 217.88ms | 24.38ms | 0.18*ms |
 | 09 | Julia [JIT] | 3.48ms | 195.45ms | 22.91ms | 0.27*ms |
-| 10 | XCX 4.3 [JIT] | 10.560ms | 104.852ms | 36.542ms | 0.134ms |
-| 11 | Dart [AOT] | 4.92ms | 108.02ms | 19.78ms | 0.77ms |
+| 10 | Dart [AOT] | 4.92ms | 108.02ms | 19.78ms | 0.77ms |
+| 11 | XCX 4.4 [JIT] | 6.53ms | 105.87ms | 34.287ms | 0.55ms |
 | 12 | Nim [AOT] | 17.50ms | 193.00ms | 19.50ms | 0.31*ms |
 | 13 | Bun [JIT] | 5.35ms | 400.84ms | 32.52ms | 0.40ms |
 | 14 | PyPy [JIT] | 19.47ms | 119.28ms | 101.21ms | 0.32ms |
@@ -158,13 +157,13 @@ than previous releases.
 
 `*` = JSON value is a computed stdlib penalty, not a direct measurement (see methodology).
 
-XCX 4.3 ranks 10th by geometric mean, ahead of Dart, Nim, Bun, PyPy, LuaJIT, C#, Node.js, Deno, and every interpreted language tested. This run adds Julia, Dart, Deno, and Gleam to the field, and XCX's own numbers improved on all four tests versus the previous measurement (fib 12.303→10.560 ms, lcg 106.480→104.852 ms, sieve 97.814→36.542 ms, json 0.238→0.134 ms). `lcg` and `fib` are competitive with JIT peers; `sieve` remains the main target for optimization in upcoming releases.
+XCX 4.4 ranks 11th by geometric mean, ahead of Nim, Bun, PyPy, LuaJIT, C#, Node.js, Deno, and every interpreted language tested. Compared to the 4.3 run, fib improved from 10.560 to 6.53 ms (shallow self-recursion inlining), moving XCX ahead of LuaJIT, Node.js, and Deno on that test; sieve improved from 36.542 to 34.287 ms, and lcg holds its position among JIT peers.
 
 **Methodology, short version:** every language runs the same algorithmic work
 (no skipped operations, no dead-code elimination); AOT languages are compiled
 at max optimization, JIT languages get a warmup phase before measurement,
 interpreters are measured cold. JSON parsing only counts stdlib-native
-parsers — languages without one get a computed penalty (median relative JSON
+parsers; languages without one get a computed penalty (median relative JSON
 cost of other languages, scaled to that language's own speed, ×1.5) instead
 of an unfair N/A. Final ranking uses geometric mean across all four tests.
 
@@ -201,14 +200,15 @@ Full compiler internals: [`documentation/compiler/`](documentation/compiler/)
 
 ## Project status
 
-XCX 4.3 is best treated as an experimental platform. It is not production-ready, and APIs may change. Expect rough edges.
+XCX 4.4 closes the 4.x stabilization cycle: the runtime behaves as documented, execution modes are semantically aligned, and the language is getting a cleaner, recommended style. It is still an experimental platform. APIs may change, and 5.0a contains deliberate breaking changes with migration tooling.
 
 **What works well:** HTTP servers, SQLite integration, JSON handling, file I/O, cooperative concurrency, interactive terminal programs, and numeric workloads that benefit from JIT-optimized loops.
 
 **Known rough edges:**
 
-- **Linux and macOS**: XCX 4.3 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
-- **HTTP server request body**: there is currently no size limit on incoming request bodies. A fix (rejecting oversized requests with `413` before the handler runs) is planned for XCX 4.4.
+- **Linux and macOS**: XCX 4.4 compiles and passes the full test suite on Linux and macOS. Primary development happens on Windows, so Unix-specific issues may take longer to address. If you run into anything platform-specific, please [open an issue](https://github.com/xcxlang-org/xcx/issues).
+- **`json.parse` in JIT mode**: a loop-carried parse result can grow memory (interpreter is fixed; the memory watchdog protects against runaways). Permanent fix lands in 5.0.
+- **HTTP handler execution is serialized** by design: request I/O stays parallel, but handlers share unsynchronized VM state and run one at a time. Concurrent handler state is a 5.0a design item.
 
 The ecosystem is minimal and evolving. APIs and internal behavior may change across minor versions.
 
@@ -218,24 +218,33 @@ Contributions are welcome; bug reports and pull requests are appreciated. There 
 
 ## Development notes
 
-XCX is currently a solo project, and that shapes how it gets built. Architecture, design decisions, and debugging are worked out through discussion with AI to pick the best variant/approach. Implementation is handled by [Google Antigravity](https://antigravity.google/) for small things and [z.ai](https://z.ai/) for the rest.
+XCX is currently a solo project, and that shapes how it gets built. Architecture,
+design decisions, and debugging are worked out through discussion with
+Claude, implementation is done with Google Antigravity.
 Final decisions, review, and everything that ships are mine.
 
 ---
 
 ## Roadmap
 
-### XCX 4.x: stabilization and known fixes
+### XCX 4.4
 
-The 4.x line focuses on fixing known architectural issues and improving runtime correctness and performance:
+The 4.x stabilization cycle is complete and everything it set out to do shipped:
 
-- **4.3** (released): JIT stability and fallback, correctness fixes, verified dead-code remediation, and the sieve refcount-elision optimization.
-- **4.4** (in development): performance of the `--no-jit` interpreter mode — it has regressed in every release since 4.0 and is the main focus of this cycle; further recursion-time improvements (`fib`); continued technical-debt elimination.
-- **4.5**: ships only if substantive findings surface during 4.4; if 4.4 closes cleanly, work moves straight to 5.0a.
+- **Interpreter performance** (`--no-jit`): loop suite total −17.3% vs 4.3, string concatenation −42%, plus targeted wins across comparisons, globals, and array indexing.
+- **Recursion/JIT**: shallow self-recursion inlining (fib 11.0 → 6.5 ms), deterministic code generation (the per-process bimodality is gone), 64-byte loop-header alignment.
+- **Correctness**: halt semantics identical between JIT and interpreter, globals written in functions visible after calls, `json.parse` retention fix (interpreter) + memory watchdog, `@default(v)` honored end-to-end, and a documented-behavior audit that fixed ~20 doc-vs-reality gaps.
+- **Language cleanup**: `elf`/`els` keyword aliases removed; block semicolons are now optional, and the bare style (`if (ok) then … end`, `func f() { … }`) is the recommended form.
+- **Quality gates**: self-verifying program suites for the whole standard library surface and 104 CLI scenarios running inside `cargo test`.
 
-### XCX 5.0a: language evolution (early planning)
+### XCX 5.0a
 
-No timeline. Work begins when 4.4 closes (via 4.5a only if needed). Early-stage planning includes `match` statement and pattern matching. No breaking changes to existing 4.x syntax are planned.
+Work has begun. The next major version combines language evolution with the remaining runtime work:
+
+- **Pattern matching**: a `match` statement with pattern matching.
+- **Block syntax finalized**: decorative semicolons are removed. The bare form (`then`, `do`, `else`, `end`, `}`) becomes the only form. 4.4 code in the recommended style is already 5.0a-ready; an automated migration script ships with the release.
+- **Performance**: fix the remaining JIT loop-carried `json.parse` retention leak, interprocedural type propagation in the JIT, further interpreter and collection paths.
+- **Bug fixes and hardening**: continued correctness work across the runtime, plus deliberate breaking cleanups (map path-like key semantics) with migration tooling and clear release-notes guidance.
 
 ---
 
@@ -271,9 +280,9 @@ xcx> !exit
 fiber handle(json: req -> json) {
     yield net.respond(200, <<< {"ok": true} >>>);
     return <<< {} >>>;
-};
+}
 
-serve: api { host = "[IP_ADDRESS]", port = 8080, routes = ["*" :: handle] };
+serve: api { host = "[IP_ADDRESS]", port = 8080, routes = ["*" :: handle] }
 ```
 
 ```bash

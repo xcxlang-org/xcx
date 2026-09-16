@@ -1,0 +1,103 @@
+--- TEST: SUITE-34
+--- Area: Applications
+--- Priority: high
+--- Name: Dependency scheduler (cargo-test twin of programs/34_task_scheduler.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+array:s: tasks {"a", "b", "c", "d", "e"};
+map: prio {
+    schema = [s <-> i]
+    data = [ "a" :: 5, "b" :: 3, "c" :: 8, "d" :: 1, "e" :: 2 ]
+};
+array:s: pairs;
+array:s: order;
+map: indeg {
+    schema = [s <-> i]
+    data = [EMPTY]
+};
+array:s: ready;
+
+func run(-> s) {
+    order.clear();
+    indeg.clear();
+    ready.clear();
+    for p in pairs do;
+        s: child = p.slice(0, 1);
+        if (indeg.contains(child)) then;
+            indeg.insert(child, indeg.get(child) + 1);
+        else;
+            indeg.insert(child, 1);
+        end;
+    end;
+    for t in tasks do;
+        if (!indeg.contains(t)) then;
+            ready.push(t);
+        end;
+    end;
+    while (order.size() < tasks.size()) do;
+        if (ready.size() == 0) then;
+            return "DEADLOCK";
+        end;
+        i: best = 0;
+        i: bi = 0;
+        i: ri = 0;
+        for r in ready do;
+            if (prio.get(r) > best) then;
+                best = prio.get(r);
+                bi = ri;
+            end;
+            ri = ri + 1;
+        end;
+        s: pick = ready.get(bi);
+        ready.delete(bi);
+        order.push(pick);
+        for p in pairs do;
+            if (p.slice(2, 3) == pick) then;
+                s: ch = p.slice(0, 1);
+                i: nd = indeg.get(ch) - 1;
+                indeg.insert(ch, nd);
+                if (nd == 0) then;
+                    ready.push(ch);
+                end;
+            end;
+        end;
+    end;
+    s: seq = "";
+    for o in order do;
+        seq = seq + o;
+    end;
+    return seq;
+};
+
+pairs.push("b>a");
+pairs.push("c>a");
+pairs.push("d>b");
+pairs.push("d>c");
+pairs.push("e>d");
+
+expect("order is acbde", run() == "acbde");
+expect("all tasks ran", order.size() == 5);
+expect("no deadlock", run() != "DEADLOCK");
+
+pairs.push("a>d");
+expect("cycle detected", run() == "DEADLOCK");
+expect("nothing ran under cycle", order.size() == 0);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-34 failed";
+end;

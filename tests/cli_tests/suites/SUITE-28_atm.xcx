@@ -1,0 +1,88 @@
+--- TEST: SUITE-28
+--- Area: Applications
+--- Priority: high
+--- Name: ATM simulation (cargo-test twin of programs/28_atm.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+map: accounts {
+    schema = [s <-> i]
+    data = [ "alice" :: 500, "bob" :: 120 ]
+};
+map: pins {
+    schema = [s <-> s]
+    data = [ "alice" :: "4413", "bob" :: "9007" ]
+};
+array:s: journal;
+i: rejected = 0;
+
+func auth(s: who, s: pin -> b) {
+    if (!accounts.contains(who)) then;
+        return false;
+    end;
+    return pins.get(who) == pin;
+};
+
+func deposit(s: who, i: amount -> b) {
+    if (!accounts.contains(who) || amount <= 0) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    accounts.insert(who, accounts.get(who) + amount);
+    journal.push("DEPOSIT " + who + " " + s(amount));
+    return true;
+};
+
+func withdraw(s: who, i: amount -> b) {
+    if (!accounts.contains(who) || amount <= 0) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    i: bal = accounts.get(who);
+    if (bal < amount) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    accounts.insert(who, bal - amount);
+    journal.push("WITHDRAW " + who + " " + s(amount));
+    return true;
+};
+
+expect("auth ok", auth("alice", "4413"));
+expect("auth wrong pin", !auth("alice", "0000"));
+expect("auth unknown user", !auth("ghost", "4413"));
+
+expect("deposit ok", deposit("alice", 200));
+expect("alice 700", accounts.get("alice") == 700);
+expect("withdraw ok", withdraw("alice", 150));
+expect("alice 550", accounts.get("alice") == 550);
+
+expect("overdraft rejected", !withdraw("alice", 100000));
+expect("negative deposit rejected", !deposit("bob", -5));
+expect("unknown target rejected", !deposit("ghost", 10));
+expect("rejected count 3", rejected == 3);
+
+expect("bob untouched", accounts.get("bob") == 120);
+expect("balance invariant", accounts.get("alice") + accounts.get("bob") == 670);
+expect("journal size", journal.size() == 2);
+expect("journal entry 1", journal.get(0) == "DEPOSIT alice 200");
+expect("journal entry 2", journal.get(1) == "WITHDRAW alice 150");
+expect("pins intact", pins.get("bob") == "9007");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-28 failed";
+end;

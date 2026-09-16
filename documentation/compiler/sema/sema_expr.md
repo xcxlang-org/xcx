@@ -27,9 +27,11 @@ Binary and Unary traversal rules follow a precise subset:
 The core file for all dynamic method validations without modules.
 
 - Massive exhaustive `match` logic evaluates against native primitives natively to execute methods safely:
-  - Strings resolving `.split()` push back `Type::Array(String)`; `.trim()` returns `Type::String`; `.startsWith()`/`.endsWith()` return `Type::Bool`.
+  - Strings resolving `.split()` push back `Type::Array(String)`; `.trim()` returns `Type::String`; `.startsWith()`/`.endsWith()` return `Type::Bool`. Calling `.size()` on a plain string is a compile-time error — the documented string API uses `.length`.
   - Native numbers safely matching `.toStr()`, bypassing rigid string casts dynamically.
   - Collections bind methods like `.push()`/`.add()`/`.insert()` without dedicated argument-count enforcement (Sets and Maps have no `push` at all — their insert methods are `add` and `insert`/`set`/`update`).
+  - `.len()` is a full alias of `.size()`/`.count()` on arrays, json (object + array), set, and map (implemented 4.4, previously documented but missing); `map.isEmpty()` likewise resolves.
+- Method calls with more than 16 arguments are rejected at compile time with a dedicated error (4.4) instead of crashing the runtime.
 
 ## Module Call Execution (`check_module_call.rs`)
 

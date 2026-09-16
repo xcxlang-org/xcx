@@ -1,4 +1,4 @@
-# XCX 4.3 Collections
+# XCX 4.4 Collections
 
 ## Arrays
 
@@ -147,6 +147,16 @@ map: scores {
 };
 ```
 
+> [!WARNING]
+> **Path-like keys — behavior will change in XCX 5.0a; do not build on it.**
+> A string key that contains `.`, contains `[`, or starts with `/` is **not**
+> stored as a literal key: `get` / `set` / `insert` / `contains` / `remove`
+> interpret it as a nested path (e.g. `"a.b"` targets key `"b"` inside the
+> map nested under `"a"`), and `size()` counts only top-level entries.
+> Consequence: URLs, dotted identifiers, and any key containing those
+> characters cannot be used as literal keys. Until 5.0, key such values by
+> a safe slug or id and keep the original string as the stored value.
+
 ### Map Methods
 
 | Method           | Signature       | Returns   | Description                               |
@@ -218,6 +228,12 @@ end;
 ## Tables
 
 Relational data structures with optional auto-increment columns.
+
+> [!NOTE]
+> **Semicolons after blocks are optional (recommended style: without).** The
+> `;` after the closing `}` of `{ }`-shaped declarations — `array`/`set`
+> literals, `map`, `table`, `database` — may be omitted and is removed in
+> XCX 5.0a.
 
 ```xcx
 table: products {

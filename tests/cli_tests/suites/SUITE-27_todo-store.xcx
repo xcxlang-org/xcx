@@ -1,0 +1,65 @@
+--- TEST: SUITE-27
+--- Area: Applications
+--- Priority: high
+--- Name: Persistent TODO store (cargo-test twin of programs/27_todo_cli.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: file = "suite27_tasks.txt";
+store.delete(file);
+store.write(file, "buy milk\nwrite xcx program\ntest suite\nship release");
+
+s: raw = store.read(file);
+array:s: tasks = raw.split("\n");
+expect("loaded 4 tasks", tasks.size() == 4);
+
+map: done {
+    schema = [s <-> b]
+    data = [EMPTY]
+};
+array:s: remaining;
+for t in tasks do;
+    if (t == "write xcx program") then;
+        done.insert(t, true);
+    else;
+        remaining.push(t);
+    end;
+end;
+
+expect("one completed", done.size() == 1 && done.get("write xcx program"));
+expect("three remain", remaining.size() == 3);
+expect("first remaining", remaining.get(0) == "buy milk");
+expect("last remaining", remaining.get(2) == "ship release");
+
+s: out = "";
+for t2 in remaining do;
+    out = out + t2 + "\n";
+end;
+out = out + "[DONE] write xcx program";
+store.write(file, out);
+
+s: raw2 = store.read(file);
+array:s: lines2 = raw2.split("\n");
+expect("saved 4 lines", lines2.size() == 4);
+expect("archive line saved", lines2.get(3) == "[DONE] write xcx program");
+expect("active task kept", lines2.get(0) == "buy milk");
+
+expect("cleanup", store.delete(file) && !store.exists(file));
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-27 failed";
+end;

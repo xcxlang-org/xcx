@@ -1,5 +1,5 @@
 use crate::frontend::lexer::TokenKind;
-use crate::frontend::ast::{Stmt, StmtKind, Expr, ExprKind, Type, SetRange, Argument};
+use crate::frontend::ast::{Stmt, StmtKind, Expr, ExprKind, Type, SetRange};
 use crate::error::Span;
 use super::parser::Parser;
 use super::precedence::Precedence;
@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
                         ty = Type::Map(key_type.clone(), value_type.clone());
                     }
                     self.advance();
-                    self.expect_semicolon();
+                    if self.current.kind == TokenKind::Semicolon { self.advance(); }
                     Some(map_lit)
                 } else {
                     let val = self.parse_expression(Precedence::Lowest)?;
@@ -64,7 +64,7 @@ impl<'a> Parser<'a> {
                     }
 
                     self.advance();
-                    self.expect_semicolon();
+                    if self.current.kind == TokenKind::Semicolon { self.advance(); }
                     Some(table_lit)
                 } else {
                     let val = self.parse_expression(Precedence::Lowest)?;
@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
                 if self.current.kind == TokenKind::LeftBrace || self.current.kind == TokenKind::Database {
                     let db_lit = self.parse_database_literal()?;
                     self.advance();
-                    self.expect_semicolon();
+                    if self.current.kind == TokenKind::Semicolon { self.advance(); }
                     Some(db_lit)
                 } else {
                     let val = self.parse_expression(Precedence::Lowest)?;
@@ -92,27 +92,26 @@ impl<'a> Parser<'a> {
         }
 
         let mut decls = Vec::new();
+        // A declaration whose value is a `{ ... }` literal terminates at the
+        // closing brace, mirroring `func`/`fiber`/data-literal blocks: the
+        // trailing `;` is optional for those and required for flat
+        // declarations (`i: x = 5;`), where it is the only statement
+        // terminator.
+        let mut ends_with_brace_literal;
         loop {
             let decl_span = self.current.span.clone();
             let name = self.parse_identifier_as_string_id(true)?;
+            ends_with_brace_literal = false;
             let value = if self.current.kind == TokenKind::Equal || matches!(self.current.kind, TokenKind::RawBlock(_)) {
                 if self.current.kind == TokenKind::Equal { self.advance(); }
-                let mut val = self.parse_expression(Precedence::Lowest)?;
-                if matches!(ty, Type::Json) && matches!(val.kind, ExprKind::RawBlock(_)) {
-                    let parse_method = self.interner.intern("parse");
-                    let json_target = self.interner.intern("json");
-                    val = Expr {
-                        kind: ExprKind::MethodCall {
-                            receiver: Box::new(Expr { kind: ExprKind::Identifier(json_target), span: decl_span.clone() }),
-                            method: parse_method,
-                            args: vec![Argument::Positional(val.clone())],
-                            wait_after: false,
-                        },
-                        span: decl_span.clone(),
-                    };
-                }
-                Some(val)
+                // The RawBlock self-parses at runtime (LoadConst + JsonParse for
+                // parseable content; unparseable content keeps plain-string
+                // behaviour per json_http.md). Wrapping it in an extra
+                // json.parse(…) re-parses the already-parsed value — scalars
+                // lose their json-ness and JSON strings hit R305.
+                Some(self.parse_expression(Precedence::Lowest)?)
             } else if self.current.kind == TokenKind::LeftBrace {
+                ends_with_brace_literal = true;
                 let lit_span = self.current.span.clone();
                 self.advance(); 
                 if let Type::Set(st) = &ty {
@@ -174,7 +173,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.expect_semicolon();
+        if ends_with_brace_literal {
+            if self.current.kind == TokenKind::Semicolon { self.advance(); }
+        } else {
+            self.expect_semicolon();
+        }
 
         if decls.len() == 1 {
             Some(decls.pop().unwrap())
@@ -263,7 +266,7 @@ impl<'a> Parser<'a> {
             return None; 
         }
         self.advance(); // past '}'
-        self.expect_semicolon();
+        if self.current.kind == TokenKind::Semicolon { self.advance(); }
         if routes.is_none() {
             self.error("Property 'routes' is required in serve configuration.");
             return None;
@@ -319,8 +322,8 @@ impl<'a> Parser<'a> {
             return None;
         }
         self.advance(); // past '}'
-        self.expect_semicolon();
-        
+        if self.current.kind == TokenKind::Semicolon { self.advance(); }
+
         Some(Stmt {
             kind: StmtKind::DatabaseDecl { name, fields },
             span,

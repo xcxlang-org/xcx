@@ -267,8 +267,8 @@ impl FunctionCompiler {
                     self.emit(OpCode::ReturnVoid, &stmt.span);
                 }
             }
-            StmtKind::FunctionDef { name, params, body, .. } => {
-                self.compile_fn_def(name, params, body, stmt, ctx);
+            StmtKind::FunctionDef { name, params, return_type, body, .. } => {
+                self.compile_fn_def(name, params, return_type.as_deref(), body, stmt, ctx);
             }
             StmtKind::FiberDef { .. } => {
                 self.compile_fiber_def(stmt, ctx);

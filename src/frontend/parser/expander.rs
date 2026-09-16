@@ -11,6 +11,11 @@ pub struct Expander<'a> {
     visiting_files: HashSet<PathBuf>,
     included_files: HashSet<PathBuf>,
     aliases: HashMap<StringId, String>,
+    // Aliased includes in encounter order, each with the module's
+    // unprefixed top-level names. Drives the bare math-constant rewrite:
+    // it is only valid towards an alias whose module actually declares
+    // the symbol (encounter order disambiguates multiple candidates).
+    alias_exports: Vec<(StringId, HashSet<StringId>)>,
     include_paths: Vec<PathBuf>,
 }
 
@@ -22,6 +27,7 @@ impl<'a> Expander<'a> {
             visiting_files: HashSet::new(),
             included_files: HashSet::new(),
             aliases: HashMap::new(),
+            alias_exports: Vec::new(),
             include_paths: Vec::new(),
         }
     }
@@ -115,6 +121,7 @@ impl<'a> Expander<'a> {
                         let alias_str = self.interner.lookup(alias_id).to_string();
                         self.aliases.insert(alias_id, alias_str.clone());
                         let mut expanded_sub = self.expand(sub_program, new_current_dir)?;
+                        self.alias_exports.push((alias_id, collect_top_level_names(&expanded_sub)));
                         self.prefix_program(&mut expanded_sub, &alias_str);
                         stmts.extend(expanded_sub.stmts);
                     } else {
@@ -213,11 +220,15 @@ impl<'a> Expander<'a> {
             }
             ExprKind::Identifier(id) => {
                 let id_str = self.interner.lookup(*id).to_string();
-                if !id_str.contains('.') {
-                    for prefix in self.aliases.values() {
-                        if id_str == "PI" || id_str == "E" || id_str == "TAU" || id_str == "PHI" || 
-                           id_str == "SQRT2" || id_str == "LN2" || id_str == "LN10" || 
-                           id_str == "INF" || id_str == "INT_MAX" || id_str == "INT_MIN" {
+                if !id_str.contains('.') && is_math_constant_name(&id_str) {
+                    // Rewrite a bare math constant only towards an aliased
+                    // include whose module actually declares that symbol.
+                    // Rewriting unconditionally hijacked unrelated variables
+                    // named PI/E/TAU/... into unresolvable `<alias>.X`
+                    // references whenever any aliased include was present.
+                    for (alias_id, exports) in &self.alias_exports {
+                        if exports.contains(id) {
+                            let prefix = &self.aliases[alias_id];
                             let new_id_str = format!("{}.{}", prefix, id_str);
                             *id = self.interner.intern(&new_id_str);
                             break;
@@ -272,15 +283,7 @@ impl<'a> Expander<'a> {
     }
 
     fn prefix_program(&mut self, program: &mut Program, prefix: &str) {
-        let mut top_level_names = HashSet::new();
-        for stmt in &program.stmts {
-            match &stmt.kind {
-                StmtKind::VarDecl { name, .. } => { top_level_names.insert(*name); }
-                StmtKind::FunctionDef { name, .. } => { top_level_names.insert(*name); }
-                StmtKind::FiberDef { name, .. } => { top_level_names.insert(*name); }
-                _ => {}
-            }
-        }
+        let top_level_names = collect_top_level_names(program);
 
         for stmt in &mut program.stmts {
             self.prefix_stmt(stmt, prefix, &top_level_names);
@@ -478,4 +481,28 @@ impl<'a> Expander<'a> {
         let prefixed = format!("{}.{}", prefix, name);
         self.interner.intern(&prefixed)
     }
+}
+
+fn collect_top_level_names(program: &Program) -> HashSet<StringId> {
+    let mut names = HashSet::new();
+    for stmt in &program.stmts {
+        match &stmt.kind {
+            StmtKind::VarDecl { name, .. }
+            | StmtKind::FunctionDef { name, .. }
+            | StmtKind::FiberDef { name, .. } => { names.insert(*name); }
+            _ => {}
+        }
+    }
+    names
+}
+
+// Bare identifiers with these names are rewritten to the exporting aliased
+// module's prefixed symbol (PI -> m.PI) — the math-constant convenience
+// inherited from the math library module. Names outside this set are never
+// rewritten.
+fn is_math_constant_name(name: &str) -> bool {
+    matches!(
+        name,
+        "PI" | "E" | "TAU" | "PHI" | "SQRT2" | "LN2" | "LN10" | "INF" | "INT_MAX" | "INT_MIN"
+    )
 }

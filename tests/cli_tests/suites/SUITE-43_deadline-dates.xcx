@@ -1,0 +1,46 @@
+--- TEST: SUITE-43
+--- Area: Applications
+--- Priority: high
+--- Name: Deadline date arithmetic (cargo-test twin of programs/43_deadline_dates.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+date: start = date("2024-02-27");
+expect("start parsed", start.year == 2024 && start.month == 2 && start.day == 27);
+
+date: leap_day = start + 2;
+expect("leap day reached", leap_day.month == 2 && leap_day.day == 29);
+
+date: march = leap_day + 1;
+expect("march after leap", march.month == 3 && march.day == 1);
+
+expect("comparison", start < march);
+expect("format tokens", march.format("DD/MM/YYYY") == "01/03/2024");
+
+date: year_end = date("2024-12-31");
+date: new_year = year_end + 1;
+expect("year roll", new_year.year == 2025 && new_year.month == 1 && new_year.day == 1);
+
+i: days = march - start;
+expect("day diff", days == 3);
+
+date: non_leap = date("2023-02-28") + 1;
+expect("non-leap feb", non_leap.month == 3 && non_leap.day == 1);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-43 failed";
+end;

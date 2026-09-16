@@ -1,0 +1,4 @@
+--- Support module for MIN-16 (direct include)
+func shout(s: t -> s) {
+    return t.upper();
+};

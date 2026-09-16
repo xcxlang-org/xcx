@@ -1,0 +1,57 @@
+--- TEST: MIN-24
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal ledger (fast companion of programs/24_ledger.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+map: balances {
+    schema = [s <-> i]
+    data = [ "a" :: 100, "b" :: 50 ]
+};
+i: rejected = 0;
+func transfer(s: from, s: to, i: amount -> b) {
+    b: has_from = balances.contains(from);
+    b: has_to = balances.contains(to);
+    if (!has_from || !has_to) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    if (amount <= 0) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    i: src = balances.get(from);
+    if (src < amount) then;
+        rejected = rejected + 1;
+        return false;
+    end;
+    balances.insert(from, src - amount);
+    i: dst = balances.get(to);
+    balances.insert(to, dst + amount);
+    return true;
+};
+
+expect("valid transfer", transfer("a", "b", 30));
+expect("balances", balances.get("a") == 70 && balances.get("b") == 80);
+expect("overdraft rejected", !transfer("b", "a", 1000));
+expect("rejected count", rejected == 1);
+expect("unknown source", !transfer("x", "a", 1));
+expect("invariant", balances.get("a") + balances.get("b") == 150);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-24 failed";
+end;

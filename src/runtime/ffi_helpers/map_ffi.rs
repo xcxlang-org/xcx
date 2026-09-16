@@ -36,8 +36,12 @@ pub unsafe extern "C" fn xcx_jit_map_get(out: *mut Value, map_bits: u64, _map_ta
             return;
         }
     }
-    
-    unsafe { *out = Value::from_i64(0); } // nil equivalent
+
+    // A missing key is a halt.error in the interpreter (which increments the
+    // error tally without printing); mirror that so the JIT-side error
+    // checkpoint terminates the frame identically.
+    crate::vm::core::vm::increment_error_count();
+    unsafe { *out = Value::from_i64(0); }
 }
 
 #[unsafe(no_mangle)]

@@ -170,8 +170,14 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
                 chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
                     .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())
             };
-            let dt = date.and_hms_opt(0, 0, 0).unwrap();
-            let i = ctx.add_constant(Value::from_date(dt.and_utc().timestamp_millis()));
+            let naive = date.and_hms_opt(0, 0, 0).unwrap();
+            // Midnight in the LOCAL zone (docs: date("YYYY-MM-DD") has no time
+            // part; formatting must return 00:00:00 local, not a UTC shift).
+            let ts = match chrono::TimeZone::from_local_datetime(&chrono::Local, &naive) {
+                chrono::LocalResult::Single(dt) => dt.timestamp_millis(),
+                _ => naive.and_utc().timestamp_millis(),
+            };
+            let i = ctx.add_constant(Value::from_date(ts));
             let dst = fc.push_reg();
             fc.emit(OpCode::LoadConst { dst, idx: i }, &expr.span);
             dst

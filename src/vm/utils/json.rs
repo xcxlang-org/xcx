@@ -104,9 +104,7 @@ fn set_json_val_cow(node: &mut JsonVal, parts: &[&str], value: JsonVal) {
         *node = value;
         return;
     }
-    
-    node.make_mutable();
-    
+
     let part = parts[0];
     let rest = &parts[1..];
     
@@ -185,27 +183,28 @@ pub fn build_response_json(result: Result<ureq::Response, ureq::Error>) -> crate
             use std::io::Read as _;
             let mut buf = Vec::new();
             let text = if resp.into_reader().read_to_end(&mut buf).is_ok() {
-                unsafe { String::from_utf8_unchecked(buf) }
+                String::from_utf8_lossy(&buf).into_owned()
             } else {
                 String::new()
             };
             if text.len() > 50 * 1024 * 1024 {
                 let mut res = Vec::new();
                 res.push((Arc::new("status".to_string()), JsonVal::Int(413)));
-                res.push((Arc::new("ok".to_string()),     JsonVal::Bool(false)));
-                res.push((Arc::new("error".to_string()),  JsonVal::String(Arc::new(StringObj::new("Body too large".to_string().into_bytes())))));
+                res.push((Arc::new("ok".to_string()), JsonVal::Bool(false)));
+                res.push((Arc::new("error".to_string()), JsonVal::String(Arc::new(StringObj::new("Body too large".to_string().into_bytes())))));
                 JsonVal::Object(Arc::new(RwLock::new(res)))
             } else {
                 let body_val = if let Ok(serde_res) = serde_json::from_str::<serde_json::Value>(&text) {
                     JsonVal::from_serde(serde_res)
                 } else {
-                    JsonVal::String(Arc::new(StringObj::new(text.into_bytes())))
+                    JsonVal::String(Arc::new(StringObj::new(text.clone().into_bytes())))
                 };
                 let mut res = Vec::new();
-                res.push((Arc::new("status".to_string()),  JsonVal::Int(status as i64)));
-                res.push((Arc::new("ok".to_string()),      JsonVal::Bool(status >= 200 && status < 300)));
-                res.push((Arc::new("body".to_string()),    body_val));
+                res.push((Arc::new("status".to_string()), JsonVal::Int(status as i64)));
+                res.push((Arc::new("ok".to_string()), JsonVal::Bool(status >= 200 && status < 300)));
+                res.push((Arc::new("body".to_string()), body_val));
                 res.push((Arc::new("headers".to_string()), JsonVal::Object(Arc::new(RwLock::new(h_map)))));
+                res.push((Arc::new("text".to_string()), JsonVal::String(Arc::new(StringObj::new(text.into_bytes())))));
                 JsonVal::Object(Arc::new(RwLock::new(res)))
             }
         }
@@ -219,62 +218,67 @@ pub fn build_response_json(result: Result<ureq::Response, ureq::Error>) -> crate
             use std::io::Read as _;
             let mut buf = Vec::new();
             let text = if resp.into_reader().read_to_end(&mut buf).is_ok() {
-                unsafe { String::from_utf8_unchecked(buf) }
+                String::from_utf8_lossy(&buf).into_owned()
             } else {
                 String::new()
             };
             let body_val = if let Ok(serde_res) = serde_json::from_str::<serde_json::Value>(&text) {
                 JsonVal::from_serde(serde_res)
             } else {
-                JsonVal::String(Arc::new(StringObj::new(text.into_bytes())))
+                JsonVal::String(Arc::new(StringObj::new(text.clone().into_bytes())))
             };
             let mut res = Vec::new();
-            res.push((Arc::new("status".to_string()),  JsonVal::Int(code as i64)));
-            res.push((Arc::new("ok".to_string()),      JsonVal::Bool(false)));
-            res.push((Arc::new("error".to_string()),   JsonVal::String(Arc::new(StringObj::new(format!("Status code {}", code).into_bytes())))));
-            res.push((Arc::new("body".to_string()),    body_val));
+            res.push((Arc::new("status".to_string()), JsonVal::Int(code as i64)));
+            res.push((Arc::new("ok".to_string()), JsonVal::Bool(false)));
+            res.push((Arc::new("body".to_string()), body_val));
             res.push((Arc::new("headers".to_string()), JsonVal::Object(Arc::new(RwLock::new(h_map)))));
+            res.push((Arc::new("text".to_string()), JsonVal::String(Arc::new(StringObj::new(text.into_bytes())))));
             JsonVal::Object(Arc::new(RwLock::new(res)))
         }
         Err(e) => {
             let mut res = Vec::new();
             res.push((Arc::new("status".to_string()), JsonVal::Int(0)));
-            res.push((Arc::new("ok".to_string()),     JsonVal::Bool(false)));
-            res.push((Arc::new("error".to_string()),  JsonVal::String(Arc::new(StringObj::new(e.to_string().into_bytes())))));
+            res.push((Arc::new("ok".to_string()), JsonVal::Bool(false)));
+            res.push((Arc::new("error".to_string()), JsonVal::String(Arc::new(StringObj::new(e.to_string().into_bytes())))));
+            res.push((Arc::new("text".to_string()), JsonVal::String(Arc::new(StringObj::new(Vec::new())))));
             JsonVal::Object(Arc::new(RwLock::new(res)))
         }
     }
 }
 
-pub fn push_json_value_at_path(target: &mut JsonVal, path: &str, value: JsonVal) {
+/// Pushes `value` at `path` inside `target`. Returns `false` when the path
+/// does not resolve to an array — the caller must surface the documented
+/// halt.error (R306) instead of pushing.
+pub fn push_json_value_at_path(target: &mut JsonVal, path: &str, value: JsonVal) -> bool {
     let pointer = super::path::normalize_json_path(path);
     let parts: Vec<&str> = pointer.split('/').filter(|s| !s.is_empty()).collect();
-    push_json_val_cow(target, &parts, value);
+    push_json_val_cow(target, &parts, value)
 }
 
-fn push_json_val_cow(node: &mut JsonVal, parts: &[&str], value: JsonVal) {
-    node.make_mutable();
+fn push_json_val_cow(node: &mut JsonVal, parts: &[&str], value: JsonVal) -> bool {
     if parts.is_empty() {
         if let JsonVal::Array(a) = node {
             a.write().push(value);
-        } else {
-            panic!("halt.error: Cannot push to a non-array JSON object (R306)");
+            return true;
         }
-        return;
+        return false;
     }
-    
+
     let part = parts[0];
     let rest = &parts[1..];
-    
+
     match node {
         JsonVal::Object(o) => {
             let mut obj_write = o.write();
             if let Some(pos) = obj_write.iter().position(|(k, _)| k.as_str() == part) {
                 let mut child = obj_write[pos].1.clone();
-                push_json_val_cow(&mut child, rest, value);
-                obj_write[pos].1 = child;
+                let pushed = push_json_val_cow(&mut child, rest, value);
+                if pushed {
+                    obj_write[pos].1 = child;
+                }
+                pushed
             } else {
-                panic!("halt.error: Target array not found in JSON (R306)");
+                false
             }
         }
         JsonVal::Array(a) => {
@@ -282,18 +286,19 @@ fn push_json_val_cow(node: &mut JsonVal, parts: &[&str], value: JsonVal) {
             if let Ok(idx) = part.parse::<usize>() {
                 if idx < arr_write.len() {
                     let mut child = arr_write[idx].clone();
-                    push_json_val_cow(&mut child, rest, value);
-                    arr_write[idx] = child;
+                    let pushed = push_json_val_cow(&mut child, rest, value);
+                    if pushed {
+                        arr_write[idx] = child;
+                    }
+                    pushed
                 } else {
-                    panic!("halt.error: Target array not found in JSON (R306)");
+                    false
                 }
             } else {
-                panic!("halt.error: Target array not found in JSON (R306)");
+                false
             }
         }
-        _ => {
-            panic!("halt.error: Target array not found in JSON (R306)");
-        }
+        _ => false,
     }
 }
 

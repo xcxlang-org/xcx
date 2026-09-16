@@ -37,7 +37,7 @@ impl<'a> Parser<'a> {
         while self.current.kind != TokenKind::RightBrace && self.current.kind != TokenKind::EOF {
             if let Some(stmt) = self.parse_statement() { body.push(stmt); } else { self.advance(); }
         }
-        if self.current.kind == TokenKind::RightBrace { self.advance(); self.expect_semicolon(); }
+        if self.current.kind == TokenKind::RightBrace { self.advance(); if self.current.kind == TokenKind::Semicolon { self.advance(); } }
         Some(Stmt { kind: StmtKind::FiberDef { name, params, return_type: return_type.map(Box::new), body }, span: start_span })
     }
 

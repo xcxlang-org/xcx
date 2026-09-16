@@ -1,0 +1,51 @@
+--- TEST: MIN-09
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal fibers (fast companion of programs/09_fibers.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+fiber gen(i: n -> i) {
+    for i in 1 to n do;
+        yield i * 10;
+    end;
+    return 0;
+};
+fiber:i: g = gen(3);
+expect("next 1", g.next() == 10);
+expect("next 2", g.next() == 20);
+expect("next 3", g.next() == 30);
+expect("final return", g.next() == 0);
+expect("done", g.isDone());
+
+fiber tick() {
+    yield;
+};
+fiber: t = tick();
+expect("void run to yield", t.run());
+expect("void run finish returns false", !t.run());
+expect("void done", t.isDone());
+
+fiber:i: g2 = gen(2);
+i: sum = 0;
+for v in g2 do;
+    sum = sum + v;
+end;
+expect("iterate fiber", sum == 30);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-09 failed";
+end;

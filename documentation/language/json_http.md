@@ -1,8 +1,8 @@
-# XCX 4.3 JSON and HTTP
+# XCX 4.4 JSON and HTTP
 
 ## JSON
 
-JSON objects in XCX 4.3 are **mutable**.
+JSON objects in XCX 4.4 are **mutable**.
 
 ### Creation
 
@@ -252,7 +252,7 @@ serve: app {
 |-----------|--------------|----------|---------------|-------------------------------------------|
 | `port`    | `i`          | Yes      | —             | Port number (1–65535)                     |
 | `host`    | `s`          | No       | `"127.0.0.1"` | `"0.0.0.0"` = all interfaces              |
-| `workers` | `i`          | No       | `1`           | Fibers per request                        |
+| `workers` | `i`          | No       | `1`           | Reserved: accepted but currently unused — handler execution is serialized |
 | `routes`  | route list   | Yes      | —             | Checked top-to-bottom, first-match wins   |
 
 > [!NOTE]

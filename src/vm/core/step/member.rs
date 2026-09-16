@@ -14,22 +14,22 @@ pub fn handle(
     match op {
         OpCode::GetMember { dst, container, name_idx } => {
             let c = locals[container as usize];
-            let name = exec.ctx.constants[name_idx as usize].to_string();
-            let res = crate::vm::core::runtime_ops::RuntimeOps::get_member(c, &name);
+            let name = exec.const_string(name_idx);
+            let res = crate::vm::core::runtime_ops::RuntimeOps::get_member(c, name.as_str());
             unsafe { locals[dst as usize].dec_ref(); }
             locals[dst as usize] = res;
         }
         OpCode::SetMember { container, name_idx, src } => {
             let c = locals[container as usize];
-            let name = exec.ctx.constants[name_idx as usize].to_string();
+            let name = exec.const_string(name_idx);
             let val = locals[src as usize];
-            crate::vm::core::runtime_ops::RuntimeOps::set_member(c, &name, val);
+            crate::vm::core::runtime_ops::RuntimeOps::set_member(c, name.as_str(), val);
         }
         OpCode::StrAppendMember { container, name_idx, src } => {
             let c = locals[container as usize];
-            let name = exec.ctx.constants[name_idx as usize].to_string();
+            let name = exec.const_string(name_idx);
             let val = locals[src as usize];
-            crate::vm::core::runtime_ops::RuntimeOps::str_append_member(c, &name, val);
+            crate::vm::core::runtime_ops::RuntimeOps::str_append_member(c, name.as_str(), val);
         }
         _ => return None,
     }

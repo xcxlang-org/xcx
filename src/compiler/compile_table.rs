@@ -9,9 +9,18 @@ use parking_lot::RwLock;
 impl FunctionCompiler {
     pub(crate) fn compile_table_literal(&mut self, expr: &Expr, ctx: &mut CompileContext, table_name: Option<String>) -> u8 {
         if let ExprKind::TableLiteral { columns, rows } = &expr.kind {
-            let vm_cols = columns.iter().map(|c| crate::vm::object::VMColumn {
-                name: ctx.interner.lookup(c.name).to_string(),
-                ty: c.ty.clone(), is_auto: c.is_auto(), is_pk: c.is_pk(), is_unique: c.is_unique(),
+            let vm_cols = columns.iter().map(|c| {
+                let dc = c.default_const();
+                crate::vm::object::VMColumn {
+                    name: ctx.interner.lookup(c.name).to_string(),
+                    ty: c.ty.clone(), is_auto: c.is_auto(), is_pk: c.is_pk(), is_unique: c.is_unique(),
+                    default_sql: dc.as_ref().map(|d| d.to_sql_literal(|id| ctx.interner.lookup(id).to_string())),
+                    default_const: dc.as_ref().filter(|d| !matches!(d, crate::frontend::ast::DefaultConst::Str(_))).cloned(),
+                    default_str: match dc {
+                        Some(crate::frontend::ast::DefaultConst::Str(id)) => Some(ctx.interner.lookup(id).to_string()),
+                        _ => None,
+                    },
+                }
             }).collect();
             let t_name = table_name.unwrap_or_default();
             let skeleton = Value::from_table(Arc::new(RwLock::new(

@@ -15,6 +15,18 @@ pub struct VMColumn {
     pub is_auto: bool,
     pub is_pk: bool,
     pub is_unique: bool,
+    /// Ready-to-emit SQLite literal of the column's `@default(v)` value
+    /// (e.g. `0`, `1.0`, `'user'`), or None when the column has no default.
+    /// CREATE TABLE must carry it so omitted insert columns receive the
+    /// declared default instead of SQL NULL.
+    pub default_sql: Option<String>,
+    /// Declared `@default(v)` constant for numeric/bool columns, used to
+    /// fill omitted cells of in-memory rows (mirrors default_sql).
+    pub default_const: Option<crate::frontend::ast::DefaultConst>,
+    /// Rendered string value of the column's `@default("…")` (strings are
+    /// interned at compile time and cannot be resolved at runtime), used
+    /// together with default_const by the in-memory insert path.
+    pub default_str: Option<String>,
 }
 
 // Relational table object representation.
@@ -46,7 +58,7 @@ impl Clone for TableObj {
 
 #[derive(Clone)]
 pub struct SqlBinding {
-    pub db_conn: std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>>,
+    pub db_conn: std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     pub table_name: String,
 }
 

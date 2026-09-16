@@ -26,7 +26,7 @@ while (i < test_files.size()) do;
     b: result = .terminal !run file;
     if (result) then;
         passed = passed + 1;
-    els;
+    else;
         failed = failed + 1;
         >! "ERROR in: " + file;
     end;

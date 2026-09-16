@@ -7,16 +7,19 @@ Code in `src/hir/pass.rs` (orchestration), `src/hir/inline.rs` (substitution mec
 ## Policy: `should_inline`
 
 ```rust
-pub fn should_inline(callee: &HirFunc, caller: &HirFunc, depth: usize) -> bool
+pub fn should_inline(callee: &HirFunc, caller: &HirFunc, depth: usize, in_loop: bool) -> bool
 ```
 
 A function is **not** inlined if any of the following conditions are met:
 
+- `in_loop` is true — the call site sits inside a loop body (`While`/`For` in the HIR tree). Substituted locals are remapped into the caller's register space and can overlap the loop's live collection registers, so calls inside loops are never inlined,
 - Either `callee` or `caller` is a fiber (`is_fiber`),
 - The nesting depth satisfies `depth >= 3`,
-- The `callee` calls itself by name (`callee.name == caller.name` — a trivial direct recursion case) or contains a recursive reference detected by `check_ref_recursion` (scanning the function body for occurrences of its own name),
+- The `callee` contains a recursive reference detected by `check_ref_recursion` (scanning the function body for occurrences of its own name beyond the shallow self-call case),
 - Any `return` statement resides inside a loop (`is_return_in_loop`) — an early return from within a loop does not have a straightforward equivalent in the substituted block,
 - The function cost (`calculate_func_cost`) is `>= 20`.
+
+**Shallow self-recursion is allowed (4.4).** A simple leaf self-call (`callee.name == caller.name`) is no longer an unconditional bar: the inliner substitutes the body at the call site and leaves the inner self-call as a real call. This is what cuts call overhead for functions like `fib`. Because recursion depth is now measured in physical (post-inlining) frames, equivalent programs may recurse slightly deeper before hitting the limit.
 
 The cost is calculated as the sum of the instruction costs in the body: each instruction has a base cost of `1`, and instructions containing nested blocks (`If`, `While`, `For`, `InlineBlock`) recursively add the costs of their branches/bodies.
 

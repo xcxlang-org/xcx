@@ -56,16 +56,21 @@ impl Executor {
 
         let mut set_data = set_rc.write();
         match kind {
-            MethodKind::Add => { 
+            MethodKind::Add => {
                 let val = args[0];
                 unsafe { val.inc_ref(); }
-                if (*set_data).insert(val) {
+                let inserted = (*set_data).insert(val);
+                if inserted {
                     set_data.cache = None;
                     if let Some(arr) = set_data.cached_arr.take() {
                         unsafe { arr.dec_ref(); }
                     }
+                } else {
+                    // Duplicate insert: the set kept its own reference, so the
+                    // caller-transferred one has to be released.
+                    unsafe { val.dec_ref(); }
                 }
-                let res = Value::from_bool(true);
+                let res = Value::from_bool(inserted);
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }

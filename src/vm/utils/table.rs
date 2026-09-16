@@ -64,7 +64,7 @@ pub fn join_tables(
             col.name.clone()
         };
         right_col_map.push(Some(out_cols.len()));
-        out_cols.push(VMColumn { name: out_name, ty: col.ty.clone(), is_auto: col.is_auto, is_pk: col.is_pk, is_unique: col.is_unique });
+        out_cols.push(VMColumn { name: out_name, ty: col.ty.clone(), is_auto: col.is_auto, is_pk: col.is_pk, is_unique: col.is_unique, default_sql: col.default_sql.clone(), default_const: col.default_const.clone(), default_str: col.default_str.clone() });
     }
     let left_rc  = Arc::new(RwLock::new(left.clone()));
     let right_rc = Arc::new(RwLock::new(right.clone()));

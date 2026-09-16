@@ -1,0 +1,60 @@
+--- TEST: MIN-23
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal url shortener (fast companion of programs/23_url_shortener.xcx)
+--- Note: map keys containing '.', '/' or '[' are treated as nested paths,
+--- so links are keyed by slug only; idempotency scans the stored values.
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+map: links {
+    schema = [s <-> s]
+    data = [EMPTY]
+};
+map: clicks {
+    schema = [s <-> i]
+    data = [EMPTY]
+};
+func shorten(s: url -> s) {
+    array:s: urls = links.values();
+    array:s: slugs = links.keys();
+    i: hit = -1;
+    i: idx = 0;
+    for i in 0 to urls.size() - 1 do;
+        if (urls.get(i) == url) then;
+            hit = i;
+        end;
+    end;
+    if (hit >= 0) then;
+        return slugs.get(hit);
+    end;
+    s: slug = "u" + s(links.size() + 1);
+    links.insert(slug, url);
+    clicks.insert(slug, 0);
+    return slug;
+};
+s: a = shorten("https://example.com");
+expect("first slug", a == "u1");
+expect("idempotent", shorten("https://example.com") == "u1");
+s: b = shorten("https://example.org");
+expect("second slug", b == "u2");
+expect("resolve", links.get(a) == "https://example.com");
+clicks.insert(a, clicks.get(a) + 1);
+expect("click count", clicks.get(a) == 1);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-23 failed";
+end;

@@ -36,7 +36,7 @@ impl Executor {
             MethodKind::Query | MethodKind::Fetch | MethodKind::QueryRaw => {
                 self.handle_database_read(dst, db_rc, args, ip, locals)
             }
-            MethodKind::Delete => {
+            MethodKind::Delete | MethodKind::Remove => {
                 self.handle_database_delete(dst, db_rc, args, ip, locals)
             }
             MethodKind::Drop | MethodKind::Has => {
@@ -47,14 +47,13 @@ impl Executor {
             }
             MethodKind::Sync => {
                 if args.is_empty() {
-                    self.handle_database_maintenance(dst, db_rc, ip, locals)
+                    self.handle_database_maintenance(dst, db_rc, MethodKind::Sync, ip, locals)
                 } else {
                     self.handle_database_sync(dst, db_rc, args, ip, locals)
                 }
             }
             MethodKind::Close | MethodKind::IsOpen => {
-                // To be implemented in connection.rs if needed for more than maintenance
-                self.handle_database_maintenance(dst, db_rc, ip, locals)
+                self.handle_database_maintenance(dst, db_rc, kind, ip, locals)
             }
             _ => { 
                 eprintln!("Method {:?} not supported for Database{}", kind, self.current_span_info(ip)); 

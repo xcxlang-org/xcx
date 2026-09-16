@@ -171,6 +171,11 @@ impl Executor {
                 unsafe { locals[dst as usize].dec_ref(); }
                 locals[dst as usize] = res;
             }
+            MethodKind::IsEmpty => {
+                let res = Value::from_bool(map_rc.read().elements.is_empty());
+                unsafe { locals[dst as usize].dec_ref(); }
+                locals[dst as usize] = res;
+            }
             MethodKind::Show  => { 
                 let map_val = Value::from_map(map_rc.clone());
                 println!("{}", map_val.to_string()); 

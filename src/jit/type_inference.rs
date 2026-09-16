@@ -68,13 +68,51 @@ fn propagate_op_types(op: OpCode, types: &mut [TypeTag; 256], constants: &[VMVal
         OpCode::Add { dst, src1, src2 } | OpCode::Sub { dst, src1, src2 } |
         OpCode::Mul { dst, src1, src2 } | OpCode::Div { dst, src1, src2 } |
         OpCode::Mod { dst, src1, src2 } | OpCode::Pow { dst, src1, src2 } => {
-            let mut t = types[dst as usize];
-            if t == TypeTag::Unknown { t = types[src1 as usize]; }
-            if t == TypeTag::Unknown { t = types[src2 as usize]; }
-            if t != TypeTag::Unknown {
-                types[dst as usize] = t;
-                types[src1 as usize] = t;
-                types[src2 as usize] = t;
+            // Derive the destination type from the operands only. Copying the
+            // destination type back onto the source registers (the previous
+            // behavior) invented facts: one known destination typed every
+            // unknown operand, which could mark a string register as Int or
+            // Float and let an unchecked specialization consume it.
+            let t1 = types[src1 as usize];
+            let t2 = types[src2 as usize];
+            let is_add = matches!(op, OpCode::Add { .. });
+            let is_sub = matches!(op, OpCode::Sub { .. });
+            let ty = if is_add {
+                if (t1 == TypeTag::Date && t2 == TypeTag::Int) || (t1 == TypeTag::Int && t2 == TypeTag::Date) {
+                    TypeTag::Date
+                } else if t1 == TypeTag::String || t2 == TypeTag::String {
+                    // String wins over Float — matches Value::add.
+                    TypeTag::String
+                } else if t1 == TypeTag::Int && t2 == TypeTag::Int {
+                    TypeTag::Int
+                } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                    TypeTag::Float
+                } else {
+                    TypeTag::Unknown
+                }
+            } else if is_sub {
+                if t1 == TypeTag::Date && t2 == TypeTag::Int {
+                    TypeTag::Date
+                } else if t1 == TypeTag::Date && t2 == TypeTag::Date {
+                    TypeTag::Int
+                } else if t1 == TypeTag::Int && t2 == TypeTag::Int {
+                    TypeTag::Int
+                } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                    TypeTag::Float
+                } else {
+                    TypeTag::Unknown
+                }
+            } else {
+                if t1 == TypeTag::Int && t2 == TypeTag::Int {
+                    TypeTag::Int
+                } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
+                    TypeTag::Float
+                } else {
+                    TypeTag::Unknown
+                }
+            };
+            if ty != TypeTag::Unknown {
+                types[dst as usize] = ty;
             }
         }
         OpCode::Less { dst, src1, src2 } | OpCode::Greater { dst, src1, src2 } |
@@ -219,12 +257,16 @@ pub fn analyze_chunk_types(
                         TypeTag::Date
                     } else if t1 == TypeTag::Int && t2 == TypeTag::Date {
                         TypeTag::Date
+                    } else if t1 == TypeTag::String || t2 == TypeTag::String {
+                        // Must take precedence over Float: Value::add concatenates
+                        // whenever either operand is a string. Marking this Float
+                        // lets codegen pick the unchecked fadd path, which bitcasts
+                        // string payload bits as f64 (silent corruption).
+                        TypeTag::String
                     } else if t1 == TypeTag::Int && t2 == TypeTag::Int {
                         TypeTag::Int
                     } else if t1 == TypeTag::Float || t2 == TypeTag::Float {
                         TypeTag::Float
-                    } else if t1 == TypeTag::String || t2 == TypeTag::String {
-                        TypeTag::String
                     } else {
                         TypeTag::Unknown
                     }

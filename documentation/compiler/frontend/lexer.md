@@ -96,8 +96,8 @@ All variants of the `TokenKind` enum:
 |---|---|
 | `If` | `if` |
 | `Then` | `then` |
-| `ElseIf` | `elseif`, `elif`, `elf` |
-| `Else` | `else`, `els` |
+| `ElseIf` | `elseif`, `elif` |
+| `Else` | `else` |
 | `End` | `end` |
 | `For` | `for` |
 | `In` | `in` |

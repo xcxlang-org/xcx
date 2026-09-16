@@ -38,7 +38,7 @@ The top-level `Compiler` orchestrates the entire translation pipeline. It owns t
 
 - `globals`: Maps global variable names (`StringId`) to an integer index `0..N`.
 - `func_indices`: Maps function/fiber names to their index in the `functions` array.
-- `functions`: Accumulates JIT-ready `Chunk`s representing compiled functions/fibers.
+- `functions`: Accumulates JIT-ready `Chunk`s representing compiled functions/fibers. Each `Chunk` carries `param_types: Vec<TypeTag>` filled from the declared parameter signatures; the JIT seeds parameter registers from it during type inference.
 - `constants`: A deduplicated pool of compile-time constants (strings, floats, ints, maps) used by `OpCode::LoadConst`.
 - `disable_inline`: A single flag set once before compiling the whole program (not per `CompileContext`), which — when true — skips the HIR inlining pass entirely. See "Compilation Dispatch" below and `compiler/hir/hir_inline.md`.
 

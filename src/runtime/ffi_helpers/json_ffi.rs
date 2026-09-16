@@ -74,9 +74,7 @@ pub unsafe extern "C" fn xcx_jit_json_set(json_bits: u64, json_tag: u64, path_bi
     let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
     
     unsafe {
-        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
-        (*json_ptr).root.make_mutable();
-        
+
         if is_simple {
             if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
                 let obj = &mut *(*o).data_ptr();
@@ -105,8 +103,6 @@ pub unsafe extern "C" fn xcx_jit_json_push(json_bits: u64, json_tag: u64, val_bi
     let val = Value { bits: val_bits, tag: val_tag };
 
     unsafe {
-        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
-        (*json_ptr).root.make_mutable();
         if let crate::vm::object::JsonVal::Array(a) = &mut (*json_ptr).root {
             let arr = &mut *(*a).data_ptr();
             arr.push(value_to_json(&val));
@@ -119,10 +115,10 @@ pub unsafe extern "C" fn xcx_jit_json_push(json_bits: u64, json_tag: u64, val_bi
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, path_bits: u64, path_tag: u64, val_bits: u64, val_tag: u64) {
+pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, path_bits: u64, path_tag: u64, val_bits: u64, val_tag: u64, exec_ptr: *mut crate::vm::core::executor::Executor) {
     let json_val = Value { bits: json_bits, tag: json_tag };
     if !json_val.is_json() { return; }
-    
+
     let path_val = Value { bits: path_bits, tag: path_tag };
     let path_borrow = unsafe { path_val.as_str_borrow() };
     let path_temp;
@@ -133,21 +129,31 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
             &path_temp
         }
     };
-    
+
     let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>() as *mut crate::vm::object::JsonObj;
-    
+
     let val = Value { bits: val_bits, tag: val_tag };
     let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
-    
+
+    // Mirrors the interpreter's JsonFastGetPush: any path that does not
+    // resolve to an array is a halt.error (R306), never a panic.
+    macro_rules! halt_r306 {
+        () => {
+            if !exec_ptr.is_null() {
+                let exec = &mut *exec_ptr;
+                eprintln!("halt.error: push target is not an array");
+                exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            return;
+        };
+    }
+
     unsafe {
-        (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
-        
+
         if is_simple {
-            (*json_ptr).root.make_mutable();
             if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
                 let o_write = &mut *(*o).data_ptr();
                 if let Some(pos) = o_write.iter().position(|(k, _)| k.as_str() == path_str) {
-                    o_write[pos].1.make_mutable();
                     if let crate::vm::object::JsonVal::Array(a) = &mut o_write[pos].1 {
                         let arr = &mut *(*a).data_ptr();
                         arr.push(value_to_json(&val));
@@ -155,10 +161,14 @@ pub unsafe extern "C" fn xcx_jit_json_get_push(json_bits: u64, json_tag: u64, pa
                     }
                 }
             }
+            halt_r306!();
         }
-        
+
         let mut root_copy = (*json_ptr).root.clone();
-        crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, value_to_json(&val));
+        let pushed = crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, value_to_json(&val));
+        if !pushed {
+            halt_r306!();
+        }
         (*json_ptr).root = root_copy;
     }
 }
@@ -174,17 +184,8 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
     let json_ptr = json_val.unpack_ptr::<crate::vm::object::JsonObj>();
 
     unsafe {
-        let ver = (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire);
-        let cached_ver = (*json_ptr).cached_version.load(std::sync::atomic::Ordering::Acquire);
-        if ver == cached_ver {
-            if let Some(s) = (*json_ptr).cached_str.lock().as_ref() {
-                let res = Value::from_string(s.clone());
-                if res.is_ptr() { res.inc_ref(); }
-                *out = res;
-                return;
-            }
-        }
-
+        // Always serialize fresh — the tree mutates in place through shared
+        // storage, so no wrapper-level cache can know when it changed.
         let capacity = match &(*json_ptr).root {
             crate::vm::object::JsonVal::Array(a) => a.read().len() * 64,
             crate::vm::object::JsonVal::Object(o) => o.read().len() * 64,
@@ -194,12 +195,6 @@ pub unsafe extern "C" fn xcx_jit_json_to_str(out: *mut Value, json_bits: u64, js
         (*json_ptr).root.to_string_buf(&mut buf);
 
         let string_obj = std::sync::Arc::new(crate::vm::object::StringObj::new(buf.into_bytes()));
-        
-        let mut lock = (*json_ptr).cached_str.lock();
-        if (*json_ptr).version.load(std::sync::atomic::Ordering::Acquire) == ver {
-            *lock = Some(string_obj.clone());
-            (*json_ptr).cached_version.store(ver, std::sync::atomic::Ordering::Release);
-        }
         let res = Value::from_string(string_obj);
         if res.is_ptr() { res.inc_ref(); }
         *out = res;

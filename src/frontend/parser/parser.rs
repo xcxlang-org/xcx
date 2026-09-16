@@ -38,9 +38,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Calculates the precedence of the current token. (Moved to pratt.rs)
-    // Calculates the precedence of the next token. (Moved to pratt.rs)
-
     // Consumes current interner state.
     pub fn into_interner(self) -> Interner {
         self.interner

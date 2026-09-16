@@ -1,0 +1,63 @@
+--- TEST: SUITE-41
+--- Area: Applications
+--- Priority: high
+--- Name: Set algebra (cargo-test twin of programs/41_sets_algebra.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+set:N: small {1,,4};
+expect("range inclusive", small.size() == 4);
+expect("contains boundary", small.contains(1) && small.contains(4));
+expect("contains middle", small.contains(2) && small.contains(3));
+expect("no 5", !small.contains(5));
+
+expect("add new", small.add(5));
+expect("add dup ignored", !small.add(5));
+expect("size after add", small.size() == 5);
+expect("remove works", small.remove(5) && !small.contains(5));
+
+set:N: a {1,,4};
+set:N: b {3,,6};
+set:N: u = a UNION b;
+set:N: i = a INTERSECTION b;
+set:N: d = a DIFFERENCE b;
+set:N: sd = a SYMMETRIC_DIFFERENCE b;
+
+expect("union size", u.size() == 6);
+expect("union bounds", u.contains(1) && u.contains(6));
+expect("intersection size", i.size() == 2);
+expect("intersection members", i.contains(3) && i.contains(4));
+expect("difference size", d.size() == 2);
+expect("difference members", d.contains(1) && d.contains(2));
+expect("symdiff size", sd.size() == 4);
+expect("symdiff members", sd.contains(1) && sd.contains(2) && sd.contains(5) && sd.contains(6));
+
+set:S: names {"carol", "alice", "bob"};
+expect("string set size", names.size() == 3);
+expect("string set add dup", !names.add("alice"));
+expect("string set contains", names.contains("bob"));
+expect("string set remove", names.remove("bob") && !names.contains("bob"));
+
+i: sum = 0;
+for v in d do;
+    sum = sum + v;
+end;
+expect("iterate difference sums to 3", sum == 3);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-41 failed";
+end;

@@ -23,7 +23,11 @@ jobs:
           prepare: |
             pkg install -y rust
           run: |
-            cargo test --release --verbose
+            # On FreeBSD the JIT cannot finalize executable memory (enforced
+            # W^X), so the VM legitimately falls back to the interpreter and
+            # the JIT-speedup perf guard is not applicable there. The guard
+            # still runs on Windows, Linux and macOS.
+            cargo test --release --verbose -- --skip perf_guards::fib_jit_is_substantially_faster_than_interpreter
             chmod +x ./FreeBSD/build_freebsd_pkg.sh
             ./FreeBSD/build_freebsd_pkg.sh
 

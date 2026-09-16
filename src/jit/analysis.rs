@@ -1,5 +1,5 @@
 use crate::vm::opcode::{OpCode, TypeTag};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// True when a `GetVar` at `ip` loads a pointer global into the receiver
 /// register of a following specialized `MethodCall` that overwrites that
@@ -324,7 +324,11 @@ fn analyze_globals_iter<I>(bytecode: I) -> Vec<u32>
 where
     I: IntoIterator<Item = OpCode>,
 {
-    let mut used = HashSet::new();
+    // BTreeSet, not HashSet: the returned Vec fixes the global preload order
+    // in the JIT prologue, and Cranelift register allocation is sensitive to
+    // that order. A HashSet seeds its hasher randomly per process, which made
+    // the generated code (and its speed) flip between two variants 50/50.
+    let mut used = BTreeSet::new();
     for op in bytecode {
         match op {
             OpCode::GetVar { idx, .. } |
@@ -345,7 +349,10 @@ fn analyze_locals_iter<I>(bytecode: I) -> Vec<u8>
 where
     I: IntoIterator<Item = OpCode>,
 {
-    let mut used = HashSet::new();
+    // BTreeSet for the same reason as analyze_globals_iter: this Vec fixes
+    // the local preload order in the JIT prologue and must be identical in
+    // every process.
+    let mut used = BTreeSet::new();
     for op in bytecode {
         match op {
             OpCode::Move { dst, src } | OpCode::Add { dst, src1: src, src2: _ } |
@@ -986,4 +993,298 @@ pub fn analyze_maybe_ptr_regs(
     }
 
     state
+}
+
+/// Global slots whose stored value a chunk changes directly. Slot writes
+/// only: mutating a heap object through a pointer cached in a global leaves
+/// the slot itself (pointer) intact and needs no reload.
+fn own_global_slot_writes(bytecode: &[OpCode]) -> HashSet<u32> {
+    let mut writes = HashSet::new();
+    for op in bytecode {
+        match *op {
+            OpCode::SetVar { idx, .. }
+            | OpCode::IncVar { idx }
+            | OpCode::DecVar { idx }
+            | OpCode::IncVarLoopNext { g_idx: idx, .. }
+            | OpCode::DecVarLoopPrev { g_idx: idx, .. }
+            | OpCode::StrAppendVar { var_idx: idx, .. }
+            | OpCode::JsonBind { idx, .. }
+            | OpCode::JsonInject { table_idx: idx, .. } => {
+                writes.insert(idx);
+            }
+            _ => {}
+        }
+    }
+    writes
+}
+
+fn direct_call_targets(bytecode: &[OpCode]) -> Vec<u32> {
+    let mut targets = Vec::new();
+    for op in bytecode {
+        if let OpCode::Call { func_idx, .. } = *op {
+            targets.push(func_idx);
+        }
+    }
+    targets
+}
+
+/// Per-function transitive closure of global-slot writes over direct Call
+/// edges, fixpoint over the whole call graph (recursion and cycles
+/// included). Indexed by function index. A caller that just invoked `f` only
+/// needs to reload the globals in `result[f]`; everything else it has cached
+/// is guaranteed to be unchanged. Lambdas and fibers never appear as Call
+/// targets from JIT code (they run executor-side behind the generic method
+/// dispatch, which reloads unconditionally), so Call edges are the complete
+/// call graph here.
+pub fn analyze_global_slot_writes(functions: &[std::sync::Arc<crate::vm::opcode::Chunk>]) -> Vec<HashSet<u32>> {
+    let n = functions.len();
+    let edges: Vec<Vec<u32>> = functions.iter().map(|f| direct_call_targets(&f.bytecode)).collect();
+    let mut writes: Vec<HashSet<u32>> = functions.iter().map(|f| own_global_slot_writes(&f.bytecode)).collect();
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for f in 0..n {
+            let mut merged = writes[f].clone();
+            for &callee in &edges[f] {
+                if (callee as usize) < n {
+                    merged.extend(writes[callee as usize].iter().copied());
+                }
+            }
+            if merged != writes[f] {
+                writes[f] = merged;
+                changed = true;
+            }
+        }
+    }
+    writes
+}
+
+/// Registers whose **value** the chunk reads anywhere in its bytecode: the
+/// source registers of every operation, pure destinations excluded. Argument
+/// windows (`Call` / `MethodCall` / collection-init bases) count as reads of
+/// every covered register, because those consumers fetch arguments from the
+/// locals array in memory after a spill.
+///
+/// `spill_all` uses this to skip the memory store of a dirty register that
+/// is never read: nothing can then observe any difference between the
+/// register's current value and the stale value the slot still holds.
+pub fn analyze_chunk_read_locals(bytecode: &[OpCode]) -> Vec<u8> {
+    let mut reads = BTreeSet::new();
+    fn r(reads: &mut BTreeSet<u8>, reg: u8) {
+        reads.insert(reg);
+    }
+    fn r_win(reads: &mut BTreeSet<u8>, base: u8, count: u8) {
+        for i in 0..count as usize {
+            reads.insert((base as usize + i) as u8);
+        }
+    }
+    for op in bytecode {
+        match *op {
+            OpCode::Move { src, .. }
+            | OpCode::Not { src, .. }
+            | OpCode::Neg { src, .. }
+            | OpCode::CastInt { src, .. }
+            | OpCode::CastFloat { src, .. }
+            | OpCode::CastString { src, .. }
+            | OpCode::CastBool { src, .. }
+            | OpCode::Typeof { src, .. }
+            | OpCode::JsonParse { src, .. }
+            | OpCode::EnvGet { src, .. }
+            | OpCode::JumpIfFalse { src, .. }
+            | OpCode::JumpIfTrue { src, .. }
+            | OpCode::Print { src, .. }
+            | OpCode::Wait { src, .. }
+            | OpCode::Yield { src, .. }
+            | OpCode::YieldWithTarget { src, .. }
+            | OpCode::HaltAlert { src }
+            | OpCode::HaltError { src }
+            | OpCode::HaltFatal { src }
+            | OpCode::Return { src }
+            | OpCode::SetName { src, .. }
+            | OpCode::StrAppendVar { src, .. }
+            | OpCode::RandomChoice { src, .. }
+            | OpCode::TableCloneSkeleton { src, .. }
+            | OpCode::SetVar { src, .. } => r(&mut reads, src),
+            OpCode::Add { src1, src2, .. }
+            | OpCode::Sub { src1, src2, .. }
+            | OpCode::Mul { src1, src2, .. }
+            | OpCode::Div { src1, src2, .. }
+            | OpCode::Mod { src1, src2, .. }
+            | OpCode::Pow { src1, src2, .. }
+            | OpCode::Equal { src1, src2, .. }
+            | OpCode::NotEqual { src1, src2, .. }
+            | OpCode::Greater { src1, src2, .. }
+            | OpCode::Less { src1, src2, .. }
+            | OpCode::GreaterEqual { src1, src2, .. }
+            | OpCode::LessEqual { src1, src2, .. }
+            | OpCode::And { src1, src2, .. }
+            | OpCode::Or { src1, src2, .. }
+            | OpCode::Has { src1, src2, .. }
+            | OpCode::IntConcat { src1, src2, .. }
+            | OpCode::SetUnion { src1, src2, .. }
+            | OpCode::SetIntersection { src1, src2, .. }
+            | OpCode::SetDifference { src1, src2, .. }
+            | OpCode::SetSymDifference { src1, src2, .. } => {
+                r(&mut reads, src1);
+                r(&mut reads, src2);
+            }
+            OpCode::IncLocal { reg }
+            | OpCode::DecLocal { reg } => r(&mut reads, reg),
+            OpCode::LoopNext { reg, limit_reg, .. }
+            | OpCode::LoopPrev { reg, limit_reg, .. }
+            | OpCode::IncVarLoopNext { reg, limit_reg, .. }
+            | OpCode::DecVarLoopPrev { reg, limit_reg, .. }
+            | OpCode::ArrayLoopNext { idx_reg: reg, size_reg: limit_reg, .. } => {
+                r(&mut reads, reg);
+                r(&mut reads, limit_reg);
+            }
+            OpCode::IncLocalLoopNext { inc_reg, reg, limit_reg, .. }
+            | OpCode::DecLocalLoopPrev { dec_reg: inc_reg, reg, limit_reg, .. } => {
+                r(&mut reads, inc_reg);
+                r(&mut reads, reg);
+                r(&mut reads, limit_reg);
+            }
+            OpCode::Call { base, arg_count, .. }
+            | OpCode::FiberCreate { base, arg_count, .. }
+            | OpCode::MethodCall { base, arg_count, .. }
+            | OpCode::MethodCallNamed { base, arg_count, .. }
+            | OpCode::MethodCallCustom { base, arg_count, .. } => {
+                r(&mut reads, base);
+                r_win(&mut reads, base + 1, arg_count);
+            }
+            OpCode::ArrayInit { base, count, .. }
+            | OpCode::SetInit { base, count, .. }
+            | OpCode::MapInit { base, count, .. } => r_win(&mut reads, base, count as u8),
+            OpCode::GetIndex { container, index, .. } => {
+                r(&mut reads, container);
+                r(&mut reads, index);
+            }
+            OpCode::SetIndex { container, index, src, .. }
+            | OpCode::StrAppendElement { container, index, src, .. } => {
+                r(&mut reads, container);
+                r(&mut reads, index);
+                r(&mut reads, src);
+            }
+            OpCode::GetMember { container, .. } => r(&mut reads, container),
+            OpCode::SetMember { container, src, .. }
+            | OpCode::StrAppendMember { container, src, .. } => {
+                r(&mut reads, container);
+                r(&mut reads, src);
+            }
+            OpCode::TableIter { tbl_reg, idx_reg, limit_reg, .. } => {
+                // row_reg is the loop destination; the handler reads the old
+                // value from the register itself, not from the slot.
+                r(&mut reads, tbl_reg);
+                r(&mut reads, idx_reg);
+                r(&mut reads, limit_reg);
+            }
+            OpCode::TablePushRow { tbl_reg, row_reg } => {
+                r(&mut reads, tbl_reg);
+                r(&mut reads, row_reg);
+            }
+            OpCode::TableInitRow { tbl_dst, base, col_count } => {
+                r(&mut reads, tbl_dst);
+                r_win(&mut reads, base, col_count);
+            }
+            OpCode::TableInit { base, row_count, col_count, .. } => {
+                r_win(&mut reads, base, (row_count * col_count) as u8);
+            }
+            OpCode::DatabaseInit { engine_src, path_src, tables_base_reg, table_count, .. } => {
+                r(&mut reads, engine_src);
+                r(&mut reads, path_src);
+                r(&mut reads, tables_base_reg);
+                r_win(&mut reads, tables_base_reg, table_count as u8);
+            }
+            OpCode::RandomInt { min, max, step, has_step, .. }
+            | OpCode::RandomFloat { min, max, step, has_step, .. } => {
+                r(&mut reads, min);
+                r(&mut reads, max);
+                if has_step != 0 {
+                    r(&mut reads, step);
+                }
+            }
+            OpCode::SetRange { start, end, step, has_step, .. } => {
+                r(&mut reads, start);
+                r(&mut reads, end);
+                if has_step != 0 {
+                    r(&mut reads, step);
+                }
+            }
+            OpCode::StoreWrite { base, .. }
+            | OpCode::StoreRead { base, .. }
+            | OpCode::StoreAppend { base, .. }
+            | OpCode::StoreExists { base, .. }
+            | OpCode::StoreDelete { base, .. }
+            | OpCode::StoreList { base, .. }
+            | OpCode::StoreIsDir { base, .. }
+            | OpCode::StoreSize { base, .. }
+            | OpCode::StoreMkdir { base, .. }
+            | OpCode::StoreGlob { base, .. }
+            | OpCode::StoreZip { base, .. }
+            | OpCode::StoreUnzip { base, .. } => r(&mut reads, base),
+            OpCode::JsonBind { json_src, path_src, .. }
+            | OpCode::JsonBindLocal { json_src, path_src, .. } => {
+                r(&mut reads, json_src);
+                r(&mut reads, path_src);
+            }
+            OpCode::JsonInject { json_src, mapping_src, .. } => {
+                r(&mut reads, json_src);
+                r(&mut reads, mapping_src);
+            }
+            OpCode::JsonInjectLocal { table_reg, json_src, mapping_src } => {
+                // The table is mutated in place, so its prior content is
+                // observable: count it as a read.
+                r(&mut reads, table_reg);
+                r(&mut reads, json_src);
+                r(&mut reads, mapping_src);
+            }
+            OpCode::JsonFastGetPush { json_src, path_src, val_src } => {
+                r(&mut reads, json_src);
+                r(&mut reads, path_src);
+                r(&mut reads, val_src);
+            }
+            OpCode::HttpRequest { arg_src, .. } => r(&mut reads, arg_src),
+            OpCode::HttpRespond { status_src, body_src, headers_src, .. } => {
+                r(&mut reads, status_src);
+                r(&mut reads, body_src);
+                r(&mut reads, headers_src);
+            }
+            OpCode::HttpServe { port_src, host_src, workers_src, routes_src, .. } => {
+                r(&mut reads, port_src);
+                r(&mut reads, host_src);
+                r(&mut reads, workers_src);
+                r(&mut reads, routes_src);
+            }
+            OpCode::HttpCall { url_src, body_src, .. } => {
+                r(&mut reads, url_src);
+                r(&mut reads, body_src);
+            }
+            OpCode::CryptoHash { pass_src, alg_src, .. } => {
+                r(&mut reads, pass_src);
+                r(&mut reads, alg_src);
+            }
+            OpCode::CryptoVerify { pass_src, hash_src, alg_src, .. } => {
+                r(&mut reads, pass_src);
+                r(&mut reads, hash_src);
+                r(&mut reads, alg_src);
+            }
+            OpCode::CryptoToken { len_src, .. } => r(&mut reads, len_src),
+            OpCode::TerminalRun { cmd_src, .. } => r(&mut reads, cmd_src),
+            OpCode::TerminalMove { x_src, y_src, .. } => {
+                r(&mut reads, x_src);
+                r(&mut reads, y_src);
+            }
+            OpCode::TerminalWrite { src, .. } => r(&mut reads, src),
+            OpCode::RowGet { row_reg, .. } => r(&mut reads, row_reg),
+            // Pure producers and global-only ops: LoadConst, GetVar, Input,
+            // InputKey, InputKeyWait, InputReady, DateNow, PerfMs/Us/Ns,
+            // EnvArgs, CryptoToken-free BoolArrayInit, BoolArrayInit,
+            // TableBegin, TerminalExit/Clear/Raw/Normal/Cursor, Jump,
+            // ReturnVoid, Halt, YieldVoid, IncVar, DecVar, JsonBindGlobal's
+            // global target — none read a local register.
+            _ => {}
+        }
+    }
+    reads.into_iter().collect()
 }

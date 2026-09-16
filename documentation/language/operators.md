@@ -1,4 +1,4 @@
-# XCX 4.3 Operators
+# XCX 4.4 Operators
 
 ## Arithmetic Operators
 
@@ -58,7 +58,7 @@ Used for comparing values of the same type.
 2. Unary negation `-`, `!!` (NOT)
 3. Exponentiation `^`
 4. Multiplication `*`, Division `/`, Modulo `%`
-5. Set operations `UNION`, `INTERSECTION`, `DIFFERENCE`, `SYM_DIFF`
+5. Set operations `UNION`, `INTERSECTION`, `DIFFERENCE`, `SYMMETRIC_DIFFERENCE`
 6. Addition `+`, Subtraction `-`, Concatenation `++`
 7. Comparisons `HAS`, `>`, `<`, `>=`, `<=`
 8. Equality `==`, `!=`

@@ -161,8 +161,13 @@ impl Executor {
 
         let mut affected = 0;
         let mut last_id = 0;
-        let conn = db_rc.conn.lock();
-        
+        let conn_guard = db_rc.conn.lock();
+        let Some(conn) = conn_guard.as_ref() else {
+            self.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("R401: database connection is closed{}", self.current_span_info(ip));
+            return OpResult::Halt;
+        };
+
         for (sql, params) in sqls.into_iter().zip(params_list.into_iter()) {
             match conn.execute(&sql, rusqlite::params_from_iter(params)) {
                 Ok(n) => {

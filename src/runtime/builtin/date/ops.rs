@@ -96,7 +96,8 @@ impl Executor {
                     }
                     res
                 } else {
-                    "%Y-%m-%d".to_string()
+                    // dates.md: default format is "YYYY-MM-DD HH:mm:ss"
+                    "%Y-%m-%d %H:%M:%S".to_string()
                 };
 
                 let formatted = dt.format(&result).to_string();

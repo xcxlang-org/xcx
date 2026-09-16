@@ -54,7 +54,6 @@ impl<'a> Reporter<'a> {
         println!();
     }
 
-    // Compatibility method for old code
     pub fn error(&mut self, line: usize, col: usize, len: usize, message: &str) {
         use crate::error::span::Span;
         self.emit(Diagnostic {

@@ -41,16 +41,40 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
             let mut res = Value::from_bool(false);
 
             if c.is_array() {
-                let arr = c.as_array();
-                let arr_rd = arr.read();
                 let i = idx.as_i64() as usize;
-                if i < arr_rd.len() {
-                    res = arr_rd[i];
-                    unsafe { res.inc_ref(); }
-                } else {
-                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    eprintln!("R303: Array index out of bounds: {} (Array length: {})", idx.as_i64(), arr_rd.len());
-                    return Some(OpResult::Halt);
+                let arr_ptr: *mut RwLock<crate::vm::object::ArrayObj> =
+                    c.unpack_ptr::<RwLock<crate::vm::object::ArrayObj>>() as *mut _;
+                let mut arr = unsafe { Arc::from_raw(arr_ptr) };
+                match Arc::get_mut(&mut arr) {
+                    // Sole owner: skip both the lock and the shared-read path.
+                    // from_raw took over the register's reference; into/forget
+                    // hands it back so the register keeps its refcount.
+                    Some(lock) => {
+                        let obj = lock.get_mut();
+                        let len = obj.elements.len();
+                        if i < len {
+                            res = obj.elements[i];
+                            unsafe { res.inc_ref(); }
+                        } else {
+                            std::mem::forget(arr);
+                            exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            eprintln!("R303: Array index out of bounds: {} (Array length: {})", idx.as_i64(), len);
+                            return Some(OpResult::Halt);
+                        }
+                        std::mem::forget(arr);
+                    }
+                    None => {
+                        std::mem::forget(arr);
+                        let arr_rd = unsafe { (*arr_ptr).read() };
+                        if i < arr_rd.len() {
+                            res = arr_rd[i];
+                            unsafe { res.inc_ref(); }
+                        } else {
+                            exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            eprintln!("R303: Array index out of bounds: {} (Array length: {})", idx.as_i64(), arr_rd.len());
+                            return Some(OpResult::Halt);
+                        }
+                    }
                 }
             } else if c.is_map() {
                 let map = c.as_map();
@@ -123,16 +147,36 @@ pub fn handle(exec: &Executor, op: OpCode, locals: &mut [Value]) -> Option<OpRes
             let val = locals[src as usize];
 
             if c.is_array() {
-                let arr = c.as_array();
-                let mut arr_wr = arr.write();
                 let i = idx.as_i64() as usize;
-                if i < arr_wr.len() {
-                    unsafe { val.inc_ref(); arr_wr[i].dec_ref(); }
-                    arr_wr[i] = val;
-                } else {
-                    exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    eprintln!("R303: Array update index out of bounds: {}", idx.as_i64());
-                    return Some(OpResult::Halt);
+                let arr_ptr: *mut RwLock<crate::vm::object::ArrayObj> =
+                    c.unpack_ptr::<RwLock<crate::vm::object::ArrayObj>>() as *mut _;
+                let mut arr = unsafe { Arc::from_raw(arr_ptr) };
+                match Arc::get_mut(&mut arr) {
+                    Some(lock) => {
+                        let obj = lock.get_mut();
+                        if i < obj.elements.len() {
+                            unsafe { val.inc_ref(); obj.elements[i].dec_ref(); }
+                            obj.elements[i] = val;
+                        } else {
+                            std::mem::forget(arr);
+                            exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            eprintln!("R303: Array update index out of bounds: {}", idx.as_i64());
+                            return Some(OpResult::Halt);
+                        }
+                        std::mem::forget(arr);
+                    }
+                    None => {
+                        std::mem::forget(arr);
+                        let mut arr_wr = unsafe { (*arr_ptr).write() };
+                        if i < arr_wr.len() {
+                            unsafe { val.inc_ref(); arr_wr[i].dec_ref(); }
+                            arr_wr[i] = val;
+                        } else {
+                            exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            eprintln!("R303: Array update index out of bounds: {}", idx.as_i64());
+                            return Some(OpResult::Halt);
+                        }
+                    }
                 }
             } else if c.is_map() {
                 let map = c.as_map();

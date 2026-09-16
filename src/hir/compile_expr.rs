@@ -241,7 +241,7 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
             let dst = base;
 
             let is_builtin_property = match method_name.as_str() {
-                "length" | "year" | "month" | "day" | "hour" | "minute" | "second" | "size" | "count" | "status" | "ok" | "error" => true,
+                "length" | "year" | "month" | "day" | "hour" | "minute" | "second" | "size" | "count" | "len" | "status" | "ok" | "error" => true,
                 _ => false
             };
 
@@ -783,6 +783,12 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
                 is_auto: c.is_auto(),
                 is_pk: c.is_pk(),
                 is_unique: c.is_unique(),
+                default_sql: c.default_const().map(|d| d.to_sql_literal(|id| ctx.interner.lookup(id).to_string())),
+                default_const: c.default_const().as_ref().filter(|d| !matches!(d, crate::frontend::ast::DefaultConst::Str(_))).cloned(),
+                default_str: match c.default_const() {
+                    Some(crate::frontend::ast::DefaultConst::Str(id)) => Some(ctx.interner.lookup(id).to_string()),
+                    _ => None,
+                },
             }).collect();
             let skeleton = Value::from_table(Arc::new(parking_lot::RwLock::new(
                 crate::vm::object::TableObj {
@@ -896,8 +902,14 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
                 chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
                     .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())
             };
-            let dt = date.and_hms_opt(0, 0, 0).unwrap();
-            let i = ctx.add_constant(Value::from_date(dt.and_utc().timestamp_millis()));
+            let naive = date.and_hms_opt(0, 0, 0).unwrap();
+            // Midnight in the LOCAL zone (docs: date("YYYY-MM-DD") has no time
+            // part; formatting must return 00:00:00 local, not a UTC shift).
+            let ts = match chrono::TimeZone::from_local_datetime(&chrono::Local, &naive) {
+                chrono::LocalResult::Single(dt) => dt.timestamp_millis(),
+                _ => naive.and_utc().timestamp_millis(),
+            };
+            let i = ctx.add_constant(Value::from_date(ts));
             let dst = compiler.push_reg();
             compiler.emit(OpCode::LoadConst { dst, idx: i }, &expr.span);
             dst

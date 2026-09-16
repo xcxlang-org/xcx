@@ -123,10 +123,9 @@ impl<'a> Lexer<'a> {
                 if self.cursor.peek() == b'=' {
                     self.cursor.advance();
                     Token::new(TokenKind::BangEqual, line, col, 2)
-                } else if self.cursor.peek() == b'!' {
-                    self.cursor.advance();
-                    Token::new(TokenKind::Not, line, col, 2)
                 } else {
+                    // A lone `!` per token: `!!expr` lexes as two bangs and
+                    // parses as a double negation (identity for bools).
                     Token::new(TokenKind::Bang, line, col, 1)
                 }
             }

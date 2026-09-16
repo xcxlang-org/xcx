@@ -75,8 +75,14 @@ Use '---' for single-line comments.
 ### VM Call and Stack Overflows (`src/vm/core/executor.rs`)
 During bytecode execution, the VM monitors stack limits:
 - **Stack Boundaries:** If `stack_ptr` exceeds the execution stack pool limits, the VM outputs `ERROR halt: XCX VM Stack Overflow` and increments the `error_count` counter.
-- **Recursion Limits:** The call hierarchy stack tracks nest levels. If function calls nested frame limits exceed 800 trace frames, execution aborts: `ERROR halt: Recursion limit exceeded (800 frames)`.
+- **Recursion Limits:** The call hierarchy stack tracks nest levels. If function calls nested frame limits exceed 800 trace frames, execution aborts: `ERROR halt: Recursion limit exceeded (800 frames)`. Since 4.4 the depth counter measures physical (post-inlining) frames, so equivalent programs may recurse deeper than in 4.3.
 - **Invalid Method Invocation:** Unrecognized method tag kinds yield direct failures: `R501: Invalid method kind index: <kind>`.
+
+### Runtime Cast and Structure Halts (4.4)
+- **Failing casts:** `.toInt()` / `.toFloat()` on a non-numeric string raise `halt.error` (whitespace-trimmed parse) in both execution modes instead of panicking; the failure increments the error tally, and the process exits with code 1 when the tally is non-zero.
+- **JSON push target:** `push` through a JSON path that does not resolve to an array raises `halt.error` ("push target is not an array") instead of a raw panic.
+- **`halt.error` recovery:** a `halt.error` inside a function with a return type hands the caller the type's proper default value, so execution continues with a well-typed value.
+- **Halt parity:** halt diagnostics (fatal/error/alert wording) are identical between JIT and interpreter, and fallible JIT fast paths check the same error tally as generic dispatch (see `compiler/jit/jit_codegen.md`).
 
 ### Safe FFI Error Reporting
 To support safe and consistent exception reporting from JIT-compiled code and FFI modules (such as Array boundary checks `R303`), the runtime uses a thread-local pointer model:
@@ -138,3 +144,7 @@ The `TypeErrorKind` enum maps precise semantic logic failures:
 | **`[S212]`** | Run Typed Fiber | Invoking `.run()` methods on typed fibers (which require generator iterator loops instead). |
 | **`[S301]`** | Predicate Name Collision | Conflicting naming parameters between local variables and query columns in `.where()` predicates. |
 | **`[S302]`** | Table Row Count Mismatch | Inserting row values with item counts that don't match the table columns schema definition. |
+
+Two 4.4 additions share the S-series with the entries above: method calls with
+more than 16 arguments are rejected at compile time, and `.size()` called on a
+plain string is a compile-time error (the string API exposes `.length`).

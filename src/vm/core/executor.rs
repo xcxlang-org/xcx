@@ -20,6 +20,14 @@ pub struct Executor {
     pub in_fiber: bool,
     pub globals_raw: *mut Value,
     pub row_cache: std::collections::HashMap<usize, Vec<Value>>,
+    /// Lazily materialized constant-pool names, mirroring the row_cache
+    /// pattern. GetMember/SetMember/StrAppendMember, named/custom method
+    /// dispatch and SetName resolve the same constant index into a String
+    /// allocation on every execution; the resolved value is cached here once
+    /// per index. The constant pool is immutable after compilation, so a
+    /// cached name can never go stale.
+    pub member_name_strings: std::collections::HashMap<u32, Arc<String>>,
+    pub method_name_lists: std::collections::HashMap<u32, Option<Arc<Vec<String>>>>,
 }
 
 impl Executor {
@@ -52,6 +60,8 @@ impl Executor {
             in_fiber: false,
             globals_raw,
             row_cache: std::collections::HashMap::new(),
+            member_name_strings: std::collections::HashMap::new(),
+            method_name_lists: std::collections::HashMap::new(),
         }
     }
 
@@ -96,6 +106,70 @@ impl Executor {
             }
         }
         "".to_string()
+    }
+
+    /// Unsynchronized access to the fixed-size globals array. This mirrors the
+    /// JIT access model exactly: the Vec is allocated once in VM::new with a
+    /// fixed 65536 slots and is only ever indexed, never resized, so the raw
+    /// pointer cached in Executor::new stays valid for the executor's lifetime.
+    #[inline(always)]
+    pub(crate) unsafe fn get_global_raw(&self, idx: usize) -> Value {
+        if idx >= 65536 {
+            return Value::from_bool(false);
+        }
+        unsafe { *self.globals_raw.add(idx) }
+    }
+
+    /// Write side of `get_global_raw`, preserving the refcount discipline of
+    /// `VM::set_global` (increment the incoming pointer value, decrement the
+    /// displaced one) without taking the globals lock.
+    #[inline(always)]
+    pub(crate) unsafe fn set_global_raw(&mut self, idx: usize, val: Value) {
+        if idx >= 65536 {
+            return;
+        }
+        unsafe {
+            if val.is_ptr() { val.inc_ref(); }
+            let slot = self.globals_raw.add(idx);
+            let old = *slot;
+            *slot = val;
+            if old.is_ptr() { old.dec_ref(); }
+        }
+    }
+
+    /// Resolves a constant-pool index into its String form once, then serves
+    /// further lookups from the per-executor cache (same lifetime pattern as
+    /// row_cache). Returns an owned Arc so no borrow of the executor outlives
+    /// the call.
+    #[inline]
+    pub(crate) fn const_string(&mut self, idx: u32) -> Arc<String> {
+        if let Some(s) = self.member_name_strings.get(&idx) {
+            return s.clone();
+        }
+        let s = Arc::new(self.ctx.constants[idx as usize].to_string());
+        self.member_name_strings.insert(idx, s.clone());
+        s
+    }
+
+    /// Cached `Option` form of a string-array constant used by named method
+    /// dispatch; `None` is cached too, so a non-array constant pays once.
+    #[inline]
+    pub(crate) fn const_name_list(&mut self, idx: u32) -> Option<Arc<Vec<String>>> {
+        if let Some(v) = self.method_name_lists.get(&idx) {
+            return v.clone();
+        }
+        let val = self.ctx.constants[idx as usize];
+        let mut names_vec = Vec::new();
+        if val.is_array() {
+            let arr = val.as_array();
+            let arr_rd = arr.read();
+            for v in arr_rd.elements.iter() {
+                names_vec.push(v.to_string());
+            }
+        }
+        let resolved = if names_vec.is_empty() { None } else { Some(Arc::new(names_vec)) };
+        self.method_name_lists.insert(idx, resolved.clone());
+        resolved
     }
 
     #[inline(always)]
@@ -153,7 +227,8 @@ impl Executor {
                         jit_ptr = ptr as *mut std::ffi::c_void;
                         chunk.jit_ptr.store(jit_ptr, Ordering::Release);
                     }
-                    Err(_e) => {
+                    Err(e) => {
+                        eprintln!("[XCX] JIT disabled: code finalization failed for `{func_name}`: {e}. Falling back to the interpreter.");
                         vm_arc.disable_jit.store(true, Ordering::Release);
                     }
                 }
@@ -306,13 +381,22 @@ impl Executor {
         locals: &mut [Value],
         vm_arc: &Arc<VM>,
     ) -> OpResult {
+        // The shutdown flag lives on a shared cache line; polling it every
+        // instruction costs a load the CPU cannot cache across iterations.
+        // A 1 us granularity (1024 ops) is still far below human perception
+        // and below any meaningful Ctrl-C latency for scripts.
+        let mut shutdown_poll: u32 = 0;
         while *ip < bytecode.len() {
-            if SHUTDOWN.load(Ordering::Relaxed) { return OpResult::Halt; }
-            
+            shutdown_poll += 1;
+            if shutdown_poll >= 1024 {
+                shutdown_poll = 0;
+                if SHUTDOWN.load(Ordering::Relaxed) { return OpResult::Halt; }
+            }
+
             let current_ip = *ip;
             let op = bytecode[current_ip];
             *ip += 1;
- 
+
             match self.execute_step(op, locals, vm_arc, ip) {
                 Some(OpResult::Continue) => {}
                 Some(res) => return res,

@@ -63,13 +63,25 @@ pub struct CodegenCtx<'a, 'b> {
     pub call_depth_offset: u32,
     pub stack_ptr_offset: u32,
     pub functions: Option<&'a [std::sync::Arc<crate::vm::opcode::Chunk>]>,
+    /// Transitive global-slot writes per function; narrows post-call reloads.
+    pub global_writes: Option<&'a Vec<std::collections::HashSet<u32>>>,
     pub non_ptr_regs: HashSet<u8>,
     pub may_contain_ptr: Vec<[u64; 4]>,
     pub defined_locals: [bool; 256],
+    /// Registers read anywhere in the chunk (sources only, see
+    /// `analysis::analyze_chunk_read_locals`). A dirty register outside this
+    /// set can skip its spill store: nothing can observe the slot's stale
+    /// value. Valid only when `read_locals_known` is true.
+    pub read_locals: [bool; 256],
+    pub read_locals_known: bool,
     /// Registers currently holding an un-owned (inc-elided) copy of a global
     /// loaded for an upcoming specialized MethodCall receiver. Consumers must
     /// skip the matching dst-dec_ref; `def_local` clears the bit.
     pub unowned_recv_regs: [bool; 256],
+    /// Default value of this chunk's declared return type; written into the
+    /// out slot when a halt.error aborts the frame. `None` falls back to the
+    /// legacy boolean false.
+    pub ret_default: Option<crate::vm::value::Value>,
 }
 
 
@@ -128,16 +140,37 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             call_depth_offset,
             stack_ptr_offset,
             functions: None,
+            global_writes: None,
             non_ptr_regs: HashSet::new(),
             may_contain_ptr: Vec::new(),
             defined_locals: [false; 256],
+            read_locals: [false; 256],
+            read_locals_known: false,
             unowned_recv_regs: [false; 256],
+            ret_default: None,
         }
     }
 
 
     pub fn set_functions(&mut self, functions: &'a [std::sync::Arc<crate::vm::opcode::Chunk>]) {
         self.functions = Some(functions);
+    }
+
+    /// Transitive global-slot write sets per function index (see
+    /// analysis::analyze_global_slot_writes). Set alongside `functions`.
+    pub fn set_global_writes(&mut self, writes: &'a Vec<std::collections::HashSet<u32>>) {
+        self.global_writes = Some(writes);
+    }
+
+    /// Marks the chunk's read-register set (see
+    /// analysis::analyze_chunk_read_locals) as known.
+    pub fn set_read_locals(&mut self, reads: &[u8]) {
+        for &reg in reads {
+            if (reg as usize) < 256 {
+                self.read_locals[reg as usize] = true;
+            }
+        }
+        self.read_locals_known = true;
     }
 
     pub fn create_block(&mut self) -> Block {
@@ -312,9 +345,14 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
     }
 
     pub fn spill_globals(&mut self) {
-        let vars: Vec<(u32, (Variable, Variable))> = self.global_vars.iter()
+        // Sorted by global index: global_vars is a HashMap whose iteration
+        // order is seeded randomly per process, and these stores become part
+        // of the emitted code — a random order here flips register allocation
+        // between two variants 50/50 across processes.
+        let mut vars: Vec<(u32, (Variable, Variable))> = self.global_vars.iter()
             .map(|(&idx, &vars)| (idx, vars))
             .collect();
+        vars.sort_unstable_by_key(|&(idx, _)| idx);
         for (idx, (bv_var, tv_var)) in vars {
             let bits = self.b.use_var(bv_var);
             let tag  = self.b.use_var(tv_var);
@@ -336,6 +374,29 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
     pub fn load_const(&mut self, idx: u32) -> (Value, Value) {
         let offset = (idx as i64) * (VALUE_SIZE as i64);
         self.load_value_from(self.consts_ptr, offset)
+    }
+
+    /// Emits `units` side-effecting stores into unused tail slots of the
+    /// globals array. This is code-layout padding for the loop-header
+    /// alignment pass: the stores survive dead-code elimination, have a fixed
+    /// machine encoding (~8 bytes each), and execute only on the path they
+    /// are placed on. Alternating slots and values prevents store-merging.
+    /// `used_globals` keeps the pad away from globals the chunk actually
+    /// references.
+    pub fn emit_alignment_pad(&mut self, units: usize, used_globals: &[u32]) {
+        if units == 0 {
+            return;
+        }
+        let mut slots = [65535u32, 65534u32];
+        if used_globals.contains(&slots[0]) { slots[0] = 65533; }
+        if used_globals.contains(&slots[1]) { slots[1] = 65532; }
+        let zero = self.b.ins().iconst(types::I64, 0);
+        let one = self.b.ins().iconst(types::I64, 1);
+        for k in 0..units {
+            let val = if k % 2 == 0 { zero } else { one };
+            let off = (slots[k % 2] as i64) * (VALUE_SIZE as i64);
+            self.b.ins().store(MemFlags::trusted(), val, self.globals_ptr, off as i32);
+        }
     }
 
     // --- Preload / Spill ---
@@ -372,6 +433,29 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
                 bits &= !(1 << bit);
                 if r >= self.max_locals { continue; }
                 if let Some(slot) = self.slots[r] {
+                    // Dead-store elision: a dirty register that is never read
+                    // anywhere in the chunk and statically holds a scalar
+                    // needs no store. Nothing can observe the slot's stale
+                    // value (memory consumers are covered by the read set,
+                    // refcount teardown reads the register variable), and a
+                    // scalar store has no refcount consequence. Heap-typed
+                    // and unknown-typed registers keep the conservative
+                    // store; the inc-elision contract keeps un-owned
+                    // receivers out too.
+                    let ty = self.get_reg_type(r);
+                    let scalar = matches!(
+                        ty,
+                        crate::vm::opcode::TypeTag::Int
+                            | crate::vm::opcode::TypeTag::Float
+                            | crate::vm::opcode::TypeTag::Bool
+                    );
+                    if self.read_locals_known
+                        && scalar
+                        && !self.read_locals[r]
+                        && !self.unowned_recv_regs[r]
+                    {
+                        continue;
+                    }
                     let bits = self.b.use_var(slot.bits_var);
                     let tag  = self.b.use_var(slot.tag_var);
                     let ty = self.get_reg_type(r);
@@ -402,10 +486,32 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
 
 
     pub fn reload_globals(&mut self) {
-        let vars: Vec<(u32, (Variable, Variable))> = self.global_vars.iter()
+        self.reload_globals_filtered(None);
+    }
+
+    /// Reloads cached globals after a call to `callee`. When the callee's
+    /// transitive global-slot write set is known, only those globals are
+    /// reloaded — everything else the caller cached is provably unchanged.
+    /// `None` (callee unknown, e.g. executor-mediated paths) conservatively
+    /// reloads all cached globals.
+    pub fn reload_globals_after_call(&mut self, callee: Option<u32>) {
+        let filter = match (callee, self.global_writes) {
+            (Some(f), Some(sets)) if (f as usize) < sets.len() => Some(&sets[f as usize]),
+            _ => None,
+        };
+        self.reload_globals_filtered(filter);
+    }
+
+    fn reload_globals_filtered(&mut self, filter: Option<&std::collections::HashSet<u32>>) {
+        // Sorted by global index, same rationale as spill_globals.
+        let mut vars: Vec<(u32, (Variable, Variable))> = self.global_vars.iter()
             .map(|(&idx, &vars)| (idx, vars))
             .collect();
+        vars.sort_unstable_by_key(|&(idx, _)| idx);
         for (idx, (bv, tv)) in vars {
+            if let Some(w) = filter {
+                if !w.contains(&idx) { continue; }
+            }
             let offset = (idx as i64) * (VALUE_SIZE as i64);
             let (bits, tag) = self.load_value_from(self.globals_ptr, offset);
             self.b.def_var(bv, bits);
@@ -465,6 +571,24 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
         }
     }
 
+    /// Decides whether overwriting `reg` may skip the old value's dec_ref.
+    ///
+    /// The register must be released unless we can prove there is no
+    /// pointer-shaped value to release:
+    /// - a register that is neither defined before this point in the linear
+    ///   bytecode nor written anywhere in the enclosing loop cannot hold a
+    ///   value at all on any iteration (slots are non-pointer-initialized at
+    ///   function entry);
+    /// - the per-instruction may-contain-pointer bitmap says the register
+    ///   cannot hold a pointer at this ip.
+    ///
+    /// Deliberately NOT consulted here: the per-ip type inference and the
+    /// never-pointer register sets. They are computed along the linear
+    /// bytecode and do not see loop back edges, so they misreport
+    /// loop-carried heap values as integers — trusting them leaked every
+    /// loop-carried heap value on its overwrite. Errors in the remaining
+    /// gates are bounded: a wrongly emitted dec_ref hits the runtime tag
+    /// guard (no-op for non-pointers), a wrongly skipped one leaks.
     pub fn should_skip_dec_ref(&self, reg: u8) -> bool {
         if !self.defined_locals[reg as usize] {
             return true;

@@ -106,9 +106,9 @@ pub fn handle(
         }
         OpCode::IncVarLoopNext { g_idx, reg, limit_reg, target } => {
             let idx = g_idx as usize;
-            let val = vm_arc.get_global(idx);
+            let val = unsafe { exec.get_global_raw(idx) };
             let res = val.add(Value::from_i64(1));
-            vm_arc.set_global(idx, res);
+            unsafe { exec.set_global_raw(idx, res); }
 
             let r_idx = reg as usize;
             let l_idx = limit_reg as usize;
@@ -128,9 +128,9 @@ pub fn handle(
         }
         OpCode::DecVarLoopPrev { g_idx, reg, limit_reg, target } => {
             let idx = g_idx as usize;
-            let val = vm_arc.get_global(idx);
+            let val = unsafe { exec.get_global_raw(idx) };
             let res = val.sub(Value::from_i64(1));
-            vm_arc.set_global(idx, res);
+            unsafe { exec.set_global_raw(idx, res); }
 
             let r_idx = reg as usize;
             let l_idx = limit_reg as usize;
@@ -150,6 +150,7 @@ pub fn handle(
         }
         OpCode::Call { dst, func_idx, base, arg_count } => {
             let func_chunk = exec.ctx.functions[func_idx as usize].clone();
+            let ret_default = func_chunk.ret_default;
             let args = &locals[base as usize..(base as usize + arg_count as usize)];
             let ores = exec.handle_call(func_idx, func_chunk, args, vm_arc);
             match ores {
@@ -163,6 +164,15 @@ pub fn handle(
                     // halt.error aborts the callee frame. If the caller is also a function,
                     // propagate the abort up. If the caller is the top-level main block, continue.
                     if exec.call_depth == 0 {
+                        // Frame recovery: the call expression must still produce a
+                        // value of the callee's declared return type — write the
+                        // type's default rather than leave the register untouched.
+                        if let Some(default) = ret_default {
+                            unsafe {
+                                default.inc_ref();
+                                default.replace_at(&mut locals[dst as usize]);
+                            }
+                        }
                         Some(OpResult::Continue)
                     } else {
                         Some(OpResult::Halt)

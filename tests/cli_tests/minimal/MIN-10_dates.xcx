@@ -1,0 +1,32 @@
+--- TEST: MIN-10
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal dates (fast companion of programs/10_dates.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+date: d = date("2024-02-28");
+expect("properties", d.year == 2024 && d.month == 2 && d.day == 28);
+date: d2 = d + 1;
+expect("leap roll", d2.month == 2 && d2.day == 29);
+expect("compare", d2 > d);
+expect("format", d2.format("DD/MM/YYYY") == "29/02/2024");
+date: now = date.now();
+expect("now sane", now.year >= 2024);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-10 failed";
+end;

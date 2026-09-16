@@ -1,0 +1,33 @@
+--- TEST: MIN-11
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal crypto (fast companion of programs/11_crypto.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: h = crypto.hash("pass123", "argon2");
+expect("argon2 verify", crypto.verify("pass123", h, "argon2"));
+expect("argon2 reject", !crypto.verify("wrong", h, "argon2"));
+s: bh = crypto.hash("pass123", "bcrypt");
+expect("bcrypt verify", crypto.verify("pass123", bh, "bcrypt"));
+s: tok = crypto.token(16);
+expect("token length", tok.length == 32);
+s: enc = crypto.hash("hello", "base64_encode");
+expect("base64 roundtrip", crypto.hash(enc, "base64_decode") == "hello");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-11 failed";
+end;

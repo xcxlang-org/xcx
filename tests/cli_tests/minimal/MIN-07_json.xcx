@@ -1,0 +1,39 @@
+--- TEST: MIN-07
+--- Area: Smoke
+--- Priority: high
+--- Name: Minimal json (fast companion of programs/07_json.xcx)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+json: j <<< {"a": 0, "nested": {"x": 0}, "list": []} >>>;
+j.set("a", 42);
+j.set("nested.x", 7);
+expect("get scalar", j.get("a") == 42);
+i: x = 0;
+j.bind("nested.x", x);
+expect("bind nested", x == 7);
+expect("exists", j.exists("nested"));
+expect("keys", j.keys().size() == 3);
+json: item <<< {"id": 1} >>>;
+j.get("list").push(item);
+expect("push list", j.get("list").size() == 1);
+expect("first", j.get("list").first().get("id") == 1);
+json: parsed = json.parse(j.toStr());
+expect("parse roundtrip", parsed.get("a") == 42);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-07 failed";
+end;

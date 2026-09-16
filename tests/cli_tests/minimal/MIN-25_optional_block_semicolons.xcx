@@ -1,0 +1,95 @@
+--- TEST: MIN-25
+--- Area: Smoke
+--- Priority: high
+--- Name: Optional block semicolons (bare recommended style + legacy form in one file)
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+--- Recommended style: block keywords and closing braces without ';'.
+--- Statement separators inside bodies stay required.
+
+func bare_double(i: x -> i) {
+    return x * 2;
+}
+
+if (bare_double(21) == 42) then
+    expect("bare if/then", true);
+else
+    expect("bare if/then", false);
+end
+
+i: n = 0;
+while (n < 4) do
+    n = n + 1;
+end
+expect("bare while", n == 4);
+
+i: total = 0;
+for i in 1 to 4 do
+    total = total + i;
+end
+expect("bare for range", total == 10);
+
+array:s: words {"a", "b"};
+i: seen = 0;
+for w in words do
+    seen = seen + 1;
+end
+expect("bare for array", seen == 2);
+
+if (n > 99) then
+    expect("bare elseif chain", false);
+elseif (n == 4) then
+    expect("bare elseif chain", true);
+else
+    expect("bare elseif chain", false);
+end
+
+table: bare_t {
+    columns = [ id :: i @auto @pk, label :: s ]
+    rows = [ ("row1") ]
+}
+expect("bare table decl", bare_t.count() == 1 && bare_t.get(0).label == "row1");
+
+array:i: bare_nums {10, 20, 30}
+set:N: bare_primes {2, 3, 5}
+i: bare_sum = 0;
+for bn in bare_nums do
+    bare_sum = bare_sum + bn;
+end
+expect("bare array literal", bare_sum == 60);
+expect("bare set literal", bare_primes.count() == 3);
+
+--- Legacy style (with ';') must keep compiling — mixed in the same file.
+if (n == 4) then;
+    expect("legacy form still compiles", true);
+else;
+    expect("legacy form still compiles", false);
+end;
+
+while (false) do;
+    expect("legacy while", false);
+end;
+
+func legacy_half(i: x -> i) {
+    return x / 2;
+};
+
+expect("legacy func closer", legacy_half(10) == 5);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "MIN-25 failed";
+end;

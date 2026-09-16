@@ -1,0 +1,70 @@
+--- TEST: SUITE-29
+--- Area: Applications
+--- Priority: high
+--- Name: Text statistics (cargo-test twin of programs/29_text_stats.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: text = "XCX makes typed backends\nfun again and fast";
+
+array:s: lines = text.split("\n");
+expect("two lines", lines.size() == 2);
+expect("line 1 intact", lines.get(0) == "XCX makes typed backends");
+expect("line 2 intact", lines.get(1) == "fun again and fast");
+
+i: chars = text.length;
+i: no_spaces = 0;
+i: vowels = 0;
+s: vowels_set = "aeiouAEIOU";
+i: idx = 0;
+while (idx < chars) do;
+    s: ch = text.slice(idx, idx + 1);
+    if (!(ch == " ")) then;
+        no_spaces = no_spaces + 1;
+    end;
+    if (vowels_set HAS ch) then;
+        vowels = vowels + 1;
+    end;
+    idx = idx + 1;
+end;
+
+expect("char count", chars == 43);
+expect("non-space chars", no_spaces == 37);
+expect("vowel count", vowels == 11);
+
+array:s: words;
+array:s: w0 = lines.get(0).split(" ");
+array:s: w1 = lines.get(1).split(" ");
+for w in w0 do;
+    words.push(w);
+end;
+for w in w1 do;
+    words.push(w);
+end;
+
+expect("word count", words.size() == 8);
+s: longest = "";
+for w2 in words do;
+    if (w2.length > longest.length) then;
+        longest = w2;
+    end;
+end;
+expect("longest word", longest == "backends");
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-29 failed";
+end;

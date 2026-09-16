@@ -1,21 +1,43 @@
 use super::hir::{HirFunc, HirStmt, HirStmtKind, HirExpr, HirExprKind};
 use crate::intern::StringId;
 
-pub fn should_inline(callee: &HirFunc, caller: &HirFunc, depth: usize) -> bool {
+pub fn should_inline(callee: &HirFunc, caller: &HirFunc, depth: usize, in_loop: bool) -> bool {
     if callee.is_fiber || caller.is_fiber {
         return false;
     }
     if depth >= 3 {
         return false;
     }
-    if callee.name == caller.name {
+    // A call site inside a loop is never inlined: the inlined body's locals
+    // are remapped into the caller's register space, where they would overlap
+    // the synthetic loop registers (receiver/arg/size/index) that the
+    // enclosing for..in keeps live across the body — the same collision class
+    // as the fiber-loop register bug. Real calls remain correct at such sites
+    // (verified: 24_ledger, json walkers).
+    if in_loop {
         return false;
     }
 
     let mut has_recursion = false;
     check_ref_recursion(callee, callee.name, &mut has_recursion);
-    if has_recursion {
-        return false;
+    let self_recursive = callee.name == caller.name;
+    let cost = calculate_func_cost(callee);
+
+    if has_recursion || self_recursive {
+        // Shallow self-recursion expansion — the win for call-overhead-bound
+        // leaf recursion such as fib, where a large share of total runtime is
+        // the physical call itself. The gates keep it bounded: only the first
+        // two pass rounds, only small bodies, and never a return inside a
+        // loop (an inlined return would escape the caller's control flow).
+        if depth >= 2 || cost >= 12 {
+            return false;
+        }
+        for stmt in &callee.body {
+            if is_return_in_loop(stmt, false) {
+                return false;
+            }
+        }
+        return true;
     }
 
     for stmt in &callee.body {
@@ -24,7 +46,6 @@ pub fn should_inline(callee: &HirFunc, caller: &HirFunc, depth: usize) -> bool {
         }
     }
 
-    let cost = calculate_func_cost(callee);
     if cost >= 20 {
         return false;
     }

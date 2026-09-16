@@ -1,0 +1,91 @@
+--- TEST: SUITE-39
+--- Area: Applications
+--- Priority: high
+--- Name: Number theory (cargo-test twin of programs/39_number_theory.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+func gcd(i: a, i: b -> i) {
+    while (b != 0) do;
+        i: t = b;
+        b = a % b;
+        a = t;
+    end;
+    return a;
+};
+
+func is_prime(i: n -> b) {
+    if (n < 2) then;
+        return false;
+    end;
+    i: d = 2;
+    while (d * d <= n) do;
+        if (n % d == 0) then;
+            return false;
+        end;
+        d = d + 1;
+    end;
+    return true;
+};
+
+array:i: factors;
+
+func factorize(i: n) {
+    factors.clear();
+    i: rest = n;
+    i: d = 2;
+    while (d * d <= rest) do;
+        while (rest % d == 0) do;
+            factors.push(d);
+            rest = rest / d;
+        end;
+        d = d + 1;
+    end;
+    if (rest > 1) then;
+        factors.push(rest);
+    end;
+};
+
+expect("gcd 48 18", gcd(48, 18) == 6);
+expect("gcd 17 5", gcd(17, 5) == 1);
+expect("lcm 4 6", (4 * 6) / gcd(4, 6) == 12);
+expect("prime 97", is_prime(97));
+expect("not prime 91", !is_prime(91));
+expect("not prime 1", !is_prime(1));
+
+factorize(360);
+expect("factor count 360", factors.size() == 6);
+i: prod = 1;
+for f in factors do;
+    prod = prod * f;
+end;
+expect("factor product 360", prod == 360);
+
+factorize(97);
+expect("factor prime itself", factors.size() == 1 && factors.get(0) == 97);
+
+i: perfect = 28;
+factorize(perfect);
+i: fsum = 0;
+for f in factors do;
+    fsum = fsum + f;
+end;
+expect("factor sum 28 = 2+2+7", fsum == 11);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-39 failed";
+end;

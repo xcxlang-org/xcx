@@ -51,7 +51,8 @@ impl VM {
             let func_id_idx = chunk.bytecode.as_ptr() as usize;
             match jit.compile_method(func_id_idx, u32::MAX, &chunk, &ctx.constants, &ctx.functions, "main") {
                 Ok(ptr) => { chunk.jit_ptr.store(ptr as *mut _, Ordering::Release); }
-                Err(_e) => {
+                Err(e) => {
+                    eprintln!("[XCX] JIT disabled: code finalization failed for `main`: {e}. Falling back to the interpreter.");
                     self.disable_jit.store(true, Ordering::Release);
                 }
             }

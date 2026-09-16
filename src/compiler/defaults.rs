@@ -28,6 +28,12 @@ pub(crate) fn get_default_value(ty: &Type, ctx: &mut CompileContext) -> Value {
                 is_auto: c.is_auto,
                 is_pk: c.is_pk,
                 is_unique: c.is_unique,
+                default_sql: c.default_const.as_ref().map(|d| d.to_sql_literal(|id| ctx.interner.lookup(id).to_string())),
+                default_const: c.default_const.as_ref().filter(|d| !matches!(d, crate::frontend::ast::DefaultConst::Str(_))).cloned(),
+                default_str: match &c.default_const {
+                    Some(crate::frontend::ast::DefaultConst::Str(id)) => Some(ctx.interner.lookup(*id).to_string()),
+                    _ => None,
+                },
             }).collect();
 
             Value::from_table(Arc::new(RwLock::new(

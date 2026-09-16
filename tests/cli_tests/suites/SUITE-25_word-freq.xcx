@@ -1,0 +1,70 @@
+--- TEST: SUITE-25
+--- Area: Applications
+--- Priority: high
+--- Name: Word frequency counter (cargo-test twin of programs/25_word_freq.xcx)
+--- Note: exits nonzero via halt.error when any check fails
+
+i: checks = 0;
+i: failures = 0;
+func expect(s: name, b: ok) {
+    checks = checks + 1;
+    if (ok) then;
+        >! "PASS: " + name;
+    else;
+        failures = failures + 1;
+        >! "FAIL: " + name;
+    end;
+};
+
+s: text = "the quick brown fox jumps over the lazy dog the fox runs and the dog barks";
+s: clean = text.lower();
+array:s: words = clean.split(" ");
+
+map: counts {
+    schema = [s <-> i]
+    data = [EMPTY]
+};
+
+i: distinct = 0;
+for w in words do;
+    if (counts.contains(w)) then;
+        counts.insert(w, counts.get(w) + 1);
+    else;
+        counts.insert(w, 1);
+        distinct = distinct + 1;
+    end;
+end;
+
+expect("total words", words.size() == 16);
+expect("distinct words", distinct == 11);
+
+expect("the count", counts.get("the") == 4);
+expect("fox count", counts.get("fox") == 2);
+expect("dog count", counts.get("dog") == 2);
+expect("quick single", counts.get("quick") == 1);
+
+array:s: keys = counts.keys();
+expect("keys match distinct", keys.size() == distinct);
+
+i: sum = 0;
+s: best_word = "";
+i: best_count = 0;
+for k in keys do;
+    i: c = counts.get(k);
+    sum = sum + c;
+    if (c > best_count) then;
+        best_count = c;
+        best_word = k;
+    end;
+end;
+
+expect("counts sum to total", sum == words.size());
+expect("most frequent word", best_word == "the");
+expect("most frequent count", best_count == 4);
+
+if (failures == 0) then;
+    >! "SUITE RESULT: PASS (" + s(checks) + " checks)";
+else;
+    >! "SUITE RESULT: FAIL (" + s(failures) + " of " + s(checks) + " checks failed)";
+    halt.error >! "SUITE-25 failed";
+end;

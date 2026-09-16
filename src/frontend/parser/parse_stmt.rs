@@ -83,8 +83,6 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Net => {
                 if self.peek.kind == TokenKind::Dot {
-                   // This could be net.request or just net.get (...)
-                   // We'll peek further or let parse_net_stmt decide
                    self.parse_net_stmt()
                 } else {
                    self.parse_expr_stmt()

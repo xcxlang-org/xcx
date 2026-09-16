@@ -229,5 +229,10 @@ pub fn compile_function_helper(
     }
     let max_locals = compiler.max_locals_used.max(compiler.next_local);
 
-    Chunk::new(compiler.bytecode, compiler.spans, is_fiber, max_locals.into(), name, params.len())
+    let mut chunk = Chunk::new(compiler.bytecode, compiler.spans, is_fiber, max_locals.into(), name, params.len());
+    chunk.param_types = params
+        .iter()
+        .map(|(ty, _)| crate::hir::compile_hir::declared_type_tag(ty))
+        .collect();
+    chunk
 }

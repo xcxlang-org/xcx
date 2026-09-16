@@ -137,13 +137,10 @@ pub fn handle<'a>(
             
             let is_simple = path_str.bytes().all(|b| b != b'/' && b != b'.' && b != b'[' && b != b']');
             unsafe {
-                (*json_ptr).version.fetch_add(1, std::sync::atomic::Ordering::Release);
                 if is_simple {
-                    (*json_ptr).root.make_mutable();
                     if let crate::vm::object::JsonVal::Object(o) = &mut (*json_ptr).root {
                         let o_write = &mut *(*o).data_ptr();
                         if let Some(pos) = o_write.iter().position(|(k, _)| k.as_str() == path_str) {
-                            o_write[pos].1.make_mutable();
                             if let crate::vm::object::JsonVal::Array(a) = &mut o_write[pos].1 {
                                 let arr = &mut *(*a).data_ptr();
                                 arr.push(crate::vm::utils::json::value_to_json(&val));
@@ -153,9 +150,11 @@ pub fn handle<'a>(
                     }
                 } else {
                     let mut root_copy = (*json_ptr).root.clone();
-                    crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, crate::vm::utils::json::value_to_json(&val));
-                    (*json_ptr).root = root_copy;
-                    return Some(OpResult::Continue);
+                    let pushed = crate::vm::utils::push_json_value_at_path(&mut root_copy, path_str, crate::vm::utils::json::value_to_json(&val));
+                    if pushed {
+                        (*json_ptr).root = root_copy;
+                        return Some(OpResult::Continue);
+                    }
                 }
             }
             eprintln!("halt.error: push target is not an array");
@@ -239,9 +238,8 @@ pub fn handle<'a>(
         // IO
         OpCode::Print { src } => {
             let _s = locals[src as usize].to_string();
-            #[cfg(unix)]
-            crate::runtime::builtin::io::write_buffered(&(_s + "\x1b[K\r\n"));
-            #[cfg(not(unix))]
+            // Same line-ending contract as xcx_jit_print: EEL + bare \n on
+            // every platform, so captured output is identical everywhere.
             crate::runtime::builtin::io::write_buffered(&(_s + "\x1b[K\n"));
             Some(OpResult::Continue)
         }
