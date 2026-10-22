@@ -196,6 +196,7 @@ impl<'a> Parser<'a> {
         let path = if let TokenKind::StringLiteral(id) = self.current.kind {
             id
         } else {
+            self.error("Expected file path string after 'include'.");
             return None;
         };
         self.advance(); // past path string
@@ -207,6 +208,7 @@ impl<'a> Parser<'a> {
                 alias = Some(id);
                 self.advance();
             } else {
+                self.error("Expected identifier after 'as' in 'include'.");
                 return None;
             }
         }

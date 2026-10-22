@@ -1,0 +1,14 @@
+--- TEST: SYN-002
+--- Area: Error Handling
+--- Priority: high
+--- Name: Malformed while condition - compile error, not silent execution
+--- Expect:
+---   This file SHOULD NOT compile.
+---   A while loop without a parenthesized condition must terminate with a
+---   "Condition must be in '(...)'." compile error. In 4.4 the 'while'
+---   keyword was silently dropped and the body executed once.
+--- Runner: expect_compile_error = true
+
+while 1 < 3 do
+    >! "FAIL - body executed";
+end
