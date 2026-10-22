@@ -1,0 +1,12 @@
+--- TEST: SYN-001
+--- Area: Error Handling
+--- Priority: high
+--- Name: Malformed const form - compile error, not a hang
+--- Expect:
+---   This file SHOULD NOT compile.
+---   A statement starting with a malformed const form must terminate with
+---   a "Type required for const." compile error. In 4.4 the same input
+---   looped forever in statement recovery and killed the compiler.
+--- Runner: expect_compile_error = true
+
+const(1);

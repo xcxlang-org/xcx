@@ -7,7 +7,14 @@ impl<'a> Parser<'a> {
     // Main entry point for parsing any single XCX statement.
     pub(super) fn parse_statement_internal(&mut self) -> Option<Stmt> {
         match self.current.kind {
-            TokenKind::Const | TokenKind::TypeI | TokenKind::TypeF | TokenKind::TypeS | TokenKind::TypeB | TokenKind::Array | TokenKind::Set | TokenKind::Map | TokenKind::Date | TokenKind::Table | TokenKind::Json | TokenKind::Database | TokenKind::Crypto | TokenKind::Env | TokenKind::Store | TokenKind::Random => {
+            TokenKind::Const => {
+                // 'const' only introduces a declaration; there is no call,
+                // property, or assignment form. Every continuation goes
+                // through parse_var_decl, which reports a compile error on
+                // malformed input instead of misparsing it as an expression.
+                self.parse_var_decl()
+            }
+            TokenKind::TypeI | TokenKind::TypeF | TokenKind::TypeS | TokenKind::TypeB | TokenKind::Array | TokenKind::Set | TokenKind::Map | TokenKind::Date | TokenKind::Table | TokenKind::Json | TokenKind::Database | TokenKind::Crypto | TokenKind::Env | TokenKind::Store | TokenKind::Random => {
                 if self.peek.kind == TokenKind::Equal {
                     self.parse_assignment()
                 } else if self.peek.kind == TokenKind::Dot || self.peek.kind == TokenKind::LeftParen || self.peek.kind == TokenKind::LeftBracket {
