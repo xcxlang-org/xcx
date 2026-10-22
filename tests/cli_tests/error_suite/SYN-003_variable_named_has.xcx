@@ -1,0 +1,31 @@
+--- TEST: SYN-003
+--- Area: Syntax
+--- Priority: high
+--- Name: Variable named has is usable in expressions
+--- Expect:
+---   In 4.4 every use of a variable named "has" was silently dropped:
+---   the declaration compiled but uses vanished, surfacing later as
+---   confusing S101 errors for other variables. The HAS infix operator
+---   must keep working unchanged.
+
+s: has = "hello";
+
+if (has == "hello") then;
+    >! "[SYN-003-1] PASS — has reads back its value";
+else;
+    >! "[SYN-003-1] FAIL — has=" + has;
+end;
+
+s: joined = has + "!";
+if (joined == "hello!") then;
+    >! "[SYN-003-2] PASS — has works inside expressions";
+else;
+    >! "[SYN-003-2] FAIL — joined=" + joined;
+end;
+
+b: found = "abc" HAS "b";
+if (found) then;
+    >! "[SYN-003-3] PASS — HAS infix operator unchanged";
+else;
+    >! "[SYN-003-3] FAIL — HAS operator broken";
+end;

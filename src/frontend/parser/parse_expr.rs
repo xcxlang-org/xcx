@@ -37,7 +37,7 @@ impl<'a> Parser<'a> {
             TokenKind::Choice | TokenKind::Union | TokenKind::Intersection | TokenKind::Difference | TokenKind::SymDifference |
             TokenKind::And | TokenKind::Or | TokenKind::Terminal | TokenKind::Empty |
             TokenKind::Func | TokenKind::Fiber | TokenKind::Return |
-            TokenKind::Break | TokenKind::Continue | TokenKind::As | TokenKind::From | TokenKind::To => {
+            TokenKind::Break | TokenKind::Continue | TokenKind::As | TokenKind::From | TokenKind::To | TokenKind::Has => {
                 let text = match self.current.kind {
                     TokenKind::TypeI => "i",
                     TokenKind::TypeF => "f",
@@ -67,6 +67,7 @@ impl<'a> Parser<'a> {
                     TokenKind::As => "as",
                     TokenKind::From => "from",
                     TokenKind::To => "to",
+                    TokenKind::Has => "has",
                     _ => unreachable!(),
                 };
                 let id = self.interner.intern(text);
@@ -1048,5 +1049,24 @@ impl<'a> Parser<'a> {
             },
             span,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+
+    /// A variable named `has` must be usable in expressions. Regression
+    /// test: 4.4 silently dropped every use — the `Has` keyword token was
+    /// missing from the keyword-as-identifier arms of parse_prefix, so a
+    /// declared `has` compiled but each use failed as an expression.
+    /// The `HAS` infix operator must keep working unchanged.
+    #[test]
+    fn variable_named_has_is_usable() {
+        let src = "s: has = \"hello\";\n>! has;\ns: joined = has + \"!\";\nb: found = \"abc\" HAS \"b\";\n";
+        let mut parser = Parser::new(src);
+        let program = parser.parse_program();
+        assert!(!parser.has_error, "valid program must parse");
+        assert_eq!(program.stmts.len(), 4, "no statement may be dropped");
     }
 }
