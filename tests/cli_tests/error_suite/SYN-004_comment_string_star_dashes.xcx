@@ -1,0 +1,27 @@
+--- TEST: SYN-004
+--- Area: Syntax
+--- Priority: high
+--- Name: Divider comment does not corrupt strings containing *---
+--- Expect:
+---   In 4.4 a multi-line comment terminated early when its text contained
+---   a quoted string with the *--- sequence, and the rest of the comment
+---   was parsed as code. Quoted spans inside comments are opaque; comment
+---   semantics are otherwise unchanged.
+
+---
+a "str*---ing" inside a divider comment stays whole
+*---
+s: a = "x*---y";
+
+if (a.length == 6) then;
+    >! "[SYN-004-1] PASS — string in code keeps *--- verbatim";
+else;
+    >! "[SYN-004-1] FAIL — length=" + s(a.length);
+end;
+
+s: b = "after";
+if (b == "after") then;
+    >! "[SYN-004-2] PASS — code after the comment runs";
+else;
+    >! "[SYN-004-2] FAIL — b=" + b;
+end;
