@@ -1,0 +1,27 @@
+--- TEST: SYN-008
+--- Area: Applications
+--- Priority: high
+--- Name: store.zip roundtrip works, invalid input returns false
+--- Expect:
+---   In 4.4 store.zip crashed the whole process when a zipped entry
+---   had a non-UTF-8 name or the source path had no usable file name.
+---   Invalid input must return false; a normal roundtrip must work.
+
+store.write("syn008/hello.txt", "hi");
+
+b: z = store.zip("syn008", "syn008.zip");
+b: u = store.unzip("syn008.zip", "syn008_out");
+s: c = store.read("syn008_out/hello.txt");
+
+if (z AND u AND c == "hi") then
+    >! "[SYN-008-1] PASS - zip/unzip roundtrip intact";
+else
+    >! "[SYN-008-1] FAIL - z=" + s(z) + " u=" + s(u) + " c=" + c;
+end
+
+b: bad = store.zip("no_such_dir_syn008", "bad_syn008.zip");
+if (bad == false) then
+    >! "[SYN-008-2] PASS - invalid source returns false, no crash";
+else
+    >! "[SYN-008-2] FAIL - invalid source returned " + s(bad);
+end

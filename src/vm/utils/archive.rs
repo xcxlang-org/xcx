@@ -15,7 +15,14 @@ pub fn zip_folder(source: &str, target: &str) -> std::io::Result<()> {
 
     let src_path = Path::new(source);
     if src_path.is_file() {
-        zip.start_file(src_path.file_name().unwrap().to_str().unwrap(), options)?;
+        let name = match src_path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "zip: source path has no usable file name",
+            )),
+        };
+        zip.start_file(name, options)?;
         let mut f = std::fs::File::open(src_path)?;
         std::io::copy(&mut f, &mut zip)?;
     } else {
@@ -38,7 +45,13 @@ pub fn zip_folder(source: &str, target: &str) -> std::io::Result<()> {
                 }
             }
 
-            let name_str = name.to_str().unwrap().replace('\\', "/");
+            let name_str = match name.to_str() {
+                Some(s) => s.replace('\\', "/"),
+                None => return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "zip: entry name is not valid UTF-8",
+                )),
+            };
 
             if path.is_file() {
                 zip.start_file(&name_str, options)?;

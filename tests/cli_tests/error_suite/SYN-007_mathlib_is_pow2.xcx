@@ -17,21 +17,21 @@ while (p < 1073741824) do
 end
 acc = acc AND is_pow2(1073741824);
 
-if (acc) then;
+if (acc) then
     >! "[SYN-007-1] PASS — every power of two up to 2^30 is detected";
-else;
+else
     >! "[SYN-007-1] FAIL — a power of two was rejected";
-end;
+end
 
 b: bad = is_pow2(12) OR is_pow2(20) OR is_pow2(96) OR is_pow2(131076) OR is_pow2(3);
-if (bad == false) then;
+if (bad == false) then
     >! "[SYN-007-2] PASS — non-powers (incl. multiples of 4) rejected";
-else;
+else
     >! "[SYN-007-2] FAIL — a non-power was accepted";
-end;
+end
 
-if (is_pow2(0) OR is_pow2(-8)) then;
+if (is_pow2(0) OR is_pow2(-8)) then
     >! "[SYN-007-3] FAIL — zero/negative accepted";
-else;
+else
     >! "[SYN-007-3] PASS — zero and negative rejected";
-end;
+end

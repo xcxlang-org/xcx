@@ -10,27 +10,27 @@
 b: flag = true;
 
 b: r1 = !!flag;
-if (r1 == false) then;
+if (r1 == false) then
     >! "[SYN-006-1] PASS — !!true is false";
-else;
+else
     >! "[SYN-006-1] FAIL — !!true returned " + s(r1);
-end;
+end
 
 b: r2 = !!false;
-if (r2 == true) then;
+if (r2 == true) then
     >! "[SYN-006-2] PASS — !!false is true";
-else;
+else
     >! "[SYN-006-2] FAIL — !!false returned " + s(r2);
-end;
+end
 
-if (!!flag == NOT flag) then;
+if (!!flag == NOT flag) then
     >! "[SYN-006-3] PASS — !! agrees with NOT";
-else;
+else
     >! "[SYN-006-3] FAIL — !! and NOT disagree";
-end;
+end
 
-if (1 != 2) then;
+if (1 != 2) then
     >! "[SYN-006-4] PASS — != unchanged";
-else;
+else
     >! "[SYN-006-4] FAIL — != broken";
-end;
+end

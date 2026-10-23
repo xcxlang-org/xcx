@@ -13,15 +13,15 @@ a "str*---ing" inside a divider comment stays whole
 *---
 s: a = "x*---y";
 
-if (a.length == 6) then;
+if (a.length == 6) then
     >! "[SYN-004-1] PASS — string in code keeps *--- verbatim";
-else;
+else
     >! "[SYN-004-1] FAIL — length=" + s(a.length);
-end;
+end
 
 s: b = "after";
-if (b == "after") then;
+if (b == "after") then
     >! "[SYN-004-2] PASS — code after the comment runs";
-else;
+else
     >! "[SYN-004-2] FAIL — b=" + b;
-end;
+end
