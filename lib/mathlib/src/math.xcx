@@ -939,7 +939,11 @@ func surjections(i: n, i: k -> i) {
 --- Returns true if n is a power of two.
 func is_pow2(i: n -> b) {
     if (n <= 0) then; return false; end;
-    return n % 2 == 0 AND (n / 2) % 2 == 0 OR n == 1 OR n == 2 OR n == 4 OR n == 8 OR n == 16 OR n == 32 OR n == 64 OR n == 128 OR n == 256 OR n == 512 OR n == 1024 OR n == 2048 OR n == 4096 OR n == 8192 OR n == 16384 OR n == 32768 OR n == 65536;
+    i: v = n;
+    while (v % 2 == 0) do;
+        v = v / 2;
+    end;
+    return v == 1;
 };
 
 --- Returns the number of set bits (1s) in n (Brian Kernighan algorithm).
