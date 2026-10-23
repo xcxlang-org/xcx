@@ -4,6 +4,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod bundled_lib_include;
 mod cli_contract;
 mod fiber_loop_state;
 mod halt_error_frame_recovery;
