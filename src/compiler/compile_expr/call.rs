@@ -606,6 +606,13 @@ pub fn compile(fc: &mut FunctionCompiler, expr: &Expr, ctx: &mut CompileContext)
             let dst = fc.push_reg();
             if cmd == "exit" { fc.emit(OpCode::TerminalExit { dst }, &expr.span); }
             else if cmd == "clear" { fc.emit(OpCode::TerminalClear { dst }, &expr.span); }
+            else if cmd == "write" {
+                if let Some(a) = args.get(0) {
+                    let src = fc.compile_expr(a, ctx);
+                    fc.emit(OpCode::TerminalWrite { dst, src }, &expr.span);
+                    fc.next_local = (dst + 1) as usize;
+                }
+            }
             else if cmd == "run" {
                 if let Some(a) = args.get(0) {
                     let cmd_src = fc.compile_expr(a, ctx);

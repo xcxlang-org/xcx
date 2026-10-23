@@ -679,6 +679,13 @@ pub fn compile_expr(compiler: &mut FunctionCompiler, expr: &HirExpr, ctx: &mut C
             let dst = compiler.push_reg();
             if cmd == "exit" { compiler.emit(OpCode::TerminalExit { dst }, &expr.span); }
             else if cmd == "clear" { compiler.emit(OpCode::TerminalClear { dst }, &expr.span); }
+            else if cmd == "write" {
+                if let Some(a) = args.get(0) {
+                    let src = compile_expr(compiler, a, ctx);
+                    compiler.emit(OpCode::TerminalWrite { dst, src }, &expr.span);
+                    compiler.next_local = (dst + 1) as usize;
+                }
+            }
             else if cmd == "run" {
                 if let Some(a) = args.get(0) {
                     let cmd_src = compile_expr(compiler, a, ctx);
