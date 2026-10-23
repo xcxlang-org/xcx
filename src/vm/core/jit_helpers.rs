@@ -42,15 +42,14 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
         let ptr = raw.bits as *const crate::vm::object::StringObj;
         let arc = unsafe { Arc::from_raw(ptr) };
 
-        // Threshold 2, NOT the interpreter's sole-owner 1: get_global hands
-        // us a plain copy and the JIT additionally holds the global's value
-        // in a managed register copy (released by reload_globals right
-        // after this call), so sc == 2 is the unique-slot steady state. The
-        // constant-pool co-owner case surfaces as sc >= 3 and always takes
-        // the re-allocation path, mirroring the interpreter's fix.
+        // Same sole-owner rule as the interpreter's StrAppendVar: a second
+        // reference is a real co-owner (constant pool, aliased variable),
+        // never a dead register copy. In-place mutation under a looser
+        // threshold rewrote the constant pool's literal itself, so every
+        // later use of that literal saw the appended text.
         let sc = Arc::strong_count(&arc);
         let wc = Arc::weak_count(&arc);
-        if sc <= 2 && wc == 0 {
+        if sc <= 1 && wc == 0 {
             let obj_ptr = ptr as *mut crate::vm::object::StringObj;
             unsafe {
                 (*obj_ptr).hash = None;
@@ -67,6 +66,11 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
             let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
             let new_val = crate::vm::value::heap_object::from_string(new_arc);
             vm.set_global(var_idx as usize, new_val);
+            // set_global takes its own reference for the slot; release the
+            // construction reference so the stored count reflects the slot
+            // alone. A surviving construction reference masquerades as a
+            // co-owner and leaks every intermediate buffer on each append.
+            unsafe { new_val.dec_ref(); }
         }
     } else {
         let s1 = raw.to_string();
@@ -74,6 +78,7 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
         let combined = s1 + &suffix;
         let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
         vm.set_global(var_idx as usize, new_val);
+        unsafe { new_val.dec_ref(); }
     }
 }
 
