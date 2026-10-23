@@ -114,7 +114,11 @@ pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::valu
             }
             OpCode::ArrayInit { dst, base, count } => {
                 array_origins[*dst as usize] = Some(*dst);
-                let mut all_bool = true;
+                // An empty literal carries no element-type evidence: typing
+                // it as a bool array made .get() materialize later-inserted
+                // non-bool elements as raw bools. General Array is always
+                // correct until a real bool element proves otherwise.
+                let mut all_bool = *count > 0;
                 for i in 0..*count {
                     let reg = *base + i as u8;
                     if !reg_is_bool_const[reg as usize] {
@@ -148,6 +152,22 @@ pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::valu
                         }
                     }
                     crate::vm::opcode::MethodKind::Set | crate::vm::opcode::MethodKind::Update => {
+                        if *arg_count >= 2 {
+                            let val_reg = base_reg + 2;
+                            if !reg_is_bool_const[val_reg as usize] {
+                                if let Some(origin) = array_origins[base_reg as usize] {
+                                    non_bool_array.insert(origin);
+                                } else {
+                                    non_bool_array.insert(base_reg);
+                                }
+                            }
+                        }
+                    }
+                    crate::vm::opcode::MethodKind::Insert => {
+                        // insert(idx, val): same shape as Update — the value
+                        // is the second argument. Without this retype, a
+                        // non-bool element inserted into a register still
+                        // typed as a bool array read back as raw bools.
                         if *arg_count >= 2 {
                             let val_reg = base_reg + 2;
                             if !reg_is_bool_const[val_reg as usize] {

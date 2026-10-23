@@ -1,0 +1,46 @@
+--- TEST: SYN-012
+--- Area: Collections
+--- Priority: high
+--- Name: Elements of a non-bool array built with .insert() read back real values
+--- Expect:
+---   In 4.4 under the JIT an empty array literal was inferred as a bool
+---   array and .insert() did not retype the register, so later .get()
+---   materialized the raw element bits as booleans (42 -> true, "aa" ->
+---   false). Elements must read back their real values; a genuinely
+---   bool array keeps working.
+
+func build() {
+    array:i: nums {};
+    nums.insert(0, 42);
+    nums.insert(1, 7);
+    array:s: words {};
+    words.insert(0, "aa");
+    words.insert(1, "bb");
+
+    if (nums.get(0) == 42 AND nums.get(1) == 7) then
+        >! "[SYN-012-1] PASS - int elements read back";
+    else
+        >! "[SYN-012-2] FAIL - int elements corrupted";
+    end
+
+    if (words.get(0) == "aa" AND words.get(1) == "bb") then
+        >! "[SYN-012-2] PASS - string elements read back";
+    else
+        >! "[SYN-012-2] FAIL - string elements corrupted";
+    end
+
+    array:b: flags {};
+    flags.push(true);
+    flags.push(false);
+    if (flags.get(0) == true AND flags.get(1) == false) then
+        >! "[SYN-012-3] PASS - bool array unaffected";
+    else
+        >! "[SYN-012-3] FAIL - bool array broken";
+    end
+}
+
+i: i = 0;
+while (i < 60) do
+    build();
+    i = i + 1;
+end
