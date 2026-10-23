@@ -448,7 +448,12 @@ fn compile_stmt(
             let cond_reg = compile_expr(compiler, condition, ctx);
             let jmp_idx = compiler.bytecode.len();
             compiler.emit(OpCode::JumpIfFalse { src: cond_reg, target: 0 }, &stmt.span);
-            compiler.pop_reg();
+            // Only reclaim the condition's temp when the condition actually
+            // materialized one; a bare local read returns its own slot, and
+            // an unconditional pop would steal a register from the branch.
+            if cond_reg as usize + 1 == compiler.next_local {
+                compiler.pop_reg();
+            }
 
             for s in then_branch {
                 compile_stmt(compiler, s, ctx, func_locals);
@@ -467,7 +472,9 @@ fn compile_stmt(
                 let elif_cond_reg = compile_expr(compiler, elif_cond, ctx);
                 let elif_jmp = compiler.bytecode.len();
                 compiler.emit(OpCode::JumpIfFalse { src: elif_cond_reg, target: 0 }, &stmt.span);
-                compiler.pop_reg();
+                if elif_cond_reg as usize + 1 == compiler.next_local {
+                    compiler.pop_reg();
+                }
 
                 for s in elif_branch {
                     compile_stmt(compiler, s, ctx, func_locals);
@@ -523,7 +530,31 @@ fn compile_stmt(
 
             if is_opt_candidate {
                 let counter_reg = loop_counter_local.unwrap() as u8;
-                let original_limit_reg = compile_expr(compiler, limit_expr.unwrap(), ctx);
+                // The loop bound must live in a private register: mutating
+                // the limit expression's own register clobbered a named
+                // variable for the whole loop and every read after it.
+                // Literal limits load straight into the bound register so
+                // hot-loop bytecode stays byte-identical to 4.4 for the JIT.
+                let original_limit_reg = match &limit_expr.unwrap().kind {
+                    crate::hir::hir::HirExprKind::IntLiteral(v) => {
+                        let c = compiler.push_reg();
+                        let idx = ctx.add_constant(Value::from_i64(*v));
+                        compiler.emit(OpCode::LoadConst { dst: c, idx }, &stmt.span);
+                        c
+                    }
+                    crate::hir::hir::HirExprKind::FloatLiteral(v) => {
+                        let c = compiler.push_reg();
+                        let idx = ctx.add_constant(Value::from_f64(*v));
+                        compiler.emit(OpCode::LoadConst { dst: c, idx }, &stmt.span);
+                        c
+                    }
+                    _ => {
+                        let compiled_limit_reg = compile_expr(compiler, limit_expr.unwrap(), ctx);
+                        let c = compiler.push_reg();
+                        compiler.emit(OpCode::Move { dst: c, src: compiled_limit_reg }, &stmt.span);
+                        c
+                    }
+                };
 
                 let limit_reg = if is_less {
                     let one_idx = ctx.add_constant(Value::from_i64(1));
@@ -605,7 +636,9 @@ fn compile_stmt(
                 let cond_reg = compile_expr(compiler, condition, ctx);
                 let exit_jmp = compiler.bytecode.len();
                 compiler.emit(OpCode::JumpIfFalse { src: cond_reg, target: 0 }, &stmt.span);
-                compiler.pop_reg();
+                if cond_reg as usize + 1 == compiler.next_local {
+                    compiler.pop_reg();
+                }
                 for s in body { compile_stmt(compiler, s, ctx, func_locals); }
                 compiler.emit(OpCode::Jump { target: start_p as u32 }, &stmt.span);
                 let exit_target = compiler.bytecode.len() as u32;

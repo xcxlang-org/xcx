@@ -10,8 +10,13 @@ impl FunctionCompiler {
             let cond_reg = self.compile_expr(condition, ctx);
             let jmp_idx = self.bytecode.len();
             self.emit(OpCode::JumpIfFalse { src: cond_reg, target: 0 }, &stmt.span);
-            self.pop_reg(); 
-            
+            // Only reclaim the condition's temp when the condition actually
+            // materialized one; a bare local read returns its own slot, and
+            // an unconditional pop would steal a register from the branch.
+            if cond_reg as usize + 1 == self.next_local {
+                self.pop_reg();
+            }
+
             let saved_nl = self.enter_scope();
             for s in then_branch { self.compile_stmt(s, ctx); }
             self.exit_scope(saved_nl);
@@ -27,7 +32,9 @@ impl FunctionCompiler {
                 let elif_cond_reg = self.compile_expr(elif_cond, ctx);
                 let elif_jmp = self.bytecode.len();
                 self.emit(OpCode::JumpIfFalse { src: elif_cond_reg, target: 0 }, &stmt.span);
-                self.pop_reg();
+                if elif_cond_reg as usize + 1 == self.next_local {
+                    self.pop_reg();
+                }
                 let saved_elif = self.enter_scope();
                 for s in elif_branch { self.compile_stmt(s, ctx); }
                 self.exit_scope(saved_elif);
@@ -89,7 +96,34 @@ impl FunctionCompiler {
             if is_opt_candidate {
                 let counter_name = loop_counter_id.unwrap();
                 let counter_reg = self.lookup_local(&counter_name).unwrap() as u8;
-                let original_limit_reg = self.compile_expr(limit_expr.unwrap(), ctx);
+                // The loop bound must live in a private register: mutating
+                // the limit expression's own register clobbered a named
+                // variable for the whole loop and every read after it.
+                // Literal limits load straight into the bound register so
+                // hot-loop bytecode stays byte-identical to 4.4 for the JIT.
+                let original_limit_reg = match &limit_expr.unwrap().kind {
+                    ExprKind::IntLiteral(v) => {
+                        let c = self.push_reg();
+                        let idx = ctx.add_constant(Value::from_i64(*v));
+                        self.emit(OpCode::LoadConst { dst: c, idx }, &stmt.span);
+                        c
+                    }
+                    ExprKind::FloatLiteral(v) => {
+                        let c = self.push_reg();
+                        let idx = ctx.add_constant(Value::from_f64(*v));
+                        self.emit(OpCode::LoadConst { dst: c, idx }, &stmt.span);
+                        c
+                    }
+                    _ => {
+                        let compiled_limit_reg = self.compile_expr(limit_expr.unwrap(), ctx);
+                        let c = self.push_reg();
+                        self.emit(OpCode::Move { dst: c, src: compiled_limit_reg }, &stmt.span);
+                        c
+                    }
+                };
+                // Keep the bound register reserved for the whole loop: the
+                // body's own temps must never land on it.
+                self.next_local = self.next_local.max(original_limit_reg as usize + 1);
 
                 let limit_reg = if is_less {
                     let one_idx = ctx.add_constant(Value::from_i64(1));
@@ -172,7 +206,9 @@ impl FunctionCompiler {
                 let cond_reg = self.compile_expr(condition, ctx);
                 let exit_jmp = self.bytecode.len();
                 self.emit(OpCode::JumpIfFalse { src: cond_reg, target: 0 }, &stmt.span);
-                self.pop_reg();
+                if cond_reg as usize + 1 == self.next_local {
+                    self.pop_reg();
+                }
                 let saved_while = self.enter_scope();
                 for s in body { self.compile_stmt(s, ctx); }
                 self.exit_scope(saved_while);

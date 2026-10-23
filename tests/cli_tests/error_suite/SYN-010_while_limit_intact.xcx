@@ -1,0 +1,44 @@
+--- TEST: SYN-010
+--- Area: Control Flow
+--- Priority: high
+--- Name: while-limit variable stays readable and unchanged
+--- Expect:
+---   In 4.4 the while prologue computed the loop bound (limit-1 for <,
+---   limit+1 for >) directly into the limit variable's own register, so
+---   every re-read of the limit inside the body and after the loop saw
+---   the clobbered value. The bound must be a private copy; the
+---   variable stays intact in both execution modes.
+
+func loopy() {
+    i: limit = 5;
+    i: c = 0;
+    while (c < limit) do
+        c = c + 1;
+        if (limit != 5) then
+            >! "[SYN-010-1] FAIL - limit read as " + s(limit) + " inside body";
+        end
+    end
+    if (limit != 5) then
+        >! "[SYN-010-2] FAIL - limit read as " + s(limit) + " after loop";
+    end
+}
+
+i: calls = 0;
+while (calls < 60) do
+    calls = calls + 1;
+    loopy();
+end
+
+i: t = 4;
+i: floor = 1;
+while (t > floor) do
+    t = t - 1;
+    if (floor != 1) then
+        >! "[SYN-010-3] FAIL - downward limit read as " + s(floor);
+    end
+end
+if (floor != 1) then
+    >! "[SYN-010-4] FAIL - downward limit left as " + s(floor);
+end
+
+>! "[SYN-010-5] PASS - while limit intact in body, after loop, both directions, JIT-hot";
