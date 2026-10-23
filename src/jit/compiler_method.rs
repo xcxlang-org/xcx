@@ -726,7 +726,8 @@ impl JIT {
                     }
                     OpCode::EnvGet { dst, src } => {
                         let (v_bits, v_tag) = ctx.use_local(src);
-                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_get, &[v_bits, v_tag]);
+                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_get, &[v_bits, v_tag, ctx.executor_ptr]);
+                        ctx.emit_halt_if_errors(&symbols);
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
                             emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);

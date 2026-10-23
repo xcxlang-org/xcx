@@ -42,11 +42,19 @@ pub fn handle<'a>(
         // Env
         OpCode::EnvGet { dst, src } => {
             let key = locals[src as usize].to_string();
-            let val = std::env::var(key).unwrap_or_default();
-            let res = Value::from_string(Arc::new(StringObj::new(val.into_bytes())));
-            unsafe { locals[dst as usize].dec_ref(); }
-            locals[dst as usize] = res;
-            Some(OpResult::Continue)
+            match std::env::var(&key) {
+                Ok(val) => {
+                    let res = Value::from_string(Arc::new(StringObj::new(val.into_bytes())));
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = res;
+                    Some(OpResult::Continue)
+                }
+                Err(_) => {
+                    eprintln!("halt.error: env.get: environment variable '{}' is not set", key);
+                    vm_arc.error_count.fetch_add(1, Ordering::SeqCst);
+                    Some(OpResult::Halt)
+                }
+            }
         }
         OpCode::EnvArgs { dst } => {
             let args: Vec<String> = std::env::args().collect();

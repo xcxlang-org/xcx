@@ -706,7 +706,13 @@ impl SymbolRegistry {
             xcx_jit_set_member: module.declare_function("xcx_jit_set_member", Linkage::Import, &sig_set_member).unwrap(),
             xcx_jit_str_append_member: module.declare_function("xcx_jit_str_append_member", Linkage::Import, &sig_set_member).unwrap(),
             xcx_jit_str_append_element: module.declare_function("xcx_jit_str_append_element", Linkage::Import, &sig_val_i64_val_ret_i32).unwrap(),
-            xcx_jit_env_get: module.declare_function("xcx_jit_env_get", Linkage::Import, &sig_val_val_ret).unwrap(),
+            xcx_jit_env_get: {
+                let mut sig = module.make_signature();
+                sig.params.push(AbiParam::new(ptr_type));
+                add_val_param(&mut sig);
+                sig.params.push(AbiParam::new(ptr_type));
+                module.declare_function("xcx_jit_env_get", Linkage::Import, &sig).unwrap()
+            },
             xcx_jit_env_args: module.declare_function("xcx_jit_env_args", Linkage::Import, &sig_val_ret).unwrap(),
             xcx_jit_crypto_hash: module.declare_function("xcx_jit_crypto_hash", Linkage::Import, &sig_val_val_val_ret).unwrap(),
             xcx_jit_crypto_verify: module.declare_function("xcx_jit_crypto_verify", Linkage::Import, &sig_val_val_val_ret_i32).unwrap(),

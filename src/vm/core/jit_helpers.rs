@@ -787,13 +787,18 @@ pub unsafe extern "C" fn xcx_jit_str_append_element(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_env_get(out: *mut Value, bits: u64, tag: u64) {
-    let key = Value { bits, tag: tag };
-    let key_s = key.to_string();
-    if let Ok(val) = std::env::var(key_s) {
-        unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(val.into_bytes()))); }
-    } else {
-        unsafe { *out = Value::from_i64(0); }
+pub unsafe extern "C" fn xcx_jit_env_get(out: *mut Value, bits: u64, tag: u64, exec_ptr: *mut Executor) {
+    let key = Value { bits, tag: tag }.to_string();
+    match std::env::var(&key) {
+        Ok(val) => unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(val.into_bytes()))); },
+        Err(_) => {
+            if !exec_ptr.is_null() {
+                let exec = unsafe { &*exec_ptr };
+                crate::runtime::builtin::io::eprint_buffered(&format!("halt.error: env.get: environment variable '{}' is not set\n", key));
+                exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            unsafe { *out = Value::from_i64(0); }
+        }
     }
 }
 
