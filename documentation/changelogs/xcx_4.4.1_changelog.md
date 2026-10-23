@@ -3,10 +3,10 @@
 
 ---
 
-Maintenance patch for the 4.4 series. Bug fixes only — no new functionality
-and no language changes — backported from the 5.0a line, where the same
-fixes also ship. Scope follows `VERSIONING.md`: PATCH is a pure correction
-that introduces no new functionality.
+Maintenance patch for the 4.4 series. Bug fixes only, no new functionality
+and no language changes; the same bugs are also fixed in the 5.0a line.
+Scope follows `VERSIONING.md`: PATCH is a pure correction that introduces
+no new functionality.
 
 ## Compiler
 
@@ -56,17 +56,3 @@ that introduces no new functionality.
   the terminal erase sequence, so scripts and CI read program output
   without stripping escape codes. Interactive terminals keep the
   redraw-friendly line endings.
-
----
-
-## Deliberately not in this patch
-
-- The JIT loop-carried `json.parse` retention leak and the HTTP server's
-  per-request memory growth stay open in 4.4.x. Both are fixed in 5.0a,
-  but the fixes are entangled with the 5.0a memory work and are too risky
-  to backport. The memory watchdog (already in 4.4) still guards against
-  runaways.
-- Behavioral changes shipping in 5.0a — short-circuiting `AND`/`OR`,
-  `halt.error` exit codes, literal map keys, strict `date()` parsing,
-  patch-style block-semicolon removal — are deliberately absent. 4.4
-  semantics are unchanged; see the 5.0a changelog and migration tooling.
