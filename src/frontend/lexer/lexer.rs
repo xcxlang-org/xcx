@@ -123,9 +123,12 @@ impl<'a> Lexer<'a> {
                 if self.cursor.peek() == b'=' {
                     self.cursor.advance();
                     Token::new(TokenKind::BangEqual, line, col, 2)
+                } else if self.cursor.peek() == b'!' {
+                    self.cursor.advance();
+                    // `!!` is the documented NOT alias and must lex as a
+                    // single token, matching the keyword form.
+                    Token::new(TokenKind::Not, line, col, 2)
                 } else {
-                    // A lone `!` per token: `!!expr` lexes as two bangs and
-                    // parses as a double negation (identity for bools).
                     Token::new(TokenKind::Bang, line, col, 1)
                 }
             }
@@ -262,5 +265,31 @@ impl<'a> Lexer<'a> {
         
         let kind = keyword::lookup(text, interner);
         Token::new(kind, line, col, self.cursor.char_pos - start_char_pos)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::intern::Interner;
+
+    /// `!!` must lex as a single Not token. Regression test: 4.4 emitted
+    /// two separate Bang tokens, so `!!x` parsed as a double negation and
+    /// silently inverted the documented NOT meaning; `!=` stayed BangEqual.
+    #[test]
+    fn double_bang_lexes_as_single_not() {
+        let mut lexer = Lexer::new("!!x != y !z");
+        let mut interner = Interner::new();
+
+        let t = lexer.next_token(&mut interner);
+        assert!(matches!(t.kind, TokenKind::Not), "!! must be one Not token");
+
+        let _ident = lexer.next_token(&mut interner);
+        let t = lexer.next_token(&mut interner);
+        assert!(matches!(t.kind, TokenKind::BangEqual), "!= must stay BangEqual");
+
+        let _ident = lexer.next_token(&mut interner);
+        let t = lexer.next_token(&mut interner);
+        assert!(matches!(t.kind, TokenKind::Bang), "single ! stays Bang");
     }
 }
