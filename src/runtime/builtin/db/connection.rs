@@ -9,7 +9,8 @@ use crate::vm::Executor;
 impl Executor {
     pub fn handle_database_init(&mut self, dst: u8, engine: String, path: String, tables: &[String], ip: usize, locals: &mut [Value]) -> OpResult {
         if path.contains("..") || path.starts_with('/') || (path.len() > 1 && path.as_bytes()[1] == b':') {
-            panic!("halt.fatal: Security violation - illegal DB path access: {}", path);
+            eprintln!("XCX Fatal: Security violation - illegal DB path access: {}", path);
+            std::process::exit(1);
         }
         match rusqlite::Connection::open(&path) {
             Ok(conn) => {
