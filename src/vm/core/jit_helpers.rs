@@ -666,10 +666,11 @@ pub unsafe extern "C" fn xcx_jit_perf_ns(out: *mut Value, vm_ptr: *mut VM) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_print(bits: u64, tag: u64) {
     let v = Value { bits, tag: tag };
-    // The EEL sequence cleans the line after REPL-style in-place updates;
-    // a bare \n is correct on every platform (ttys expand it via onlcr, and
-    // captured pipes must not receive a stray \r).
-    crate::runtime::builtin::io::write_buffered(&(v.to_string() + "\x1b[K\n"));
+    // The EEL sequence cleans the line after REPL-style in-place updates
+    // on interactive terminals; redirected pipes and files receive a bare
+    // \n (ttys expand it via onlcr, and captured pipes must not receive a
+    // stray \r or escape codes).
+    crate::runtime::builtin::io::write_buffered(&(v.to_string() + crate::runtime::builtin::io::print_line_ending()));
 }
 
 #[unsafe(no_mangle)]

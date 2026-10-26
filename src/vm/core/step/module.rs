@@ -246,9 +246,9 @@ pub fn handle<'a>(
         // IO
         OpCode::Print { src } => {
             let _s = locals[src as usize].to_string();
-            // Same line-ending contract as xcx_jit_print: EEL + bare \n on
-            // every platform, so captured output is identical everywhere.
-            crate::runtime::builtin::io::write_buffered(&(_s + "\x1b[K\n"));
+            // Same line-ending contract as xcx_jit_print: EEL on interactive
+            // terminals, plain \n when redirected, identical in both engines.
+            crate::runtime::builtin::io::write_buffered(&(_s + crate::runtime::builtin::io::print_line_ending()));
             Some(OpResult::Continue)
         }
         OpCode::Input { dst, ty } => Some(crate::runtime::builtin::io::input(dst, ty, locals, exec, vm_arc)),

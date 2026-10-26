@@ -46,6 +46,20 @@ pub fn eprint_buffered(s: &str) {
     }
 }
 
+/// Line ending for `>!` output. The erase-to-EOL sequence only serves
+/// interactive redraw and is emitted when stdout is a terminal (or raw
+/// mode is active); redirected pipes and files receive plain text, so
+/// scripts and CI read program output without stripping escape codes.
+pub fn print_line_ending() -> &'static str {
+    static STDOUT_IS_TTY: OnceLock<bool> = OnceLock::new();
+    let tty = *STDOUT_IS_TTY.get_or_init(|| std::io::IsTerminal::is_terminal(&std::io::stdout()));
+    if tty || terminal::OS_RAW_ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
+        "\x1b[K\n"
+    } else {
+        "\n"
+    }
+}
+
 pub fn write_buffered(s: &str) {
     if !is_verbose_enabled() {
         return;
