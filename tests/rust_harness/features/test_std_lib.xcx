@@ -32,8 +32,9 @@ store.delete(test_path);
 if (store.exists(test_path)) then; halt.error >! "Store delete failed"; end;
 
 --- 3. Env
---- USERNAME on Windows
-s: env_user = env.get("USERNAME");
+--- PATH is set on every supported platform; env.get raises halt.error
+--- on unset variables, so the variable must exist everywhere.
+s: env_user = env.get("PATH");
 if (env_user == "") then; halt.error >! "Env get failed"; end;
 
 array:s: args_sys = env.args();
