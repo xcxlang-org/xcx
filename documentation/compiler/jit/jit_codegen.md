@@ -35,6 +35,14 @@ pub struct CodegenCtx<'a> {
 - **Spilling:** Because FFI methods can cause context switches or GC sweeps, registers must sometimes be written back (spilled) to the stack structure. `spill_all` stores dirty Cranelift variables back into their offsets relative to `locals_ptr`, with **dead-store elision** (4.4): a dirty register that is never read anywhere in the chunk (per-opcode read-set analysis, argument windows included) and statically holds a scalar skips its memory store at every call/dispatch boundary.
 - **Reloading:** At control boundaries or post-call entry blocks, registers are refreshed from stack slots (`reload_globals` / `clear_block_state`). Since 4.4, `reload_globals` after a user-function call is narrowed to the callee's transitive global-slot write set (fixpoint over the call graph, recursion-safe); callees that write no globals add zero reload cost.
 
+In 4.4.1, `spill_for_call` also narrows global stores before a direct call
+to the callee's transitive global-slot access set. This includes both reads
+and writes, so the callee sees current values and can safely replace a
+previous value. An explicit allowlist covers operations with known effects;
+indirect callbacks and unclassified operations require a full global spill.
+The access sets converge over recursive call graphs. Local argument slots
+are still published for executor fallbacks.
+
 ### Determinism
 
 Code generation is deterministic: the analysis passes collect register and global sets into ordered containers (`BTreeSet`) rather than hash sets, and spill/reload emission sorts by index. The same binary compiles the same chunk to the same machine code on every process, removing per-process speed variance.
@@ -82,6 +90,19 @@ To avoid the overhead of calling runtime FFI helpers, collection size queries (`
 - The index is compared against the array's length (`index < len`) with a native Cranelift `icmp`.
 - On the in-bounds path, the element is read or written directly from the array's backing buffer; the fast paths stay poll-free (no error-tally check), so loop-heavy code pays nothing.
 - On the out-of-bounds path, execution falls back to the corresponding runtime helper, which raises the standard bounds error.
+
+In 4.4.1, the array method bounds-error blocks are marked cold so Cranelift
+can place their calls and recovery code outside the ordinary loop path.
+Bounds checks and diagnostics are unchanged.
+
+### Conditional Integer Updates (4.4.1)
+
+A boolean condition guarding exactly one integer increment or decrement can
+be compiled as an addition or subtraction of a boolean-selected zero/one
+step. This avoids a conditional jump for simple counting predicates. The
+transformation requires a statically known integer target and boolean
+condition, and is disabled if another jump can enter the update instruction.
+It does not speculate calls, heap operations, or fallible operations.
 
 **Halt parity (4.4):** fallible JIT fast paths check the process error tally exactly like the generic dispatch. `"str".replace("", x)` raises R307, an out-of-bounds string `slice` raises R303, `map.get` on a missing key raises `halt.error`, and failing `.toInt()`/`.toFloat()` casts raise `halt.error` — same codes and messages as the interpreter, with the tally driving the process exit code.
 

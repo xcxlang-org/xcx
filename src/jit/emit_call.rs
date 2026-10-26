@@ -115,7 +115,7 @@ pub fn emit_call(
             return;
         }
 
-        ctx.spill_all();
+        ctx.spill_for_call(func_idx);
 
         let offset = (ctx.max_locals as i64) * 16;
         let new_locals_ptr = ctx.b.ins().iadd_imm(ctx.locals_ptr, offset);
@@ -232,6 +232,7 @@ pub fn emit_call(
         let slow_blk = ctx.create_block();
         let fast_blk = ctx.create_block();
         let join_blk = ctx.create_block();
+        ctx.b.set_cold_block(slow_blk);
 
         let status_var = ctx.b.declare_var(types::I32);
         
@@ -250,7 +251,7 @@ pub fn emit_call(
         call_args.push(a_cnt);
         call_args.push(ctx.executor_ptr);
 
-        ctx.spill_all();
+        ctx.spill_for_call(func_idx);
         let call_inst = ctx.b.ins().call(symbols.xcx_jit_call_recursive, &call_args);
         let slow_status = ctx.b.func.dfg.inst_results(call_inst)[0];
         ctx.b.def_var(status_var, slow_status);
@@ -332,7 +333,7 @@ pub fn emit_call(
         let new_stack_ptr = ctx.b.ins().iadd_imm(cur_stack_ptr, callee_chunk.max_locals as i64);
         ctx.b.ins().store(MemFlags::trusted(), new_stack_ptr, ctx.executor_ptr, ctx.stack_ptr_offset as i32);
 
-        ctx.spill_all();
+        ctx.spill_for_call(func_idx);
 
         let mut fast_call_args = Vec::new();
         fast_call_args.push(out_ptr);
@@ -404,7 +405,7 @@ pub fn emit_call(
         call_args.push(a_cnt);
         call_args.push(ctx.executor_ptr);
 
-        ctx.spill_all();
+        ctx.spill_for_call(func_idx);
         let call_inst = ctx.b.ins().call(symbols.xcx_jit_call_recursive, &call_args);
         let status = ctx.b.func.dfg.inst_results(call_inst)[0];
         
@@ -465,6 +466,7 @@ pub fn emit_method_call(
                     let slow_blk = ctx.create_block();
                     let join_blk = ctx.create_block();
                     let res_val = ctx.b.declare_var(types::I64);
+                    ctx.b.set_cold_block(slow_blk);
                     
                     ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
                     
@@ -509,6 +511,9 @@ pub fn emit_method_call(
                 let slow_blk = ctx.create_block();
                 let join_blk = ctx.create_block();
                 let res_val = ctx.b.declare_var(types::I64);
+                // Bounds failures are exceptional. Keep their calls and
+                // frame-recovery code outside the hot array-access path.
+                ctx.b.set_cold_block(slow_blk);
                 
                 ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
                 
@@ -588,6 +593,7 @@ pub fn emit_method_call(
                     let join_blk = ctx.create_block();
                     
                     ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
+                    ctx.b.set_cold_block(slow_blk);
                     
                     ctx.b.switch_to_block(fast_blk);
                     let idx_offset = ctx.b.ins().imul_imm(idx_bits, 16);
@@ -617,6 +623,7 @@ pub fn emit_method_call(
                     let join_blk = ctx.create_block();
                     
                     ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
+                    ctx.b.set_cold_block(slow_blk);
                     
                     ctx.b.switch_to_block(fast_blk);
                     let idx_offset = ctx.b.ins().imul_imm(idx_bits, 16);
@@ -658,6 +665,7 @@ pub fn emit_method_call(
                 let join_blk = ctx.create_block();
                 
                 ctx.b.ins().brif(is_in_bounds, fast_blk, &[], slow_blk, &[]);
+                ctx.b.set_cold_block(slow_blk);
                 
                 ctx.b.switch_to_block(fast_blk);
                 let elem_addr = ctx.b.ins().iadd(elements_ptr, idx_bits);

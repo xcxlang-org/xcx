@@ -114,11 +114,11 @@ pub fn analyze_bool_array_regs(bytecode: &[OpCode], constants: &[crate::vm::valu
             }
             OpCode::ArrayInit { dst, base, count } => {
                 array_origins[*dst as usize] = Some(*dst);
-                // An empty literal carries no element-type evidence: typing
-                // it as a bool array made .get() materialize later-inserted
-                // non-bool elements as raw bools. General Array is always
-                // correct until a real bool element proves otherwise.
-                let mut all_bool = *count > 0;
+                // An empty literal keeps the bool-array hint: a genuinely
+                // bool array (push/insert of bools only) must keep its fast
+                // read path, and the Insert/Push/Set arms below strip the
+                // hint as soon as a non-bool value flows in.
+                let mut all_bool = true;
                 for i in 0..*count {
                     let reg = *base + i as u8;
                     if !reg_is_bool_const[reg as usize] {
@@ -1078,6 +1078,64 @@ pub fn analyze_global_slot_writes(functions: &[std::sync::Arc<crate::vm::opcode:
         }
     }
     writes
+}
+
+/// Global slots a direct callee can observe or overwrite, including its
+/// callees. None means an operation may re-enter user code indirectly;
+/// callers must then publish every cached global. The explicit allowlist
+/// makes new opcodes conservative by default.
+pub fn analyze_global_slot_accesses(
+    functions: &[std::sync::Arc<crate::vm::opcode::Chunk>],
+) -> Vec<Option<HashSet<u32>>> {
+    let edges: Vec<_> = functions.iter().map(|f| direct_call_targets(&f.bytecode)).collect();
+    let mut accesses: Vec<_> = functions.iter().map(|f| {
+        let mut slots = HashSet::new();
+        for op in f.bytecode.iter() {
+            match *op {
+                OpCode::GetVar { idx, .. } | OpCode::SetVar { idx, .. }
+                | OpCode::IncVar { idx } | OpCode::DecVar { idx }
+                | OpCode::IncVarLoopNext { g_idx: idx, .. }
+                | OpCode::DecVarLoopPrev { g_idx: idx, .. } => { slots.insert(idx); }
+                OpCode::LoadConst { .. } | OpCode::Move { .. }
+                | OpCode::Add { .. } | OpCode::Sub { .. } | OpCode::Mul { .. }
+                | OpCode::Div { .. } | OpCode::Mod { .. } | OpCode::Pow { .. }
+                | OpCode::Neg { .. } | OpCode::Not { .. }
+                | OpCode::And { .. } | OpCode::Or { .. }
+                | OpCode::Equal { .. } | OpCode::NotEqual { .. }
+                | OpCode::Less { .. } | OpCode::LessEqual { .. }
+                | OpCode::Greater { .. } | OpCode::GreaterEqual { .. }
+                | OpCode::CastInt { .. } | OpCode::CastFloat { .. }
+                | OpCode::CastString { .. } | OpCode::CastBool { .. }
+                | OpCode::IncLocal { .. } | OpCode::DecLocal { .. }
+                | OpCode::LoopNext { .. } | OpCode::LoopPrev { .. }
+                | OpCode::IncLocalLoopNext { .. } | OpCode::DecLocalLoopPrev { .. }
+                | OpCode::Jump { .. } | OpCode::JumpIfTrue { .. } | OpCode::JumpIfFalse { .. }
+                | OpCode::Call { .. } | OpCode::Return { .. } | OpCode::ReturnVoid => {}
+                _ => return None,
+            }
+        }
+        Some(slots)
+    }).collect();
+
+    loop {
+        let mut changed = false;
+        for f in 0..functions.len() {
+            let Some(mut merged) = accesses[f].clone() else { continue; };
+            let mut opaque = false;
+            for &callee in &edges[f] {
+                match accesses.get(callee as usize).and_then(Option::as_ref) {
+                    Some(slots) => merged.extend(slots.iter().copied()),
+                    None => { opaque = true; break; }
+                }
+            }
+            let next = if opaque { None } else { Some(merged) };
+            if next != accesses[f] {
+                accesses[f] = next;
+                changed = true;
+            }
+        }
+        if !changed { return accesses; }
+    }
 }
 
 /// Registers whose **value** the chunk reads anywhere in its bytecode: the
