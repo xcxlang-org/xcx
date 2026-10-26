@@ -1,5 +1,5 @@
 # XCX 4.4.1 - Changelog (4.4 -> 4.4.1)
-**Type: IN DEVELOPMENT**
+**Type: RELEASE**
 
 ---
 
@@ -44,6 +44,19 @@ no new functionality.
 
 ## Runtime and JIT
 
+- **[FIX]** Direct JIT calls no longer write every cached global before
+  calling a function that cannot access those slots. Transitive access
+  analysis preserves synchronization across recursion; indirect callbacks
+  retain full synchronization.
+- **[FIX]** Array method bounds-error paths are kept outside hot loops,
+  and simple boolean-guarded integer counters avoid a conditional jump.
+  Bounds checks, diagnostics, and integer update semantics are unchanged.
+- **[FIX]** Internal security violations — `store` path traversal, absolute
+  paths, and illegal `database:` paths — terminate the process immediately
+  with the standard `XCX Fatal:` diagnostic and exit code 1, matching the
+  `halt.fatal` statement. In 4.4 they raised a panic whose stack unwind
+  could hang the VM thread or abort with a raw exception code instead of
+  the documented error exit.
 - **[FIX]** A `while`-limit variable stays readable and unchanged inside
   the loop body. In 4.4 the loop prologue could clobber it whenever the
   program re-read the limit.
@@ -56,3 +69,16 @@ no new functionality.
   the terminal erase sequence, so scripts and CI read program output
   without stripping escape codes. Interactive terminals keep the
   redraw-friendly line endings.
+
+## Performance
+
+XCX 4.4.1 vs XCX 4.4:
+
+| Suite | FIB (30) | LCG (100M) | SIEVE | JSON |
+|---|---|---|---|---|
+| XCX 4.4 | 6.53 ms | 105.87 ms | 34.287 ms | 0.55 ms |
+| **XCX 4.4.1** | **6.32 ms** | **104.51 ms** | **28.74 ms** | **0.52 ms** |
+
+- Main suite improved on all four tests: fib −3.2%, lcg −1.3%, sieve −16.2%, json −5.6%.
+- Cross-function calls: 14.79 → 7.62 ms (−48.5%).
+- Loop suite total: 1570.17 → 1544.30 ms (−1.6%).

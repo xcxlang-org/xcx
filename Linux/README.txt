@@ -1,4 +1,4 @@
-XCX 4.4 - Runtime & Compiler (Linux)
+XCX 4.4.1 - Runtime & Compiler (Linux)
 
 XCX is a backend programming language with a built-in runtime.
 This package contains the compiler and basic tooling for Linux.
@@ -59,7 +59,7 @@ WHAT IS INCLUDED
 
 PROJECT STATUS
 
-XCX 4.4 is the current release.
+XCX 4.4.1 is the current release.
 
 - Suitable for: small tools, experiments, learning
 - Not suitable for: production systems

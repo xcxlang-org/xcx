@@ -1,8 +1,8 @@
 ; XCX Compiler Ecosystem - Inno Setup Script
-; Version: 4.4
+; Version: 4.4.1
 
 #define MyAppName "XCX Compiler Ecosystem"
-#define MyAppVersion "4.4"
+#define MyAppVersion "4.4.1"
 #define MyAppPublisher "XCX Team"
 #define MyAppExeName "xcx.exe"
 #define MyAppURL "https://xcxlang.com"
@@ -12,7 +12,7 @@
 ; How to get: certutil -hashfile file.exe SHA256  (Windows)
 ;              sha256sum file.exe                   (Linux/macOS)
 ; Fill in values before each build!
-#define ChecksumXcxExe  "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899"
+#define ChecksumXcxExe  "867B33CD00EB7BFC36CDD163DBA201D0538339A7599DE7932F6ECCB4BFFB19F1"
 
 ; ---------------------------------------------------------------------------
 ; CODE SIGNING
@@ -47,7 +47,7 @@ MinVersion=10.0
 LicenseFile={#SourcePath}\resources\LICENSE.txt
 InfoBeforeFile={#SourcePath}\resources\README.txt
 OutputDir={#SourcePath}\Output
-OutputBaseFilename=xcx-setup-v4.4
+OutputBaseFilename=xcx-setup-v4.4.1
 SetupIconFile={#SourcePath}\resources\icons\xcx.ico
 ; Sidebar image for wizard (164x314 px, BMP or PNG format)
 WizardImageFile={#SourcePath}\resources\wizard\wizard-sidebar.bmp
