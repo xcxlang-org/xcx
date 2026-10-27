@@ -1,0 +1,36 @@
+--- TEST: SYN-011
+--- Area: Types
+--- Priority: high
+--- Name: Appending to a global does not rewrite the string literal
+--- Expect:
+---   In 4.4 the JIT-compiled global append used a loosened ownership
+---   threshold, so appending to a variable initialized from a string
+---   literal rewrote the constant pool entry itself: every later use of
+---   that literal (new variables, comparisons) saw the appended text.
+---   A global append must mutate only the variable; the literal stays
+---   original, matching the interpreter.
+
+s: g = "lit";
+
+func append_x() {
+    g = g + "x";
+}
+
+i: i = 0;
+while (i < 60) do
+    append_x();
+    i = i + 1;
+end
+
+if (g.length == 63) then
+    >! "[SYN-011-1] PASS - global append produced 63 chars";
+else
+    >! "[SYN-011-1] FAIL - length=" + s(g.length);
+end
+
+s: h = "lit";
+if (h == "lit" AND h.length == 3) then
+    >! "[SYN-011-2] PASS - later use of the literal returns the original text";
+else
+    >! "[SYN-011-2] FAIL - literal corrupted: length=" + s(h.length);
+end

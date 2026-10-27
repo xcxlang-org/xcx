@@ -164,6 +164,8 @@ impl JIT {
             ctx.set_functions(functions);
             let global_slot_writes = super::analysis::analyze_global_slot_writes(functions);
             ctx.set_global_writes(&global_slot_writes);
+            let global_slot_accesses = super::analysis::analyze_global_slot_accesses(functions);
+            ctx.global_accesses = Some(&global_slot_accesses);
             ctx.is_inner_func = is_inner_func;
             ctx.ret_default = chunk.ret_default;
 
@@ -231,8 +233,13 @@ impl JIT {
 
             // Use entry_block as block_0 (it's already switched-to and parameters are loaded)
             let mut terminated = false;
+            let mut skip_next = false;
 
             for (ip, op) in chunk.bytecode.iter().enumerate() {
+                if skip_next {
+                    skip_next = false;
+                    continue;
+                }
                 if let Some(&block) = blocks.get(&ip) {
                     if ip > 0 {
                         if !terminated {
@@ -450,7 +457,19 @@ impl JIT {
                         emit_jump(&mut ctx, &blocks, target, &mut terminated);
                     }
                     OpCode::JumpIfFalse { src, target } => {
-                        emit_jump_if(&mut ctx, &symbols, &blocks, src, target, false);
+                        // Only fuse a one-instruction body with no other
+                        // incoming edge. External jumps must retain their
+                        // independently executable increment instruction.
+                        if target as usize == ip + 2
+                            && !blocks.contains_key(&(ip + 1))
+                            && chunk.bytecode.get(ip + 1).is_some_and(|next| {
+                                emit_conditional_increment(&mut ctx, src, next)
+                            })
+                        {
+                            skip_next = true;
+                        } else {
+                            emit_jump_if(&mut ctx, &symbols, &blocks, src, target, false);
+                        }
                     }
                     OpCode::JumpIfTrue { src, target } => {
                         emit_jump_if(&mut ctx, &symbols, &blocks, src, target, true);
@@ -726,7 +745,8 @@ impl JIT {
                     }
                     OpCode::EnvGet { dst, src } => {
                         let (v_bits, v_tag) = ctx.use_local(src);
-                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_get, &[v_bits, v_tag]);
+                        let (res_bits, res_tag) = ctx.call_ffi_value(symbols.xcx_jit_env_get, &[v_bits, v_tag, ctx.executor_ptr]);
+                        ctx.emit_halt_if_errors(&symbols);
                         if !ctx.should_skip_dec_ref(dst) {
                             let (old_bits, old_tag) = ctx.use_local(dst);
                             emit_conditional_dec_ref(&mut ctx, &symbols, old_bits, old_tag);

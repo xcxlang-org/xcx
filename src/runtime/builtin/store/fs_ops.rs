@@ -20,7 +20,8 @@ pub fn validate_path_safety(path: &str) {
 
                 if is_match {
                     if path.contains("..") {
-                        panic!("halt.fatal: Security violation - path traversal in: {}", path);
+                        eprintln!("XCX Fatal: Security violation - path traversal in: {}", path);
+                        std::process::exit(1);
                     }
                     return;
                 }
@@ -29,7 +30,8 @@ pub fn validate_path_safety(path: &str) {
     }
 
     if path.contains("..") || path.starts_with('/') || (path.len() > 1 && path.as_bytes()[1] == b':') {
-        panic!("halt.fatal: Security violation - illegal path access: {}", path);
+        eprintln!("XCX Fatal: Security violation - illegal path access: {}", path);
+        std::process::exit(1);
     }
 }
 

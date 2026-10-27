@@ -1,0 +1,36 @@
+--- TEST: SYN-006
+--- Area: Syntax
+--- Priority: high
+--- Name: !! is the NOT alias, not a double negation
+--- Expect:
+---   In 4.4 the lexer emitted two separate ! tokens, so !!x silently
+---   tested the opposite of the documented NOT. !! must agree with NOT,
+---   and != / single ! keep working.
+
+b: flag = true;
+
+b: r1 = !!flag;
+if (r1 == false) then
+    >! "[SYN-006-1] PASS — !!true is false";
+else
+    >! "[SYN-006-1] FAIL — !!true returned " + s(r1);
+end
+
+b: r2 = !!false;
+if (r2 == true) then
+    >! "[SYN-006-2] PASS — !!false is true";
+else
+    >! "[SYN-006-2] FAIL — !!false returned " + s(r2);
+end
+
+if (!!flag == NOT flag) then
+    >! "[SYN-006-3] PASS — !! agrees with NOT";
+else
+    >! "[SYN-006-3] FAIL — !! and NOT disagree";
+end
+
+if (1 != 2) then
+    >! "[SYN-006-4] PASS — != unchanged";
+else
+    >! "[SYN-006-4] FAIL — != broken";
+end

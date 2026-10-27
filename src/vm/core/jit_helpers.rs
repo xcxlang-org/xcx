@@ -42,15 +42,14 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
         let ptr = raw.bits as *const crate::vm::object::StringObj;
         let arc = unsafe { Arc::from_raw(ptr) };
 
-        // Threshold 2, NOT the interpreter's sole-owner 1: get_global hands
-        // us a plain copy and the JIT additionally holds the global's value
-        // in a managed register copy (released by reload_globals right
-        // after this call), so sc == 2 is the unique-slot steady state. The
-        // constant-pool co-owner case surfaces as sc >= 3 and always takes
-        // the re-allocation path, mirroring the interpreter's fix.
+        // Same sole-owner rule as the interpreter's StrAppendVar: a second
+        // reference is a real co-owner (constant pool, aliased variable),
+        // never a dead register copy. In-place mutation under a looser
+        // threshold rewrote the constant pool's literal itself, so every
+        // later use of that literal saw the appended text.
         let sc = Arc::strong_count(&arc);
         let wc = Arc::weak_count(&arc);
-        if sc <= 2 && wc == 0 {
+        if sc <= 1 && wc == 0 {
             let obj_ptr = ptr as *mut crate::vm::object::StringObj;
             unsafe {
                 (*obj_ptr).hash = None;
@@ -67,6 +66,11 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
             let new_arc = Arc::new(crate::vm::object::StringObj::new(combined));
             let new_val = crate::vm::value::heap_object::from_string(new_arc);
             vm.set_global(var_idx as usize, new_val);
+            // set_global takes its own reference for the slot; release the
+            // construction reference so the stored count reflects the slot
+            // alone. A surviving construction reference masquerades as a
+            // co-owner and leaks every intermediate buffer on each append.
+            unsafe { new_val.dec_ref(); }
         }
     } else {
         let s1 = raw.to_string();
@@ -74,6 +78,7 @@ pub unsafe extern "C" fn xcx_jit_str_append_var(
         let combined = s1 + &suffix;
         let new_val = Value::from_string(Arc::new(crate::vm::object::StringObj::new(combined.into_bytes())));
         vm.set_global(var_idx as usize, new_val);
+        unsafe { new_val.dec_ref(); }
     }
 }
 
@@ -661,10 +666,11 @@ pub unsafe extern "C" fn xcx_jit_perf_ns(out: *mut Value, vm_ptr: *mut VM) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn xcx_jit_print(bits: u64, tag: u64) {
     let v = Value { bits, tag: tag };
-    // The EEL sequence cleans the line after REPL-style in-place updates;
-    // a bare \n is correct on every platform (ttys expand it via onlcr, and
-    // captured pipes must not receive a stray \r).
-    crate::runtime::builtin::io::write_buffered(&(v.to_string() + "\x1b[K\n"));
+    // The EEL sequence cleans the line after REPL-style in-place updates
+    // on interactive terminals; redirected pipes and files receive a bare
+    // \n (ttys expand it via onlcr, and captured pipes must not receive a
+    // stray \r or escape codes).
+    crate::runtime::builtin::io::write_buffered(&(v.to_string() + crate::runtime::builtin::io::print_line_ending()));
 }
 
 #[unsafe(no_mangle)]
@@ -787,13 +793,18 @@ pub unsafe extern "C" fn xcx_jit_str_append_element(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn xcx_jit_env_get(out: *mut Value, bits: u64, tag: u64) {
-    let key = Value { bits, tag: tag };
-    let key_s = key.to_string();
-    if let Ok(val) = std::env::var(key_s) {
-        unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(val.into_bytes()))); }
-    } else {
-        unsafe { *out = Value::from_i64(0); }
+pub unsafe extern "C" fn xcx_jit_env_get(out: *mut Value, bits: u64, tag: u64, exec_ptr: *mut Executor) {
+    let key = Value { bits, tag: tag }.to_string();
+    match std::env::var(&key) {
+        Ok(val) => unsafe { *out = Value::from_string(std::sync::Arc::new(crate::vm::object::StringObj::new(val.into_bytes()))); },
+        Err(_) => {
+            if !exec_ptr.is_null() {
+                let exec = unsafe { &*exec_ptr };
+                crate::runtime::builtin::io::eprint_buffered(&format!("halt.error: env.get: environment variable '{}' is not set\n", key));
+                exec.vm.error_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            unsafe { *out = Value::from_i64(0); }
+        }
     }
 }
 

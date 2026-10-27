@@ -1294,3 +1294,74 @@ mod stability_suite {
     }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// env.get regression tests (SYN-009)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Compiles and runs `source`, returning the VM plus the global slot of
+/// `probe_var` (declared at top level). Unlike `run_source`, runtime halts
+/// are tolerated: the caller inspects `vm.error_count`.
+fn run_env_probe(source: &str, probe_var: &str, disable_jit: bool) -> (Arc<VM>, usize) {
+    let mut parser = Parser::new(source);
+    let program = parser.parse_program();
+    assert!(!parser.has_error, "Syntax errors during parsing");
+    let mut interner = parser.into_interner();
+    let probe_id = interner.intern(probe_var);
+
+    let mut expander = Expander::new(&mut interner);
+    let mut program = expander
+        .expand(program, &std::env::current_dir().unwrap())
+        .expect("Expansion failed");
+
+    let mut checker = Checker::new(&interner);
+    let mut symbols = SymbolTable::new();
+    let errors = checker.check(&mut program, &mut symbols);
+    assert!(errors.is_empty(), "Type-check errors:\n{:#?}", errors);
+
+    let mut compiler = XCXCompiler::new();
+    let (main_chunk, constants, functions) = compiler.compile(&program, &mut interner);
+    let probe_idx = *compiler.globals.get(&probe_id).expect("probe var not global");
+
+    let vm = Arc::new(VM::new());
+    vm.disable_jit.store(disable_jit, std::sync::atomic::Ordering::Release);
+    let ctx = SharedContext { constants, functions, http_req: None };
+    let vm_for_thread = vm.clone();
+    let handle = std::thread::Builder::new()
+        .name("xcx-env-probe".to_string())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || vm_for_thread.run(Arc::new(main_chunk), ctx, &[]))
+        .expect("Failed to spawn probe VM thread");
+    handle.join().expect("Probe VM thread panicked");
+    (vm, probe_idx)
+}
+
+/// Regression test for SYN-009: `env.get` of an unset variable must raise
+/// the documented halt.error (4.4 silently returned "" in the interpreter
+/// and 0 under the JIT); a set variable must read back its exact value in
+/// both execution modes.
+#[test]
+fn env_get_halt_and_value_semantics() {
+    unsafe { std::env::set_var("XCX_TEST_ENV_GET_PRESENT", "hello_env"); }
+
+    for disable_jit in [false, true] {
+        let src_set = r#"s: v = env.get("XCX_TEST_ENV_GET_PRESENT");"#;
+        let (vm, idx) = run_env_probe(src_set, "v", disable_jit);
+        assert_eq!(
+            vm.error_count.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "set variable must not halt (jit={})", disable_jit
+        );
+        let v = vm.get_global(idx);
+        assert!(v.is_string(), "expected string value (jit={})", disable_jit);
+        assert_eq!(v.as_string_lossy(), "hello_env", "wrong value (jit={})", disable_jit);
+
+        let src_unset = r#"s: v = env.get("XCX_DEFINITELY_UNSET_4RC1_QQ");"#;
+        let (vm, _idx) = run_env_probe(src_unset, "v", disable_jit);
+        assert_eq!(
+            vm.error_count.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "unset variable must raise exactly one halt.error (jit={})", disable_jit
+        );
+    }
+}

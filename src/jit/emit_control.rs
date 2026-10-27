@@ -79,6 +79,32 @@ pub fn emit_jump_if(
     ctx.clear_block_state(false);
 }
 
+/// If-convert a single integer increment/decrement guarded by a bool.
+/// Both paths are non-fallible scalar operations; selecting a zero step
+/// preserves the skipped branch without introducing another native branch.
+pub fn emit_conditional_increment(
+    ctx: &mut CodegenCtx,
+    condition: u8,
+    operation: &crate::vm::opcode::OpCode,
+) -> bool {
+    use crate::vm::opcode::OpCode;
+    if ctx.get_reg_type(condition as usize) != TypeTag::Bool { return false; }
+    let (global, index, decrement) = match *operation {
+        OpCode::IncVar { idx } if ctx.global_is_int(idx) => (true, idx, false),
+        OpCode::DecVar { idx } if ctx.global_is_int(idx) => (true, idx, true),
+        OpCode::IncLocal { reg } if ctx.get_reg_type(reg as usize) == TypeTag::Int => (false, reg as u32, false),
+        OpCode::DecLocal { reg } if ctx.get_reg_type(reg as usize) == TypeTag::Int => (false, reg as u32, true),
+        _ => return false,
+    };
+    let (condition_bits, _) = ctx.use_local(condition);
+    let enabled = ctx.b.ins().icmp_imm(IntCC::NotEqual, condition_bits, 0);
+    let step = ctx.b.ins().uextend(types::I64, enabled);
+    let (bits, tag) = if global { ctx.use_global(index) } else { ctx.use_local(index as u8) };
+    let next = if decrement { ctx.b.ins().isub(bits, step) } else { ctx.b.ins().iadd(bits, step) };
+    if global { ctx.def_global(index, next, tag); } else { ctx.def_local(index as u8, next, tag); }
+    true
+}
+
 pub fn emit_return(
     ctx: &mut CodegenCtx,
     symbols: &super::symbols::ImportedSymbols,

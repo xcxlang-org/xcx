@@ -41,10 +41,16 @@ impl<'a> Parser<'a> {
         let mut else_ifs = Vec::new();
         while self.current.kind == TokenKind::ElseIf {
             self.advance(); // past 'elseif'
-            if self.current.kind != TokenKind::LeftParen { return None; }
+            if self.current.kind != TokenKind::LeftParen {
+                self.error("Condition must be in '(...)'.");
+                return None;
+            }
             self.advance(); // past '('
             let cond = self.parse_expression(Precedence::Lowest)?;
-            if self.current.kind != TokenKind::RightParen { return None; }
+            if self.current.kind != TokenKind::RightParen {
+                self.error("Missing ')' after condition.");
+                return None;
+            }
             self.advance();
             if self.current.kind == TokenKind::Then { self.advance(); }
             if self.current.kind == TokenKind::Semicolon { self.advance(); }
@@ -90,11 +96,17 @@ impl<'a> Parser<'a> {
         let start_span = self.current.span.clone();
         self.advance(); // past 'while'
         
-        if self.current.kind != TokenKind::LeftParen { return None; }
+        if self.current.kind != TokenKind::LeftParen {
+            self.error("Condition must be in '(...)'.");
+            return None;
+        }
         self.advance(); // past '('
         let condition = self.parse_expression(Precedence::Lowest)?;
-        
-        if self.current.kind != TokenKind::RightParen { return None; }
+
+        if self.current.kind != TokenKind::RightParen {
+            self.error("Missing ')' after condition.");
+            return None;
+        }
         self.advance();
         if self.current.kind == TokenKind::Do { self.advance(); }
         if self.current.kind == TokenKind::Semicolon { self.advance(); }
@@ -123,9 +135,17 @@ impl<'a> Parser<'a> {
         let start_span = self.current.span.clone();
         self.advance(); // past 'for'
 
-        let var_name = self.parse_identifier_as_string_id(true)?;
+        let var_name = if let Some(id) = self.parse_identifier_as_string_id(true) {
+            id
+        } else {
+            self.error("Expected loop variable after 'for'.");
+            return None;
+        };
 
-        if self.current.kind != TokenKind::In { return None; }
+        if self.current.kind != TokenKind::In {
+            self.error("Expected 'in' after the loop variable in 'for'.");
+            return None;
+        }
         self.advance();
 
         let start = self.parse_expression(Precedence::Lowest)?;
@@ -191,5 +211,44 @@ impl<'a> Parser<'a> {
         self.advance(); 
         self.expect_semicolon();
         Some(Stmt { kind: StmtKind::Continue, span })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+
+    /// Malformed control-flow and include statements must report a compile
+    /// error. Regression test: in 4.4 the keyword was silently dropped and
+    /// the rest of the statement was re-parsed as plain statements, so e.g.
+    /// `while 1 < 3 do ... end` executed its body exactly once.
+    #[test]
+    fn malformed_control_flow_reports_error() {
+        let cases = [
+            "while 1 < 3 do\n    >! \"x\";\nend\n",
+            "while (1 < 3 do\n    >! \"x\";\nend\n",
+            "if (false) then\n    >! \"a\";\nelseif 1 < 2 then\n    >! \"b\";\nend\n",
+            "if (false) then\n    >! \"a\";\nelseif (1 < 2 then\n    >! \"b\";\nend\n",
+            "for x 1 to 3 do\n    >! x;\nend\n",
+            "for 5 in 1 to 3 do\n    >! 5;\nend\n",
+            "include 5;\n",
+            "include \"x.xcx\" as 5;\n",
+        ];
+        for src in cases {
+            let mut parser = Parser::new(src);
+            let _program = parser.parse_program();
+            assert!(parser.has_error, "expected a compile error for {src:?}");
+        }
+    }
+
+    #[test]
+    fn valid_control_flow_still_parses() {
+        let src = "while (false) do\n    >! \"w\";\nend\n\
+                   if (true) then\n    >! \"a\";\nelseif (false) then\n    >! \"b\";\nelse\n    >! \"c\";\nend\n\
+                   for i in 1 to 3 do\n    >! i;\nend\n";
+        let mut parser = Parser::new(src);
+        let program = parser.parse_program();
+        assert!(!parser.has_error);
+        assert_eq!(program.stmts.len(), 3);
     }
 }

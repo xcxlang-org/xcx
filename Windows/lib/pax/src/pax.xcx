@@ -1,4 +1,4 @@
---- pax.xcx - PAX Package Manager for XCX v4.4
+--- pax.xcx - PAX Package Manager for XCX v4.4.1
 const s: REGISTRY_HOST = "pax.xcxlang.com";
 const s: TOKEN_FILE    = ".pax_token";
 const s: CONFIG_FILE   = ".pax_config";

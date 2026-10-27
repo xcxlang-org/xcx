@@ -1,0 +1,20 @@
+--- TEST: SYN-009
+--- Area: Applications
+--- Priority: high
+--- Name: env.get of an unset variable raises the documented halt
+--- Expect:
+---   In 4.4 env.get of an unset variable silently returned an empty
+---   string (or 0 under the JIT). The documented behavior is halt.error:
+---   the frame aborts, so the FAIL marker at the end is never printed
+---   when the fix is in place. A set variable still reads back a value.
+
+s: p = env.get("PATH");
+
+if (p.length > 0) then
+    >! "[SYN-009-1] PASS - set variable reads back";
+else
+    >! "[SYN-009-1] FAIL - PATH read as empty";
+end
+
+s: gone = env.get("XCX_DEFINITELY_UNSET_4RC1_QQ");
+>! "[SYN-009-2] FAIL - unset env.get returned silently";

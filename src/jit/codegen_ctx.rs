@@ -65,6 +65,8 @@ pub struct CodegenCtx<'a, 'b> {
     pub functions: Option<&'a [std::sync::Arc<crate::vm::opcode::Chunk>]>,
     /// Transitive global-slot writes per function; narrows post-call reloads.
     pub global_writes: Option<&'a Vec<std::collections::HashSet<u32>>>,
+    /// Transitive global-slot accesses; None entries require a full spill.
+    pub global_accesses: Option<&'a Vec<Option<HashSet<u32>>>>,
     pub non_ptr_regs: HashSet<u8>,
     pub may_contain_ptr: Vec<[u64; 4]>,
     pub defined_locals: [bool; 256],
@@ -141,6 +143,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             stack_ptr_offset,
             functions: None,
             global_writes: None,
+            global_accesses: None,
             non_ptr_regs: HashSet::new(),
             may_contain_ptr: Vec::new(),
             defined_locals: [false; 256],
@@ -345,6 +348,10 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
     }
 
     pub fn spill_globals(&mut self) {
+        self.spill_globals_filtered(None);
+    }
+
+    fn spill_globals_filtered(&mut self, filter: Option<&HashSet<u32>>) {
         // Sorted by global index: global_vars is a HashMap whose iteration
         // order is seeded randomly per process, and these stores become part
         // of the emitted code — a random order here flips register allocation
@@ -354,6 +361,7 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             .collect();
         vars.sort_unstable_by_key(|&(idx, _)| idx);
         for (idx, (bv_var, tv_var)) in vars {
+            if filter.is_some_and(|slots| !slots.contains(&idx)) { continue; }
             let bits = self.b.use_var(bv_var);
             let tag  = self.b.use_var(tv_var);
             let (bv, tv) = if self.global_is_int(idx) {
@@ -424,6 +432,21 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
 
     /// Spills all dirty registers back to the locals array in memory.
     pub fn spill_all(&mut self) {
+        self.spill_locals();
+        self.spill_globals();
+    }
+
+    /// A direct callee can only observe globals in its access summary.
+    /// Locals still need publishing for the executor fallback's arguments.
+    pub fn spill_for_call(&mut self, callee: u32) {
+        self.spill_locals();
+        let filter = self.global_accesses
+            .and_then(|sets| sets.get(callee as usize))
+            .and_then(Option::as_ref);
+        self.spill_globals_filtered(filter);
+    }
+
+    fn spill_locals(&mut self) {
         for i_idx in 0..4usize {
 
             let mut bits = self.dirty_registers[i_idx];
@@ -481,7 +504,6 @@ impl<'a, 'b> CodegenCtx<'a, 'b> {
             }
             self.dirty_registers[i_idx] = 0;
         }
-        self.spill_globals();
     }
 
 

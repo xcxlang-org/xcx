@@ -211,6 +211,24 @@ fn run_file(
         }
     }
 
+    // Bundled packages ship in the installation's lib/ directory and must
+    // resolve from any project, after the project's own lib/. The installer
+    // layout keeps lib/ beside bin/; the portable layout beside the binary.
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            if let Some(install_dir) = exe_dir.parent() {
+                let lib_path = install_dir.join("lib");
+                if lib_path.exists() {
+                    expander.add_include_path(lib_path);
+                }
+            }
+            let lib_path = exe_dir.join("lib");
+            if lib_path.exists() {
+                expander.add_include_path(lib_path);
+            }
+        }
+    }
+
     let mut program = match expander.expand(program_raw, current_dir) {
         Ok(p) => p,
         Err(e) => {

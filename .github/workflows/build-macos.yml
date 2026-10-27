@@ -1,10 +1,8 @@
 name: Build & Test macOS
 
+# Manual runs only: Actions tab -> "Run workflow". No automatic builds
+# on push/pull_request, to keep Actions minutes in the maintainer's hands.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

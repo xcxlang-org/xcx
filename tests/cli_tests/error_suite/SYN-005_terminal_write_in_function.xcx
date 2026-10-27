@@ -1,0 +1,22 @@
+--- TEST: SYN-005
+--- Area: Syntax
+--- Priority: high
+--- Name: .terminal !write works inside function bodies
+--- Expect:
+---   In 4.4 the directive compiled to nothing (the compiler had no
+---   write branch for TerminalCommand), so terminal UIs rendered blank
+---   frames. Written text has no trailing newline and must appear from
+---   top level, from a function, and from a JIT-hot function (60 calls).
+
+func draw() {
+    .terminal !write "W";
+}
+
+i: i = 0;
+while (i < 60) do
+    draw();
+    i = i + 1;
+end
+
+.terminal !write "|";
+>! " [SYN-005-1] PASS — 61 writes executed, program reached the end";

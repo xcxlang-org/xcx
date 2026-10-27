@@ -42,11 +42,19 @@ pub fn handle<'a>(
         // Env
         OpCode::EnvGet { dst, src } => {
             let key = locals[src as usize].to_string();
-            let val = std::env::var(key).unwrap_or_default();
-            let res = Value::from_string(Arc::new(StringObj::new(val.into_bytes())));
-            unsafe { locals[dst as usize].dec_ref(); }
-            locals[dst as usize] = res;
-            Some(OpResult::Continue)
+            match std::env::var(&key) {
+                Ok(val) => {
+                    let res = Value::from_string(Arc::new(StringObj::new(val.into_bytes())));
+                    unsafe { locals[dst as usize].dec_ref(); }
+                    locals[dst as usize] = res;
+                    Some(OpResult::Continue)
+                }
+                Err(_) => {
+                    eprintln!("halt.error: env.get: environment variable '{}' is not set", key);
+                    vm_arc.error_count.fetch_add(1, Ordering::SeqCst);
+                    Some(OpResult::Halt)
+                }
+            }
         }
         OpCode::EnvArgs { dst } => {
             let args: Vec<String> = std::env::args().collect();
@@ -238,9 +246,9 @@ pub fn handle<'a>(
         // IO
         OpCode::Print { src } => {
             let _s = locals[src as usize].to_string();
-            // Same line-ending contract as xcx_jit_print: EEL + bare \n on
-            // every platform, so captured output is identical everywhere.
-            crate::runtime::builtin::io::write_buffered(&(_s + "\x1b[K\n"));
+            // Same line-ending contract as xcx_jit_print: EEL on interactive
+            // terminals, plain \n when redirected, identical in both engines.
+            crate::runtime::builtin::io::write_buffered(&(_s + crate::runtime::builtin::io::print_line_ending()));
             Some(OpResult::Continue)
         }
         OpCode::Input { dst, ty } => Some(crate::runtime::builtin::io::input(dst, ty, locals, exec, vm_arc)),

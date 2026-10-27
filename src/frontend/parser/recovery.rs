@@ -11,6 +11,7 @@ impl<'a> Parser<'a> {
 
     // Synchronizes the parser state after an error by skipping until a synchronization point.
     pub fn synchronize(&mut self) {
+        let failed_span = self.current.span;
         while self.current.kind != TokenKind::EOF {
             if self.current.kind == TokenKind::Semicolon {
                 self.advance();
@@ -18,7 +19,16 @@ impl<'a> Parser<'a> {
             }
 
             match self.current.kind {
-                TokenKind::Func | TokenKind::Fiber | TokenKind::Const | TokenKind::If | TokenKind::While | TokenKind::For | TokenKind::Return | TokenKind::GreaterBang => return,
+                TokenKind::Func | TokenKind::Fiber | TokenKind::Const | TokenKind::If | TokenKind::While | TokenKind::For | TokenKind::Return | TokenKind::GreaterBang => {
+                    // A statement keyword is a sync point only when it starts
+                    // a new statement. When synchronization begins on the very
+                    // token the failed statement started from, returning here
+                    // would retry the same failure forever, so that token is
+                    // skipped and scanning continues to the next boundary.
+                    if self.current.span != failed_span {
+                        return;
+                    }
+                }
                 _ => {}
             }
 
@@ -52,5 +62,38 @@ impl<'a> Parser<'a> {
             self.error(&msg);
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+
+    /// Malformed `const` forms must terminate with a reported compile error.
+    /// Regression test: `const(` used to loop forever in parse_program —
+    /// synchronize() returned at the failed statement's own keyword without
+    /// consuming it — until the leaked depth counter panicked the parser.
+    #[test]
+    fn malformed_const_reports_error_and_terminates() {
+        for src in ["const(\n", "const(1);\n", "const = 5;\n"] {
+            let mut parser = Parser::new(src);
+            let program = parser.parse_program();
+            assert!(parser.has_error, "expected a compile error for {src:?}");
+            assert!(program.stmts.is_empty(), "expected no statements for {src:?}");
+        }
+
+        // Mid-file: parsing must terminate and flag the error; statements
+        // after it may legitimately be dropped once an error is recorded.
+        let mut parser = Parser::new(">! \"a\";\nconst(1);\n>! \"b\";\n");
+        let _program = parser.parse_program();
+        assert!(parser.has_error);
+    }
+
+    #[test]
+    fn valid_const_declaration_still_parses() {
+        let mut parser = Parser::new("const i: MAX = 42;\n");
+        let program = parser.parse_program();
+        assert!(!parser.has_error);
+        assert_eq!(program.stmts.len(), 1);
     }
 }

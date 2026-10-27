@@ -1,0 +1,37 @@
+--- TEST: SYN-007
+--- Area: Syntax
+--- Priority: high
+--- Name: mathlib is_pow2 detects powers of two, not multiples of 4
+--- Expect:
+---   In 4.4 is_pow2 returned true for every multiple of 4 (12, 20, 96)
+---   and relied on a hardcoded OR-list for small powers; it now halves
+---   the value until odd and compares against 1.
+
+include "../../../lib/mathlib/src/math.xcx";
+
+b: acc = true;
+i: p = 1;
+while (p < 1073741824) do
+    acc = acc AND is_pow2(p);
+    p = p * 2;
+end
+acc = acc AND is_pow2(1073741824);
+
+if (acc) then
+    >! "[SYN-007-1] PASS — every power of two up to 2^30 is detected";
+else
+    >! "[SYN-007-1] FAIL — a power of two was rejected";
+end
+
+b: bad = is_pow2(12) OR is_pow2(20) OR is_pow2(96) OR is_pow2(131076) OR is_pow2(3);
+if (bad == false) then
+    >! "[SYN-007-2] PASS — non-powers (incl. multiples of 4) rejected";
+else
+    >! "[SYN-007-2] FAIL — a non-power was accepted";
+end
+
+if (is_pow2(0) OR is_pow2(-8)) then
+    >! "[SYN-007-3] FAIL — zero/negative accepted";
+else
+    >! "[SYN-007-3] PASS — zero and negative rejected";
+end
